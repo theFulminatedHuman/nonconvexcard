@@ -4,3 +4,7 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# The repository root ignores package-lock.json for the Jekyll site; this app
+# needs its lockfile committed so that `npm ci` in CI installs the same tree.
+!package-lock.json
