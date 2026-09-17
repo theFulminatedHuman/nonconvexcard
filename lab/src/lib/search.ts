@@ -53,12 +53,19 @@ export function tokenize(s: string): string[] {
 /**
  * Scores one document against the query tokens. Returns 0 when any token is
  * unmatched, so the search is conjunctive: "sgd convergence" must match both.
+ *
+ * Every field is normalised here rather than trusted to arrive normalised. The
+ * index builder does normalise `keywords`, but the index is shipped as JSON and
+ * re-read at runtime, so relying on that invariant would turn a stale or
+ * hand-edited index into silently missing matches instead of a visible error.
+ * `normalise` is idempotent, so the extra pass costs a little work and no
+ * correctness.
  */
 export function scoreDoc(doc: SearchDoc, tokens: string[]): number {
   if (tokens.length === 0) return 0;
   const title = normalise(doc.title);
   const subtitle = normalise(doc.subtitle);
-  const keywords = doc.keywords;
+  const keywords = normalise(doc.keywords);
 
   let score = 0;
   for (const token of tokens) {

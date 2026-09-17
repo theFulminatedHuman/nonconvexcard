@@ -18,8 +18,6 @@ const serialize = (s: ProgressState) => JSON.stringify(s);
 
 export interface ProgressApi {
   state: ProgressState;
-  /** `false` during server render and the first client paint. */
-  ready: boolean;
   isDone: (kind: ActivityKind, refId: string) => boolean;
   complete: (entry: Omit<ActivityEntry, 'key'>) => void;
   uncomplete: (kind: ActivityKind, refId: string) => void;
@@ -65,7 +63,6 @@ export function useProgress(): ProgressApi {
   return useMemo<ProgressApi>(
     () => ({
       state,
-      ready: state !== EMPTY_STATE || typeof window !== 'undefined',
       isDone: (kind, refId) => hasActivity(state, kind, refId),
       complete,
       uncomplete,

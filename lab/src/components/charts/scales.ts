@@ -78,7 +78,7 @@ export function formatTick(v: number, type: ScaleType = 'linear'): string {
   const a = Math.abs(v);
   if (type === 'log' || a >= 1e5 || a < 1e-3) {
     const exp = Math.round(Math.log10(a));
-    if (10 ** exp === a) return `1e${exp > 0 ? exp : exp}`;
+    if (10 ** exp === a) return `1e${exp}`; // `exp` already carries its own sign
     return v.toExponential(0);
   }
   if (a >= 1000) return `${(v / 1000).toFixed(a >= 10000 ? 0 : 1)}k`;

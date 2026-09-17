@@ -60,6 +60,9 @@ function subscribe(key: string, listener: Listener): () => void {
 
   return () => {
     set.delete(listener);
+    // Drop the key entirely once nothing is listening, so the map tracks live
+    // subscriptions rather than every key ever subscribed to.
+    if (set.size === 0) listeners.delete(key);
     window.removeEventListener('storage', onStorage);
   };
 }

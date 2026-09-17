@@ -89,3 +89,34 @@ describe('search', () => {
     }
   });
 });
+
+describe('scoreDoc keyword normalisation', () => {
+  // The index builder normalises `keywords`, but the index ships as JSON and is
+  // re-read at runtime; a doc that arrives un-normalised must still match
+  // rather than silently score zero.
+  const raw: SearchDoc = {
+    id: 'topic:d',
+    kind: 'topic',
+    title: 'Covariance estimation',
+    subtitle: 'Sample covariance in high dimension',
+    href: '/topics/high-dimensional-statistics/covariance-estimation',
+    keywords: 'Sub-Gaussian TAILS, Operator Norm; Wishart!',
+  };
+
+  it('matches a token that only appears in mixed-case keywords', () => {
+    expect(scoreDoc(raw, ['wishart'])).toBeGreaterThan(0);
+  });
+
+  it('matches a token adjacent to punctuation in keywords', () => {
+    expect(scoreDoc(raw, ['tails'])).toBeGreaterThan(0);
+  });
+
+  it('still returns 0 for a token that is genuinely absent', () => {
+    expect(scoreDoc(raw, ['rademacher'])).toBe(0);
+  });
+
+  it('is unchanged on already-normalised keywords, since normalise is idempotent', () => {
+    const pre: SearchDoc = { ...raw, keywords: normalise(raw.keywords) };
+    expect(scoreDoc(pre, ['wishart'])).toBe(scoreDoc(raw, ['wishart']));
+  });
+});
