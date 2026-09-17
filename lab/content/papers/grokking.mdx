@@ -1,0 +1,71 @@
+---
+title: 'Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets'
+authors: Alethea Power, Yuri Burda, Harri Edwards, Igor Babuschkin, Vedant Misra
+year: 2022
+venue: ICLR Workshop
+url: https://arxiv.org/abs/2201.02177
+arxiv: '2201.02177'
+field: deep-learning-theory
+tags: [grokking, delayed generalisation, memorisation, weight decay]
+problem: It was assumed that if a network is going to generalise it does so while the training loss is still decreasing; nothing predicted that generalisation could appear long after training accuracy saturates.
+contribution: Documented that on small algorithmic tasks, validation accuracy jumps from chance to near-perfect thousands of optimisation steps after training accuracy reaches 100 percent.
+prerequisites:
+  - deep-learning-theory/what-is-proven
+  - learning-theory/bias-variance-and-double-descent
+descendants: []
+related: [deep-double-descent, lottery-ticket]
+---
+
+## What problem does this paper solve?
+
+It exhibits a clean, reproducible experimental handle on the transition from memorisation to
+generalisation — a transition that in normal training is invisible because both happen together.
+
+## What mathematical objects are introduced?
+
+None. The tasks are group operations: modular addition and multiplication, permutation composition,
+and similar, presented as $a\circ b = c$ triples with a fraction of the multiplication table held out.
+
+## What assumptions are made?
+
+The phenomenon requires small datasets relative to the model, and its onset depends strongly on weight
+decay — a fact the paper reports and which subsequent work has built explanations on.
+
+## What equations matter?
+
+None in the paper. The most convincing follow-up analysis (Nanda et al., mechanistic
+interpretability) reverse-engineered the modular-addition circuit and found the network computes
+$$
+a+b \bmod p
+$$
+by embedding inputs on circles at several frequencies $\omega$, using trigonometric identities
+$\cos\omega(a+b) = \cos\omega a\cos\omega b - \sin\omega a\sin\omega b$ realised by the attention and
+MLP layers, and reading off the answer by constructive interference. That is a complete mechanistic
+account — for that one task.
+
+## What theorem or result is important?
+
+No theorem. The empirical result: a delay of $10^2$–$10^4\times$ between fitting and generalising,
+robust across tasks and seeds.
+
+## What proof techniques are used?
+
+None.
+
+## What prior mathematics is required?
+
+Nothing beyond the basics; the follow-up analyses use discrete Fourier analysis on $\Z_p$.
+
+## Limitations
+
+The evidence is from small models on synthetic algorithmic data. Whether grokking occurs in
+large-scale training is unclear — related "emergence" phenomena have been argued to be artefacts of
+discontinuous metrics rather than discontinuous capabilities. Several competing explanations
+(memorisation-to-generalisation circuit competition, weight-norm dynamics, slow feature alignment)
+each fit some experiments.
+
+## Why it mattered
+
+It separated two processes that are normally confounded, which made the memorisation-to-generalisation
+transition experimentally accessible. It is also one of the few cases where a deep network's learned
+algorithm has been fully identified, which is a proof of concept for mechanistic interpretability.

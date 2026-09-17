@@ -1,0 +1,80 @@
+---
+title: 'Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer'
+authors: Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, Jeff Dean
+year: 2017
+venue: ICLR
+url: https://arxiv.org/abs/1701.06538
+arxiv: '1701.06538'
+field: llm
+also: [deep-learning]
+tags: [mixture of experts, sparsity, routing, conditional computation]
+problem: Model quality improves with parameter count, but dense models spend compute proportional to parameters, so quality is bounded by the compute budget.
+contribution: A layer with thousands of experts and a learned gate routing each token to a few of them, decoupling parameter count from per-token compute, with a load-balancing loss to prevent expert collapse.
+prerequisites:
+  - llm/scaling-and-in-context-learning
+  - deep-learning/transformers
+descendants: []
+related: [attention-is-all-you-need, scaling-laws]
+---
+
+## What problem does this paper solve?
+
+Conditional computation: making parameters cheap. If each input activates only a small fraction of
+the network, total capacity can grow without the per-example cost growing.
+
+## What mathematical objects are introduced?
+
+A gating function over $E$ experts,
+$$
+G(x) = \operatorname{softmax}\big(\mathrm{TopK}(xW_g + \text{noise},\ k)\big),
+\qquad
+y = \sum_{e : G(x)_e>0} G(x)_e\,E_e(x),
+$$
+where $\mathrm{TopK}$ sets all but the largest $k$ logits to $-\infty$ so the softmax is exactly
+$k$-sparse.
+
+## What assumptions are made?
+
+That different inputs benefit from different sub-computations, and that a learned gate can find the
+partition. Neither is guaranteed, and the degenerate solution — one expert receives everything — is a
+stable equilibrium the gate reaches on its own.
+
+## What equations matter?
+
+The load-balancing auxiliary loss. With $f_e$ the fraction of tokens routed to expert $e$ and $P_e$
+the mean gate probability for $e$,
+$$
+\mathcal{L}_{\text{aux}} = \lambda\,E\sum_{e=1}^E f_eP_e ,
+$$
+which is minimised when the routing is uniform. This term is not optional: without it, a rich-get-
+richer dynamic concentrates all tokens on a few experts — an expert that receives more tokens trains
+faster, so the gate prefers it more, and the process runs away.
+
+## What theorem or result is important?
+
+No theorem. Empirically, up to $137$B parameters in $2017$ with per-token compute of a much smaller
+dense model, and improved language-modelling and translation results at matched FLOPs.
+
+## What proof techniques are used?
+
+None; the noise added to the gate logits is a heuristic for exploration, analogous to
+$\eps$-greedy.
+
+## What prior mathematics is required?
+
+Softmax and its gradient; the fact that $\mathrm{TopK}$ is non-differentiable in the routing decision,
+so the gradient flows only through the selected experts' gate values.
+
+## Limitations
+
+All $EP$ parameters must be in memory, so memory bandwidth replaces FLOPs as the bottleneck. Routing
+is discrete and the training signal for unselected experts is absent. Load balancing is a permanent
+tax on the objective. Fine-tuning sparse models is harder than dense ones. And the
+<TopicRef id="llm/scaling-and-in-context-learning">dense scaling laws</TopicRef> do not transfer —
+sparse models need their own fitted laws in $(E,k,P)$.
+
+## Why it mattered
+
+It is the origin of the sparse-expert architecture now used in several frontier models, and it
+articulated the decoupling of capacity from compute that is the main structural alternative to simply
+building a bigger dense model.

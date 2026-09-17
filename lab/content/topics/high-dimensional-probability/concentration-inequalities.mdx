@@ -1,0 +1,485 @@
+---
+title: Concentration Inequalities
+summary: Markov to McDiarmid, each with its hypotheses, a complete proof, an interpretation and the regime in which it is the right tool.
+field: high-dimensional-probability
+level: 2
+order: 20
+prerequisites: [high-dimensional-probability/sub-gaussian-random-variables]
+tags: [concentration, markov, chebyshev, chernoff, hoeffding, bernstein, azuma, mcdiarmid, gaussian concentration]
+estimated_time: 1d
+experiments: [concentration-inequalities]
+claims:
+  - id: markov
+    kind: theorem
+    title: Markov's inequality
+    summary: A non-negative random variable exceeds t with probability at most its mean over t.
+    proved: true
+    tags: [markov, first moment]
+  - id: chebyshev
+    kind: corollary
+    title: Chebyshev's inequality
+    summary: Deviations of size t have probability at most the variance over t squared.
+    proved: true
+    tags: [chebyshev, second moment]
+  - id: chernoff-method
+    kind: proposition
+    title: The Chernoff method
+    summary: Optimising an exponential Markov bound over the tilting parameter yields the Legendre transform of the cumulant generating function.
+    proved: true
+    tags: [chernoff, mgf, legendre]
+  - id: hoeffding
+    kind: theorem
+    title: Hoeffding's inequality
+    summary: Sums of independent bounded variables have Gaussian tails with parameter determined by the ranges alone.
+    proved: true
+    tags: [hoeffding, bounded, sums]
+  - id: bernstein
+    kind: theorem
+    title: Bernstein's inequality
+    summary: For bounded variables, a tail bound interpolating between Gaussian behaviour at small deviations and exponential behaviour at large ones.
+    proved: true
+    tags: [bernstein, variance, interpolation]
+  - id: azuma
+    kind: theorem
+    title: Azuma–Hoeffding inequality
+    summary: Hoeffding's bound for martingales with bounded increments, requiring no independence.
+    proved: true
+    tags: [azuma, martingale]
+  - id: mcdiarmid
+    kind: theorem
+    title: McDiarmid's bounded differences inequality
+    summary: A function of independent variables that changes little when any single coordinate is changed concentrates around its mean.
+    proved: true
+    tags: [mcdiarmid, bounded differences, uniform convergence]
+  - id: gaussian-concentration
+    kind: theorem
+    title: Gaussian concentration for Lipschitz functions
+    summary: A Lipschitz function of a standard Gaussian vector is sub-Gaussian with parameter equal to its Lipschitz constant, with no dependence on dimension.
+    proved: false
+    tags: [gaussian, lipschitz, dimension free]
+  - id: chebyshev-optimal
+    kind: proposition
+    title: Markov and Chebyshev are attained
+    summary: Both inequalities are tight, so their weakness is a property of their hypotheses and not of their proofs.
+    proved: true
+    tags: [tightness, extremal]
+references:
+  - key: vershynin-hdp-3
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+    note: Chapters 2 and 5. The results below are classical; the proofs here are written out independently and the constants are the ones the arguments give.
+  - key: boucheron-lugosi-massart-2
+    title: 'Concentration Inequalities: A Nonasymptotic Theory of Independence'
+    authors: Stéphane Boucheron, Gábor Lugosi and Pascal Massart
+    year: 2013
+    kind: book
+    note: The definitive treatment, including the entropy method and the log-Sobolev route to Gaussian concentration.
+  - key: hoeffding-1963
+    title: Probability inequalities for sums of bounded random variables
+    authors: Wassily Hoeffding
+    year: 1963
+    kind: paper
+    url: https://doi.org/10.1080/01621459.1963.10500830
+  - key: mcdiarmid-1989
+    title: On the method of bounded differences
+    authors: Colin McDiarmid
+    year: 1989
+    kind: survey
+---
+
+Every inequality on this page bounds the same kind of quantity — the probability that a random
+variable is far from its mean — and each pays for its conclusion with a different hypothesis. The
+table is the summary; the rest of the page is the proofs.
+
+| Inequality | Hypothesis | Tail bound on $\P(|Z - \E Z| \ge t)$ | Decay |
+| --- | --- | --- | --- |
+| Markov | $Z \ge 0$ | $\E Z/t$ (one-sided, about 0) | $1/t$ |
+| Chebyshev | $\Var Z < \infty$ | $\sigma^2/t^2$ | $1/t^2$ |
+| Chernoff | MGF finite | $e^{-\sup_\lambda(\lambda t - \psi(\lambda))}$ | shape of $\psi^*$ |
+| Hoeffding | $Z = \sum X_i$, independent, $X_i \in [a_i,b_i]$ | $2\exp\!\big(-2t^2/\sum(b_i-a_i)^2\big)$ | Gaussian |
+| Bernstein | as Hoeffding, plus variance $\sigma^2$ | $2\exp\!\big(-t^2/(2\sigma^2 + 2Mt/3)\big)$ | Gaussian then exponential |
+| Azuma | martingale, increments in $[-c_i,c_i]$ | $2\exp\!\big(-t^2/(2\sum c_i^2)\big)$ | Gaussian |
+| McDiarmid | $f$ with bounded differences $c_i$ | $2\exp\!\big(-2t^2/\sum c_i^2\big)$ | Gaussian |
+| Gaussian concentration | $f$ $K$-Lipschitz, $X\sim\Ncal(0,I_d)$ | $2\exp\!\big(-t^2/(2K^2)\big)$ | Gaussian, dimension-free |
+
+<ExperimentRef id="concentration-inequalities" />
+
+## The two moment inequalities
+
+<Theorem id="markov" title="Markov's inequality">
+Let $Z \ge 0$ be a random variable and $t > 0$. Then
+$$
+\P(Z \ge t) \le \frac{\E Z}{t}.
+$$
+</Theorem>
+
+<Proof>
+Pointwise, $Z \ge t\,\one\{Z \ge t\}$: on the event $\{Z \ge t\}$ the right side is $t \le Z$, and
+off it the right side is $0 \le Z$ by non-negativity. Taking expectations and using monotonicity of
+the integral, $\E Z \ge t\,\P(Z \ge t)$.
+</Proof>
+
+<Assumptions>
+Non-negativity of $Z$, and that is all. No independence, no variance, no boundedness. This is why
+Markov is the foundation on which every other inequality here is built: all of them are Markov
+applied to a cleverly chosen non-negative function of $Z$.
+</Assumptions>
+
+<Corollary id="chebyshev" title="Chebyshev's inequality">
+If $\E Z^2 < \infty$ then for all $t>0$,
+$$
+\P\big(|Z - \E Z| \ge t\big) \le \frac{\Var(Z)}{t^2}.
+$$
+</Corollary>
+
+<Proof>
+Apply Markov to the non-negative variable $(Z - \E Z)^2$ at level $t^2$:
+$$
+\P(|Z - \E Z| \ge t) = \P\big((Z-\E Z)^2 \ge t^2\big) \le \frac{\E (Z-\E Z)^2}{t^2} = \frac{\Var Z}{t^2}.
+$$
+</Proof>
+
+More generally, applying Markov to $|Z - \E Z|^p$ gives $\P(|Z-\E Z| \ge t) \le \E|Z-\E Z|^p/t^p$, so
+each finite moment buys one more power of $t$. Sub-Gaussianity is, in this light, exactly the
+statement that *all* moments are available with the right growth, which is what upgrades polynomial
+decay to Gaussian decay.
+
+<Proposition id="chebyshev-optimal" title="Markov and Chebyshev are attained">
+Both bounds are achieved with equality by explicit distributions, so neither can be improved without
+strengthening its hypotheses.
+</Proposition>
+
+<Proof>
+For Markov: fix $t > 0$ and $p \in (0,1]$, and let $Z = t$ with probability $p$ and $Z = 0$ otherwise.
+Then $\E Z = pt$ and $\P(Z \ge t) = p = \E Z/t$ exactly.
+
+For Chebyshev: let $Z = \pm t$ each with probability $p/2$ and $Z = 0$ with probability $1-p$, for
+$p \in (0,1]$. Then $\E Z = 0$, $\Var Z = pt^2$, and
+$\P(|Z| \ge t) = p = \Var(Z)/t^2$ exactly.
+</Proof>
+
+<KeyIdea>
+These extremal distributions are worth staring at: they put all of their deviation mass at exactly
+the threshold $t$. That is what a distribution with *only* a variance constraint is allowed to do,
+and it is why Chebyshev cannot see the difference between a Gaussian and a two-point distribution.
+Improving on Chebyshev requires a hypothesis that rules such distributions out — boundedness of many
+independent summands does exactly that.
+</KeyIdea>
+
+## The Chernoff method
+
+<Proposition id="chernoff-method" title="The Chernoff method">
+Let $Z$ have cumulant generating function $\psi(\lambda) = \log \E e^{\lambda Z}$, finite on an
+interval containing $0$. Then for every $t$,
+$$
+\P(Z \ge t) \le \exp\big(-\psi^*(t)\big),
+\qquad \psi^*(t) = \sup_{\lambda > 0}\big(\lambda t - \psi(\lambda)\big),
+$$
+where $\psi^*$ is the Legendre transform of $\psi$.
+</Proposition>
+
+<Proof>
+For any $\lambda > 0$ the map $z \mapsto e^{\lambda z}$ is increasing, so $\{Z \ge t\}$ and
+$\{e^{\lambda Z} \ge e^{\lambda t}\}$ are the same event. Markov applied to the non-negative variable
+$e^{\lambda Z}$ gives
+$$
+\P(Z \ge t) \le e^{-\lambda t}\,\E e^{\lambda Z} = \exp\big(\psi(\lambda) - \lambda t\big).
+$$
+The left side does not depend on $\lambda$, so we may take the infimum of the right side over
+$\lambda>0$, which is $\exp(-\sup_{\lambda>0}(\lambda t - \psi(\lambda)))$.
+</Proof>
+
+<Intuition>
+The Chernoff recipe is: exponentiate, apply Markov, optimise. The optimisation is what turns a
+one-parameter family of weak bounds into a sharp one, and the resulting exponent $\psi^*$ is exactly
+the rate function of large deviations theory. Everything below is this recipe plus a bound on
+$\psi$.
+</Intuition>
+
+## Hoeffding's inequality
+
+<Theorem id="hoeffding" title="Hoeffding's inequality">
+Let $X_1,\dots,X_n$ be independent with $X_i \in [a_i,b_i]$ almost surely, and let
+$S = \sum_{i=1}^n X_i$. Then for every $t \ge 0$,
+$$
+\P\big(S - \E S \ge t\big) \le \exp\left(-\frac{2t^2}{\sum_{i=1}^n (b_i-a_i)^2}\right),
+$$
+and the two-sided bound holds with an extra factor $2$. In particular, for i.i.d. $X_i \in [0,1]$ and
+$\bar X_n = S/n$,
+$$
+\P\big(|\bar X_n - \mu| \ge t\big) \le 2e^{-2nt^2}.
+$$
+</Theorem>
+
+<Proof>
+Assume without loss of generality that each $X_i$ is centred (replace $X_i$ by $X_i - \E X_i$, which
+shifts the interval but not its length). By independence the MGF factorises, and by
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">Hoeffding's lemma</TopicRef>
+each factor is bounded:
+$$
+\E e^{\lambda S} = \prod_{i=1}^n \E e^{\lambda X_i}
+\le \prod_{i=1}^n \exp\left(\frac{\lambda^2(b_i-a_i)^2}{8}\right)
+= \exp\left(\frac{\lambda^2 v}{8}\right),
+\qquad v := \sum_i (b_i-a_i)^2 .
+$$
+So $\psi(\lambda) \le \lambda^2 v/8$. Apply the Chernoff method: for $\lambda > 0$,
+$$
+\P(S \ge t) \le \exp\left(\frac{\lambda^2 v}{8} - \lambda t\right).
+$$
+The exponent is a quadratic in $\lambda$ minimised at $\lambda_\star = 4t/v$, where its value is
+$$
+\frac{(4t/v)^2 v}{8} - \frac{4t^2}{v} = \frac{2t^2}{v} - \frac{4t^2}{v} = -\frac{2t^2}{v}.
+$$
+This gives the one-sided bound. Applying it to $-S$ (whose summands lie in $[-b_i,-a_i]$, of the same
+length) and using the union bound gives the factor $2$.
+</Proof>
+
+<NotSaid>
+Hoeffding's bound does not involve the variance of the $X_i$ at all — only the lengths of their
+ranges. For a Bernoulli$(p)$ variable with small $p$, the range is $1$ while the variance is
+$p(1-p) \ll 1$, and Hoeffding is correspondingly loose. It is also useless for unbounded variables:
+there is no version of this theorem for Gaussian summands *via this route*, though of course the sum
+of Gaussians is exactly Gaussian.
+</NotSaid>
+
+Inverting the bound is the form used in practice. Setting the right-hand side to $\delta$ and solving
+for $t$: with probability at least $1-\delta$,
+$$
+|\bar X_n - \mu| \le \sqrt{\frac{\log(2/\delta)}{2n}}\qquad\text{for } X_i \in [0,1].
+$$
+Note the shape: the dependence on the confidence level is $\sqrt{\log(1/\delta)}$, which is extremely
+mild — buying three more orders of magnitude of confidence costs a factor of about $1.6$ in the
+bound. This is the practical content of exponential concentration.
+
+## Bernstein's inequality
+
+<Theorem id="bernstein" title="Bernstein's inequality">
+Let $X_1,\dots,X_n$ be independent and centred with $|X_i| \le M$ almost surely, and set
+$\sigma^2 = \sum_{i=1}^n \E X_i^2$. Then for all $t \ge 0$,
+$$
+\P\left(\sum_i X_i \ge t\right) \le \exp\left(-\frac{t^2}{2\sigma^2 + \tfrac{2}{3}Mt}\right).
+$$
+</Theorem>
+
+<Proof>
+Fix $\lambda > 0$ and bound the MGF of a single summand. Using the series for the exponential and
+$\E X_i = 0$,
+$$
+\E e^{\lambda X_i} = 1 + \sum_{k \ge 2}\frac{\lambda^k \E X_i^k}{k!}
+\le 1 + \E X_i^2 \sum_{k\ge2}\frac{\lambda^k M^{k-2}}{k!},
+$$
+where we used $|\E X_i^k| \le \E\big[X_i^2 |X_i|^{k-2}\big] \le M^{k-2}\E X_i^2$ for $k \ge 2$.
+
+Now bound the numerical series. Since $k! \ge 2\cdot 3^{k-2}$ for $k \ge 2$,
+$$
+\sum_{k\ge2}\frac{\lambda^kM^{k-2}}{k!}
+\le \frac{\lambda^2}{2}\sum_{k \ge 2}\left(\frac{\lambda M}{3}\right)^{k-2}
+= \frac{\lambda^2}{2}\cdot\frac{1}{1 - \lambda M/3}
+\qquad\text{for } \lambda M < 3 .
+$$
+Hence, with $1 + u \le e^u$,
+$$
+\E e^{\lambda X_i} \le \exp\left(\frac{\lambda^2\,\E X_i^2}{2(1-\lambda M/3)}\right),
+$$
+and multiplying over $i$ (independence) gives
+$$
+\psi(\lambda) = \log\E e^{\lambda\sum_i X_i} \le \frac{\lambda^2\sigma^2}{2(1 - \lambda M/3)} .
+$$
+Chernoff then gives $\P(\sum_i X_i \ge t) \le \exp\big(\lambda^2\sigma^2/(2(1-\lambda M/3)) - \lambda t\big)$.
+Choose
+$$
+\lambda_\star = \frac{t}{\sigma^2 + Mt/3} \in (0, 3/M),
+$$
+and substitute. Writing $D = \sigma^2 + Mt/3$, we have $1 - \lambda_\star M/3 = (D - Mt/3)/D = \sigma^2/D$,
+so the exponent becomes
+$$
+\frac{(t/D)^2\sigma^2}{2\sigma^2/D} - \frac{t^2}{D} = \frac{t^2}{2D} - \frac{t^2}{D} = -\frac{t^2}{2D}
+= -\frac{t^2}{2\sigma^2 + \tfrac23 Mt},
+$$
+which is the claim.
+</Proof>
+
+<KeyIdea>
+Read the denominator. For $t \lesssim \sigma^2/M$ the term $2\sigma^2$ dominates and the bound is
+$e^{-t^2/2\sigma^2}$ — **Gaussian**, with the true variance, not the range. For $t \gtrsim \sigma^2/M$
+the term $\tfrac23Mt$ dominates and the bound is $e^{-3t/2M}$ — **exponential**. Bernstein therefore
+interpolates between the two behaviours, with the crossover at the scale set by the ratio of variance
+to range. Hoeffding only ever gives the first shape, with $\sigma^2$ replaced by the worst case
+compatible with the range.
+</KeyIdea>
+
+<Note title="Which to use">
+Use Hoeffding when the variables are bounded and the variance is comparable to the square of the
+range (fair coins, balanced labels). Use Bernstein when the variance is much smaller than the range
+(rare events, sparse features, low-noise regression residuals). The
+<TopicRef id="high-dimensional-probability/concentration-of-the-norm">norm concentration</TopicRef>
+proof needs Bernstein, because squares of Gaussians are unbounded but sub-exponential, and there is a
+version of the theorem above for sub-exponential summands with $M$ replaced by
+$\max_i\norm{X_i}_{\psi_1}$.
+</Note>
+
+## Beyond independence: Azuma and McDiarmid
+
+<Definition id="martingale" title="Martingale">
+A sequence $(Z_0, Z_1, \dots, Z_n)$ adapted to a filtration
+$\mathcal{F}_0 \subseteq \dots \subseteq \mathcal{F}_n$ is a **martingale** if each $Z_k$ is integrable
+and $\E[Z_k \mid \mathcal{F}_{k-1}] = Z_{k-1}$ for all $k$. Its **increments** are
+$D_k = Z_k - Z_{k-1}$, which satisfy $\E[D_k\mid\mathcal{F}_{k-1}] = 0$.
+</Definition>
+
+<Theorem id="azuma" title="Azuma–Hoeffding inequality">
+Let $(Z_k)_{k\le n}$ be a martingale whose increments satisfy $|D_k| \le c_k$ almost surely. Then for
+all $t\ge0$,
+$$
+\P\big(Z_n - Z_0 \ge t\big) \le \exp\left(-\frac{t^2}{2\sum_{k=1}^n c_k^2}\right).
+$$
+</Theorem>
+
+<Proof>
+Condition and iterate. For $\lambda > 0$, the tower property gives
+$$
+\E e^{\lambda(Z_n - Z_0)}
+= \E\Big[e^{\lambda(Z_{n-1}-Z_0)}\,\E\big[e^{\lambda D_n}\mid\mathcal{F}_{n-1}\big]\Big],
+$$
+using that $e^{\lambda(Z_{n-1}-Z_0)}$ is $\mathcal{F}_{n-1}$-measurable and may be taken out.
+
+Conditionally on $\mathcal{F}_{n-1}$, the increment $D_n$ has conditional mean $0$ and lies in the
+interval $[-c_n, c_n]$ of length $2c_n$. Hoeffding's lemma applies verbatim to the conditional law —
+its proof used only centring and boundedness — so
+$$
+\E\big[e^{\lambda D_n}\mid\mathcal{F}_{n-1}\big] \le \exp\left(\frac{\lambda^2 (2c_n)^2}{8}\right)
+= \exp\left(\frac{\lambda^2c_n^2}{2}\right).
+$$
+This factor is deterministic, so it comes out of the expectation, and iterating over
+$k = n, n-1,\dots,1$ gives
+$$
+\E e^{\lambda(Z_n-Z_0)} \le \exp\left(\frac{\lambda^2}{2}\sum_{k=1}^n c_k^2\right).
+$$
+Chernoff with $v = \sum_k c_k^2$: minimising $\lambda^2v/2 - \lambda t$ at $\lambda_\star = t/v$ gives
+the exponent $-t^2/(2v)$.
+</Proof>
+
+<Note title="What was bought">
+No independence is assumed anywhere — only that each increment is conditionally centred and bounded.
+This is what makes Azuma the right tool for sequential processes: SGD iterates, online learning
+regret, and the Doob martingale used in the next proof.
+</Note>
+
+<Theorem id="mcdiarmid" title="McDiarmid's bounded differences inequality">
+Let $X_1,\dots,X_n$ be independent random variables with $X_i$ taking values in a set $\Xcal_i$, and
+let $f : \prod_i \Xcal_i \to \R$ satisfy the **bounded differences** condition: for each $i$ there is
+$c_i$ with
+$$
+\big|f(x_1,\dots,x_i,\dots,x_n) - f(x_1,\dots,x_i',\dots,x_n)\big| \le c_i
+$$
+for all $x \in \prod_j \Xcal_j$ and all $x_i' \in \Xcal_i$. Then for $Z = f(X_1,\dots,X_n)$ and every
+$t \ge 0$,
+$$
+\P\big(Z - \E Z \ge t\big) \le \exp\left(-\frac{2t^2}{\sum_{i=1}^n c_i^2}\right).
+$$
+</Theorem>
+
+<Proof>
+Build the **Doob martingale**: let $\mathcal{F}_k = \sigma(X_1,\dots,X_k)$ and
+$$
+Z_k = \E[Z \mid \mathcal{F}_k], \qquad k = 0,1,\dots,n,
+$$
+so $Z_0 = \E Z$ and $Z_n = Z$ (the latter because $Z$ is $\mathcal{F}_n$-measurable). The tower
+property makes $(Z_k)$ a martingale, with increments $D_k = Z_k - Z_{k-1}$.
+
+It remains to show $D_k$ lies in an interval of length at most $c_k$, after which Azuma with
+increments in an interval of length $c_k$ — that is, Hoeffding's lemma giving the factor
+$e^{\lambda^2c_k^2/8}$ — yields the exponent $-2t^2/\sum_k c_k^2$.
+
+Define, for $x_k \in \Xcal_k$,
+$$
+g_k(x_k) = \E\big[Z \mid X_1,\dots,X_{k-1}, X_k = x_k\big],
+$$
+which by independence is an average of $f$ over $X_{k+1},\dots,X_n$ with the first $k$ coordinates
+fixed. Then $Z_k = g_k(X_k)$ and $Z_{k-1} = \E_{X_k}\big[g_k(X_k)\big]$, again using independence of
+$X_k$ from $\mathcal{F}_{k-1}$. Set
+$$
+L_k = \inf_{x_k} g_k(x_k), \qquad U_k = \sup_{x_k}g_k(x_k).
+$$
+Both $Z_k$ and $Z_{k-1}$ lie in $[L_k, U_k]$ — the latter because an average lies between the
+infimum and the supremum — so $D_k \in [L_k - U_k, U_k - L_k]$. Moreover, for any $x_k, x_k'$,
+$$
+\big|g_k(x_k) - g_k(x_k')\big|
+= \Big|\E_{X_{k+1:n}}\big[f(\dots,x_k,\dots) - f(\dots,x_k',\dots)\big]\Big| \le c_k
+$$
+by the bounded-differences hypothesis applied pointwise inside the expectation. Hence
+$U_k - L_k \le c_k$, so $D_k$ is a conditionally centred random variable supported on an interval of
+length at most $c_k$, and Hoeffding's lemma gives
+$\E[e^{\lambda D_k}\mid\mathcal{F}_{k-1}] \le e^{\lambda^2c_k^2/8}$. Iterating as in the Azuma proof
+and optimising over $\lambda$ completes the argument.
+</Proof>
+
+<KeyIdea>
+McDiarmid is the reason
+<TopicRef id="learning-theory/erm-and-uniform-convergence">uniform convergence</TopicRef> arguments
+work. The quantity of interest there is
+$Z = \sup_{f\in\Fcal}\big(R(f) - \hat R_n(f)\big)$, which is a complicated function of the whole
+sample — but changing one sample point changes each empirical risk by at most $1/n$, and the
+supremum is $1$-Lipschitz in the uniform norm, so $Z$ has bounded differences $c_i = 1/n$. McDiarmid
+then concentrates $Z$ around its mean at rate $e^{-2nt^2}$, and the remaining work — bounding
+$\E Z$ — is what Rademacher complexity does.
+</KeyIdea>
+
+## Gaussian concentration
+
+<Theorem id="gaussian-concentration" title="Gaussian concentration for Lipschitz functions">
+Let $X \sim \Ncal(0, I_d)$ and let $f : \R^d \to \R$ be $K$-Lipschitz with respect to
+$\norm{\cdot}_2$. Then
+$$
+\P\big(|f(X) - \E f(X)| \ge t\big) \le 2\exp\left(-\frac{t^2}{2K^2}\right)
+\qquad\text{for all } t\ge0 ,
+$$
+equivalently $\norm{f(X) - \E f(X)}_{\psi_2} \le CK$ for an absolute constant $C$.
+</Theorem>
+
+<Proof sketch>
+The standard proofs go through either the Gaussian isoperimetric inequality or the Gaussian
+logarithmic Sobolev inequality; both are substantial and are not reproduced here. The
+semigroup/log-Sobolev route in outline: the Ornstein–Uhlenbeck semigroup
+$P_s f(x) = \E f(e^{-s}x + \sqrt{1-e^{-2s}}\,G)$ interpolates between $f$ and $\E f$, one shows the
+Gaussian log-Sobolev inequality
+$\operatorname{Ent}(g^2) \le 2\,\E\norm{\nabla g}_2^2$ for the Gaussian measure, and then Herbst's
+argument converts that entropy bound into the MGF bound $\E e^{\lambda(f - \E f)} \le e^{\lambda^2K^2/2}$,
+from which Chernoff gives the stated tail. The references contain complete proofs.
+</Proof>
+
+<NotSaid>
+The dimension $d$ appears **nowhere** in the conclusion. That is the whole point, and it is the
+single most important structural fact in high-dimensional probability. But read the hypothesis
+carefully: $f$ must be Lipschitz *in the Euclidean norm*, and many natural functions are not
+Lipschitz with a dimension-free constant. $f(x) = \sum_i x_i$ is $\sqrt d$-Lipschitz, and the theorem
+correctly returns a bound with a $d$ in it. The theorem is dimension-free; individual applications
+are only as dimension-free as their Lipschitz constants.
+
+The theorem also says nothing about $\E f(X)$, which is often the harder quantity. Concentration
+tells you the value is near *some* number; identifying that number is a separate problem.
+</NotSaid>
+
+<Corollary id="gc-norm" title="Immediate consequence: the norm concentrates">
+$f(x) = \norm{x}_2$ is $1$-Lipschitz, so for $X \sim \Ncal(0,I_d)$,
+$$
+\P\big(|\norm{X}_2 - \E\norm{X}_2| \ge t\big) \le 2e^{-t^2/2},
+$$
+with no dependence on $d$ whatsoever. Since $\E\norm{X}_2 = \sqrt d\,(1 + O(1/d))$, this is the
+statement explored numerically on the
+<TopicRef id="high-dimensional-probability/concentration-of-the-norm">norm concentration</TopicRef>
+page.
+</Corollary>
+
+## Problems
+
+<ProblemRef id="ci-markov-tight" />
+<ProblemRef id="ci-hoeffding-from-lemma" />
+<ProblemRef id="ci-bernstein-crossover" />
+<ProblemRef id="ci-mcdiarmid-median" />
+<ProblemRef id="ci-azuma-random-walk" />
+<ProblemRef id="ci-simulate-bounds" />
+<ProblemRef id="ci-chernoff-legendre" />

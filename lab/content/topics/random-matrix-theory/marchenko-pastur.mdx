@@ -1,0 +1,196 @@
+---
+title: Sample Covariance and the Marchenko–Pastur Law
+summary: What the spectrum of an empirical covariance matrix looks like when the dimension is comparable to the sample size, and why that breaks classical statistics.
+field: random-matrix-theory
+level: 3
+order: 20
+prerequisites: [random-matrix-theory/spectral-norm-of-random-matrices]
+tags: [marchenko-pastur, sample covariance, spectrum, aspect ratio, conditioning]
+estimated_time: 3h
+experiments: [marchenko-pastur]
+claims:
+  - id: mp-law
+    kind: theorem
+    title: Marchenko–Pastur law
+    summary: The empirical spectral distribution of a sample covariance matrix with identity population covariance converges to an explicit density supported on an interval determined by the aspect ratio.
+    proved: false
+    tags: [marchenko-pastur, limiting spectrum]
+  - id: mp-edges
+    kind: proposition
+    title: Bulk edges and the conditioning of the sample covariance
+    summary: The extreme eigenvalues sit at (1 ± sqrt(lambda))^2, so the condition number blows up as the aspect ratio approaches one.
+    proved: true
+    tags: [conditioning, edges]
+  - id: mp-density-normalised
+    kind: proposition
+    title: The Marchenko–Pastur density integrates to one
+    summary: A verification that the stated density is a probability density on its bulk when the aspect ratio is at most one.
+    proved: true
+    tags: [density, verification]
+  - id: classical-limit
+    kind: corollary
+    title: Recovering the classical limit
+    summary: As the aspect ratio tends to zero the bulk collapses to a point mass at one, which is the classical fixed-dimension result.
+    proved: true
+    tags: [asymptotics, classical statistics]
+  - id: mp-not-real-data
+    kind: empirical
+    title: Real covariance spectra are not Marchenko–Pastur
+    summary: Empirical spectra of real data typically show spiked structure that the identity-population law does not describe.
+    proved: false
+    tags: [caveat, spiked model, real data]
+references:
+  - key: marchenko-pastur-1967
+    title: Distribution of eigenvalues for some sets of random matrices
+    authors: Vladimir A. Marchenko and Leonid A. Pastur
+    year: 1967
+    kind: paper
+    note: The original result.
+  - key: bai-silverstein-2
+    title: Spectral Analysis of Large Dimensional Random Matrices
+    authors: Zhidong Bai and Jack W. Silverstein
+    year: 2010
+    kind: book
+    note: Contains the modern proof via Stieltjes transforms, together with the spiked-model extensions.
+  - key: baik-ben-arous-peche
+    title: Phase transition of the largest eigenvalue for nonnull complex sample covariance matrices
+    authors: Jinho Baik, Gérard Ben Arous and Sandrine Péché
+    year: 2005
+    kind: paper
+    url: https://arxiv.org/abs/math/0403022
+    note: The BBP transition, which is what actually governs spiked covariance models.
+  - key: vershynin-hdp-8
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+---
+
+<Intuition>
+You have $n$ samples from $\Ncal(0, I_p)$ and you form the sample covariance
+$\hat\Sigma = \frac1n\sum_i x_ix_i^\top$. Since $\E\hat\Sigma = I_p$, you might expect every eigenvalue
+near $1$. For $p$ fixed and $n\to\infty$ that is correct. But if $p$ grows with $n$ — say $p = n/2$ —
+the eigenvalues spread over an interval of width $O(1)$ and **stay there**, no matter how large $n$
+gets. The number of parameters being estimated grows with the data, and the spread is what that costs.
+</Intuition>
+
+## The law
+
+<Theorem id="mp-law" title="Marchenko–Pastur law">
+Let $X \in \R^{n\times p}$ have i.i.d. entries with mean $0$ and variance $\sigma^2$, and set
+$\hat\Sigma = \frac1n X^\top X$. Suppose $n,p\to\infty$ with $p/n \to \lambda \in (0,\infty)$. Then the
+empirical spectral distribution of $\hat\Sigma$ converges weakly, almost surely, to the
+**Marchenko–Pastur law** $\mu_{MP}$, which has
+
+- density $\displaystyle \rho_\lambda(x) = \frac{\sqrt{(b-x)(x-a)}}{2\pi\sigma^2\lambda x}$ on $[a,b]$, where $a = \sigma^2(1-\sqrt\lambda)^2$ and $b = \sigma^2(1+\sqrt\lambda)^2$;
+- plus an atom of mass $1 - 1/\lambda$ at $0$ when $\lambda > 1$.
+</Theorem>
+
+The proof (via the Stieltjes transform $s(z) = \int (x-z)^{-1}d\mu(x)$, which satisfies a quadratic
+self-consistent equation in the limit) is in the references and is not reproduced here.
+
+<Proposition id="mp-density-normalised" title="The density integrates to one">
+For $\lambda \in (0,1]$ and $\sigma = 1$, $\int_a^b \rho_\lambda(x)\,dx = 1$.
+</Proposition>
+
+<Proof>
+Substitute $x = 1 + \lambda - 2\sqrt\lambda\cos\theta$, which maps $\theta\in[0,\pi]$ onto $[a,b]$
+since $a = 1+\lambda - 2\sqrt\lambda$ and $b = 1+\lambda+2\sqrt\lambda$. A short computation gives
+$(b-x)(x-a) = 4\lambda\sin^2\theta$ and $dx = 2\sqrt\lambda\sin\theta\,d\theta$, so
+$$
+\int_a^b \rho_\lambda \,dx
+= \int_0^\pi \frac{2\sqrt\lambda\,\sin\theta}{2\pi\lambda\,x}\cdot 2\sqrt\lambda\sin\theta\,d\theta
+= \frac{2}{\pi}\int_0^\pi\frac{\sin^2\theta}{1+\lambda-2\sqrt\lambda\cos\theta}\,d\theta .
+$$
+The standard integral $\int_0^\pi \frac{\sin^2\theta}{1 - 2r\cos\theta + r^2}d\theta = \frac{\pi}{2}$
+for $|r|<1$, applied with $r = \sqrt\lambda$ after dividing numerator and denominator by $1$, gives
+the value $\frac2\pi\cdot\frac\pi2 = 1$. (For $\lambda = 1$ the integral is still convergent because
+the $1/x$ singularity at $a=0$ is integrable against $\sqrt{x-a}$.)
+</Proof>
+
+<Proposition id="mp-edges" title="Bulk edges and conditioning">
+With $\sigma = 1$ and $\lambda = p/n \le 1$, the extreme eigenvalues of $\hat\Sigma$ satisfy, almost
+surely in the limit,
+$$
+\lambda_{\max}(\hat\Sigma) \to (1+\sqrt\lambda)^2, \qquad
+\lambda_{\min}(\hat\Sigma) \to (1-\sqrt\lambda)^2,
+$$
+so the condition number satisfies
+$$
+\kappa(\hat\Sigma) \to \left(\frac{1+\sqrt\lambda}{1-\sqrt\lambda}\right)^2 .
+$$
+</Proposition>
+
+<Proof>
+The edges are the endpoints of the support of the limiting measure, and the convergence of the
+extreme eigenvalues to them is the
+<TopicRef id="random-matrix-theory/spectral-norm-of-random-matrices">Bai–Yin law</TopicRef> applied to
+$\hat\Sigma = \frac1n X^\top X$: $\lambda_{\max}(\hat\Sigma) = \sigma_{\max}(X)^2/n$ and
+$\sigma_{\max}(X)/\sqrt n \to 1 + \sqrt\lambda$, and similarly for the minimum. The condition number
+is the ratio.
+</Proof>
+
+<KeyIdea>
+Put numbers in. At $\lambda = 0.01$ ($n = 100p$), $\kappa \approx 1.5$ — the sample covariance is
+essentially as well conditioned as the truth. At $\lambda = 0.5$, $\kappa \approx 34$. At
+$\lambda = 0.9$, $\kappa \approx 1500$. At $\lambda = 1$ the smallest eigenvalue reaches $0$ and
+$\hat\Sigma$ is singular. Every method that inverts a sample covariance — ordinary least squares,
+linear discriminant analysis, Gaussian maximum likelihood, Newton's method on a quadratic — degrades
+along exactly this curve, and the degradation is not a numerical artefact but the true geometry of the
+estimate.
+</KeyIdea>
+
+<ExperimentRef id="marchenko-pastur" />
+
+<Corollary id="classical-limit" title="Recovering the classical limit">
+As $\lambda \downarrow 0$ the support $[(1-\sqrt\lambda)^2,(1+\sqrt\lambda)^2]$ shrinks to $\{1\}$,
+so $\mu_{MP} \Rightarrow \delta_1$. This is the classical statement: for $p$ fixed and $n\to\infty$,
+$\hat\Sigma\to I_p$ and all eigenvalues converge to $1$.
+</Corollary>
+
+<Proof>
+The endpoints are continuous in $\lambda$ with common limit $1$ at $\lambda = 0$, and a sequence of
+probability measures supported on intervals shrinking to a point converges weakly to the point mass
+there.
+</Proof>
+
+<Note title="Two asymptotic regimes, two different answers">
+The classical regime ($p$ fixed, $n\to\infty$) and the high-dimensional regime ($p/n\to\lambda>0$)
+give qualitatively different conclusions about the *same* estimator. Neither is wrong; they describe
+different experiments. The question for a practitioner is which one their data resembles, and for
+modern data — thousands of features, hundreds of samples — the answer is almost always the second.
+This is the whole motivation for the
+<TopicRef id="high-dimensional-statistics/covariance-estimation">high-dimensional statistics</TopicRef>
+section.
+</Note>
+
+## What the law does not describe
+
+<Claim kind="empirical" id="mp-not-real-data" title="Real covariance spectra are not Marchenko–Pastur">
+Plot the eigenvalue histogram of the covariance of a real dataset — word embeddings, gene expression,
+daily asset returns — and it will typically show a Marchenko–Pastur-like bulk **plus a small number of
+large outlying eigenvalues**. The bulk is well described by the law; the outliers are not, and they
+are usually the interesting part.
+</Claim>
+
+<NotSaid>
+The theorem above assumes the population covariance is $\sigma^2 I_p$ — no signal at all. Real data
+has signal, and the relevant model is the **spiked covariance model**:
+$\Sigma = I_p + \sum_{k=1}^r h_k v_kv_k^\top$ with $r$ small. There, the correct statement is the
+Baik–Ben Arous–Péché phase transition: a spike of strength $h$ is detectable in the sample spectrum
+if and only if $h > \sqrt\lambda$, and below that threshold the corresponding sample eigenvalue is
+absorbed into the bulk and the sample eigenvector is asymptotically uncorrelated with $v_k$.
+
+That is a sharp and somewhat brutal statement: there is a signal strength below which no amount of
+eigen-analysis recovers the direction, *not because the estimator is bad* but because the information
+is not in the sample. It is quoted here from the reference and is a separate theorem, not a corollary
+of the Marchenko–Pastur law.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="mp-edges-arithmetic" />
+<ProblemRef id="mp-density-integral" />
+<ProblemRef id="mp-simulate-law" />
+<ProblemRef id="mp-condition-number" />

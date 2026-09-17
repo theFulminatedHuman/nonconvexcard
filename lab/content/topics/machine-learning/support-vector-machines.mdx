@@ -1,0 +1,478 @@
+---
+title: Support Vector Machines — Complete Derivation
+summary: Hard and soft margin, the Lagrangian, every KKT condition interpreted, both duals derived in full, the kernel trick, and the margin generalisation bound.
+field: machine-learning
+level: 3
+order: 40
+prerequisites: [advanced-optimization/duality-and-kkt, machine-learning/kernel-methods-and-rkhs, learning-theory/vc-dimension-and-rademacher]
+tags: [svm, margin, kkt, duality, support vectors, kernel trick, hinge loss]
+estimated_time: 1d
+claims:
+  - id: margin-formula
+    kind: proposition
+    title: The geometric margin
+    summary: The distance from a point to a hyperplane is the functional margin divided by the norm of the weight vector.
+    proved: true
+    tags: [margin, geometry]
+  - id: hard-margin-primal
+    kind: proposition
+    title: The hard-margin primal is a well-posed convex program
+    summary: Scaling invariance is removed by the canonical normalisation, giving a strictly convex quadratic program.
+    proved: true
+    tags: [primal, normalisation, convexity]
+  - id: hard-margin-dual
+    kind: theorem
+    title: The hard-margin SVM dual
+    summary: Maximise the sum of multipliers minus a quadratic form in the labelled Gram matrix, subject to non-negativity and a label-balance constraint.
+    proved: true
+    tags: [dual, derivation]
+  - id: support-vectors
+    kind: corollary
+    title: Support vectors and complementary slackness
+    summary: Only points exactly on the margin can have non-zero multipliers, so the solution depends on those points alone.
+    proved: true
+    tags: [support vectors, sparsity]
+  - id: soft-margin-dual
+    kind: theorem
+    title: The soft-margin SVM dual
+    summary: The same dual with the multipliers box-constrained above by C; the slack variables disappear entirely.
+    proved: true
+    tags: [soft margin, box constraint, dual]
+  - id: kkt-classification
+    kind: proposition
+    title: The three regimes of a training point
+    summary: Every point is interior, on the margin, or a margin violator, determined by its multiplier.
+    proved: true
+    tags: [kkt, classification of points]
+  - id: hinge-equivalence
+    kind: proposition
+    title: The soft-margin SVM is regularised hinge-loss minimisation
+    summary: Eliminating the slack variables turns the constrained program into an unconstrained convex objective.
+    proved: true
+    tags: [hinge loss, equivalence]
+  - id: margin-bound
+    kind: theorem
+    title: Margin-based generalisation bound
+    summary: The risk is controlled by the empirical margin loss plus a term depending on the margin and the data radius, with no dimension dependence.
+    proved: true
+    tags: [generalisation, rademacher, margin]
+  - id: svm-scaling
+    kind: empirical
+    title: Why SVMs are no longer the default
+    summary: The cubic cost in the sample size, not a theoretical deficiency, is what displaced them.
+    proved: false
+    tags: [practice, scaling]
+references:
+  - key: boser-guyon-vapnik
+    title: A Training Algorithm for Optimal Margin Classifiers
+    authors: Bernhard E. Boser, Isabelle M. Guyon and Vladimir N. Vapnik
+    year: 1992
+    kind: paper
+  - key: cortes-vapnik
+    title: Support-Vector Networks
+    authors: Corinna Cortes and Vladimir Vapnik
+    year: 1995
+    kind: paper
+    note: The soft-margin formulation.
+  - key: scholkopf-smola-2
+    title: Learning with Kernels
+    authors: Bernhard Schölkopf and Alexander J. Smola
+    year: 2002
+    kind: book
+  - key: platt-smo
+    title: Sequential Minimal Optimization
+    authors: John C. Platt
+    year: 1998
+    kind: paper
+  - key: steinwart-christmann-2
+    title: Support Vector Machines
+    authors: Ingo Steinwart and Andreas Christmann
+    year: 2008
+    kind: book
+---
+
+Data $(x_i,y_i)_{i=1}^n$ with $x_i\in\R^d$ and $y_i\in\{\pm1\}$. A hyperplane is
+$\{x : \ip{w}{x}+b = 0\}$, and the classifier is $x\mapsto\sign(\ip{w}{x}+b)$.
+
+## The geometric margin
+
+<Proposition id="margin-formula" title="The geometric margin">
+The Euclidean distance from $x_0$ to the hyperplane $\{\ip wx+b=0\}$ is
+$$
+\frac{|\ip{w}{x_0}+b|}{\norm w_2},
+$$
+and for a correctly classified point the **signed** distance is
+$\dfrac{y_0(\ip{w}{x_0}+b)}{\norm{w}_2}$.
+</Proposition>
+
+<Proof>
+The distance is $\min\{\norm{x_0-x}_2 : \ip wx+b=0\}$. Writing $x = x_0+v$, the constraint becomes
+$\ip wv = -(\ip w{x_0}+b)$, and we minimise $\norm v_2$ subject to that single linear equation. By
+Cauchy–Schwarz, $|\ip wv| \le \norm w_2\norm v_2$, so
+$\norm v_2 \ge |\ip w{x_0}+b|/\norm w_2$, with equality when $v$ is parallel to $w$ — which is
+achievable. The signed version follows by multiplying through by $y_0 \in \{\pm1\}$.
+</Proof>
+
+<Intuition>
+The quantity $y_i(\ip w{x_i}+b)$ is the **functional margin**; dividing by $\norm w_2$ makes it the
+**geometric margin**, a distance in the input space. The functional margin can be inflated by scaling
+$(w,b)$, which changes no decision; the geometric margin cannot. Any sensible objective must depend
+only on the latter, and the canonical normalisation below is how that is arranged.
+</Intuition>
+
+## Hard margin
+
+We want the hyperplane that maximises the distance to the closest point:
+$$
+\max_{w,b}\ \min_i \frac{y_i(\ip{w}{x_i}+b)}{\norm w_2}.
+$$
+
+<Proposition id="hard-margin-primal" title="The hard-margin primal">
+Assume the data is linearly separable. The margin-maximisation problem is equivalent to
+$$
+\boxed{\ \min_{w,b}\ \tfrac12\norm w_2^2 \quad\text{subject to}\quad y_i(\ip{w}{x_i}+b)\ge1,\ i=1,\dots,n\ }
+$$
+which is a strictly convex quadratic program in $w$ (convex, not strict, in $(w,b)$ jointly).
+</Proposition>
+
+<Proof>
+The objective $\min_i y_i(\ip w{x_i}+b)/\norm w_2$ is invariant under $(w,b)\mapsto(cw,cb)$ for
+$c>0$, so we may fix the scale. Choose the **canonical normalisation**
+$\min_i y_i(\ip w{x_i}+b) = 1$, which is possible because the data is separable (so the minimum is
+positive and can be scaled to $1$). Under that normalisation the geometric margin is exactly
+$1/\norm w_2$, so maximising it is minimising $\norm w_2$, equivalently $\tfrac12\norm w_2^2$.
+
+Replacing the equality $\min_i(\cdot)=1$ by the inequalities $y_i(\ip w{x_i}+b)\ge1$ does not change
+the optimum: at a minimiser of $\norm w_2$ subject to the inequalities, at least one constraint must
+be active, since otherwise all constraints hold with slack and $(w,b)$ could be scaled down by a
+factor $c<1$, reducing the objective.
+
+Convexity: the objective is a convex quadratic and the constraints are affine. Strict convexity in
+$w$ follows from $\nabla_w^2 = I \succ 0$; there is no curvature in $b$, so the pair $(w,b)$ is not a
+strictly convex problem, but the minimiser is still unique for separable data because the active
+constraints pin down $b$.
+</Proof>
+
+### The Lagrangian and the dual
+
+<Theorem id="hard-margin-dual" title="The hard-margin SVM dual">
+With multipliers $\alpha\in\R^n_{\ge0}$ for the $n$ constraints, the dual problem is
+$$
+\boxed{\
+\max_{\alpha\ge0}\ \ \sum_{i=1}^n\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j}
+\quad\text{subject to}\quad \sum_{i=1}^n\alpha_iy_i = 0 \ }
+$$
+and strong duality holds. The primal solution is recovered as
+$$
+w^\star = \sum_i\alpha_i^\star y_ix_i,
+\qquad
+b^\star = y_k - \ip{w^\star}{x_k}\ \text{ for any } k \text{ with } \alpha_k^\star>0 .
+$$
+</Theorem>
+
+<Proof>
+**Step 1: the Lagrangian.** Write the constraints as $1 - y_i(\ip w{x_i}+b)\le0$:
+$$
+\mathcal{L}(w,b,\alpha) = \frac12\norm w_2^2 + \sum_{i=1}^n\alpha_i\Big(1 - y_i\big(\ip{w}{x_i}+b\big)\Big),
+\qquad \alpha\ge0 .
+$$
+
+**Step 2: minimise over $w$.** $\mathcal{L}$ is strictly convex in $w$, so set the gradient to zero:
+$$
+\nabla_w\mathcal{L} = w - \sum_i\alpha_iy_ix_i = 0
+\quad\Longrightarrow\quad
+w = \sum_i\alpha_iy_ix_i .
+$$
+This is the **first stationarity condition**, and it already carries the central structural fact: the
+optimal $w$ is a linear combination of the training inputs, with coefficients $\alpha_iy_i$.
+
+**Step 3: minimise over $b$.** $\mathcal{L}$ is *affine* in $b$ with coefficient
+$-\sum_i\alpha_iy_i$. An affine function has infimum $-\infty$ unless its coefficient vanishes. Hence
+$$
+g(\alpha) = \inf_{w,b}\mathcal{L} = -\infty \quad\text{unless}\quad \sum_i\alpha_iy_i=0 .
+$$
+This is where the dual **equality constraint comes from**: it is not imposed, it is the condition for
+the dual function to be finite.
+
+**Step 4: substitute back.** On the set where $\sum_i\alpha_iy_i=0$, substituting
+$w = \sum_i\alpha_iy_ix_i$ gives
+$$
+\frac12\norm w_2^2 = \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j},
+\qquad
+\sum_i\alpha_iy_i\ip{w}{x_i} = \sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j},
+$$
+and the $b$ term vanishes by the equality constraint. Therefore
+$$
+g(\alpha) = \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j} + \sum_i\alpha_i - \sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j}
+= \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j} .
+$$
+
+**Step 5: strong duality.** The primal is convex with affine constraints, and for separable data
+there is a strictly feasible point (scale up any separating $(w,b)$ so that all margins exceed $1$),
+so <TopicRef id="advanced-optimization/duality-and-kkt">Slater's condition</TopicRef> applies and
+$d^\star=p^\star$ with the dual optimum attained.
+
+**Step 6: recover $b$.** For any $k$ with $\alpha_k^\star>0$, complementary slackness gives
+$y_k(\ip{w^\star}{x_k}+b^\star)=1$, hence $b^\star = y_k^{-1} - \ip{w^\star}{x_k} = y_k - \ip{w^\star}{x_k}$
+using $y_k^{-1}=y_k$ for $y_k\in\{\pm1\}$. In practice one averages over all such $k$ for numerical
+stability.
+</Proof>
+
+<KeyIdea>
+Three things happened in that derivation and all three matter.
+
+1. **The dual involves the data only through the inner products $\ip{x_i}{x_j}$.** Replace them with $K(x_i,x_j)$ and the entire derivation goes through verbatim. That is the kernel trick, and it is available *because* the dual was derived, not as a separate idea.
+2. **The dual has $n$ variables and the primal has $d+1$.** For $d\gg n$ — the kernel case, where $d$ may be infinite — the dual is the tractable one.
+3. **The equality constraint is an artefact of the unregularised bias.** Formulations without a bias term, or with $b$ inside the penalty, have no such constraint. It is worth knowing which convention a piece of software uses.
+</KeyIdea>
+
+<Corollary id="support-vectors" title="Support vectors">
+At the optimum, $\alpha_i^\star>0$ only for points with $y_i(\ip{w^\star}{x_i}+b^\star)=1$ — the points
+lying exactly on the margin. Consequently
+$$
+w^\star = \sum_{i\in\mathrm{SV}}\alpha_i^\star y_ix_i, \qquad \mathrm{SV} = \{i : \alpha_i^\star>0\},
+$$
+and deleting any non-support vector from the training set does not change the solution.
+</Corollary>
+
+<Proof>
+Complementary slackness gives $\alpha_i^\star\big(1-y_i(\ip{w^\star}{x_i}+b^\star)\big)=0$, so
+$\alpha_i^\star>0$ forces the constraint to be active. For the deletion claim: remove a point $j$ with
+$\alpha_j^\star=0$. The pair $(w^\star,b^\star)$ is still feasible for the reduced problem, and the
+reduced primal optimum cannot be larger than the full one (fewer constraints), so
+$(w^\star,b^\star)$, together with $\alpha^\star$ restricted to the remaining indices, satisfies the
+KKT conditions of the reduced problem — which are sufficient by convexity.
+</Proof>
+
+## Soft margin
+
+Real data is not separable, so relax the constraints with slacks $\xi_i \ge 0$:
+$$
+\min_{w,b,\xi}\ \frac12\norm w_2^2 + C\sum_{i=1}^n\xi_i
+\quad\text{subject to}\quad
+y_i(\ip w{x_i}+b)\ge 1-\xi_i,\qquad \xi_i\ge0 .
+$$
+
+<Theorem id="soft-margin-dual" title="The soft-margin SVM dual">
+The dual is
+$$
+\boxed{\
+\max_{\alpha}\ \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j}
+\quad\text{subject to}\quad 0\le\alpha_i\le C,\quad \sum_i\alpha_iy_i=0 \ }
+$$
+— identical to the hard-margin dual except that the multipliers are **boxed above by $C$**. The slack
+variables do not appear.
+</Theorem>
+
+<Proof>
+**Step 1: Lagrangian with two families of multipliers**, $\alpha_i\ge0$ for the margin constraints and
+$\mu_i\ge0$ for $\xi_i\ge0$:
+$$
+\mathcal{L}(w,b,\xi,\alpha,\mu)
+= \frac12\norm w_2^2 + C\sum_i\xi_i + \sum_i\alpha_i\Big(1-\xi_i - y_i(\ip w{x_i}+b)\Big) - \sum_i\mu_i\xi_i .
+$$
+
+**Step 2: stationarity in $w$ and $b$.** Exactly as before,
+$$
+\nabla_w\mathcal{L}=0 \Rightarrow w = \sum_i\alpha_iy_ix_i,
+\qquad
+\partial_b\mathcal{L}=0 \Rightarrow \sum_i\alpha_iy_i=0 .
+$$
+
+**Step 3: stationarity in $\xi$.** $\mathcal{L}$ is affine in each $\xi_i$ with coefficient
+$C - \alpha_i - \mu_i$. Again an affine function is unbounded below unless the coefficient vanishes:
+$$
+\frac{\partial\mathcal{L}}{\partial\xi_i} = C - \alpha_i - \mu_i = 0
+\quad\Longrightarrow\quad
+\mu_i = C - \alpha_i .
+$$
+Combined with $\mu_i\ge0$ this gives $\alpha_i\le C$ — **the box constraint, derived rather than
+imposed**. And substituting $\mu_i = C-\alpha_i$ makes all $\xi$ terms cancel:
+$$
+C\xi_i - \alpha_i\xi_i - \mu_i\xi_i = \xi_i(C - \alpha_i - \mu_i) = 0 .
+$$
+
+**Step 4: substitute.** What remains is exactly the hard-margin computation of Step 4 above, so
+$$
+g(\alpha) = \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\ip{x_i}{x_j},
+$$
+now on the domain $\{0\le\alpha\le C,\ \sum_i\alpha_iy_i=0\}$.
+
+**Step 5: strong duality.** The problem is convex with affine constraints and is always strictly
+feasible: take any $(w,b)$ and $\xi_i$ large enough. So Slater applies with no separability
+assumption, and $d^\star = p^\star$.
+</Proof>
+
+<Proposition id="kkt-classification" title="The three regimes of a training point">
+At the optimum, exactly one of the following holds for each $i$:
+
+| $\alpha_i^\star$ | $\xi_i^\star$ | Margin $y_i(\ip{w^\star}{x_i}+b^\star)$ | Interpretation |
+| --- | --- | --- | --- |
+| $0$ | $0$ | $\ge1$ | interior, correctly classified with room to spare |
+| $(0,C)$ | $0$ | $=1$ | on the margin — a *margin* support vector |
+| $C$ | $\ge0$ | $\le1$ | inside the margin or misclassified — a *bound* support vector |
+</Proposition>
+
+<Proof>
+The KKT conditions are: $\alpha_i(1-\xi_i-y_i(\ip w{x_i}+b))=0$, $\mu_i\xi_i=0$, and
+$\mu_i = C-\alpha_i$.
+
+If $\alpha_i=0$ then $\mu_i = C>0$, so $\xi_i=0$, and the margin constraint gives
+$y_i(\cdot)\ge1-\xi_i = 1$.
+
+If $0<\alpha_i<C$ then $\mu_i = C-\alpha_i>0$, so $\xi_i=0$; and $\alpha_i>0$ activates the margin
+constraint, giving $y_i(\cdot) = 1-\xi_i = 1$.
+
+If $\alpha_i=C$ then $\mu_i=0$ and $\xi_i$ is unconstrained by that condition; $\alpha_i>0$ activates
+the margin constraint, giving $y_i(\cdot) = 1-\xi_i \le 1$.
+</Proof>
+
+<KeyIdea>
+This table is the whole behaviour of the algorithm in one place, and every entry was *derived* from
+the KKT conditions rather than asserted. Note that $C$ has a clean interpretation: it is the cap on
+how much influence a single point may have. Small $C$ means no point can pull the boundary far — a
+wide, soft margin tolerant of violations; large $C$ approaches the hard-margin problem. It is the
+inverse of a regularisation strength, as the next proposition makes explicit.
+</KeyIdea>
+
+<Proposition id="hinge-equivalence" title="The soft-margin SVM is regularised hinge-loss minimisation">
+The soft-margin primal is equivalent to the unconstrained convex problem
+$$
+\min_{w,b}\ \frac{1}{2}\norm{w}_2^2 + C\sum_{i=1}^n\big[1 - y_i(\ip{w}{x_i}+b)\big]_+,
+\qquad [u]_+ = \max(u,0) .
+$$
+</Proposition>
+
+<Proof>
+For fixed $(w,b)$, minimise over $\xi$. The constraints are
+$\xi_i \ge 1 - y_i(\ip w{x_i}+b)$ and $\xi_i\ge0$, i.e.
+$\xi_i \ge [1-y_i(\ip w{x_i}+b)]_+$, and the objective is increasing in each $\xi_i$. So the optimal
+$\xi_i$ is exactly that lower bound, and substituting gives the stated objective.
+</Proof>
+
+<Note title="Why this matters">
+The equivalence reveals the SVM as one member of a family: replace the hinge by the logistic loss and
+you get <TopicRef id="machine-learning/logistic-regression">regularised logistic regression</TopicRef>;
+replace it by the squared loss and you get <TopicRef id="machine-learning/linear-and-ridge-regression">ridge
+regression</TopicRef>. What distinguishes the hinge is that it is **exactly zero** for margins above
+$1$, which is what produces sparsity in $\alpha$ — the same non-smoothness-creates-sparsity mechanism
+as $\ell^1$ versus $\ell^2$ regularisation.
+</Note>
+
+## The kernel SVM
+
+Since the dual depends on the data only through $\ip{x_i}{x_j}$, substitute any
+<TopicRef id="machine-learning/kernel-methods-and-rkhs">positive definite kernel</TopicRef>:
+$$
+\max_{0\le\alpha\le C,\ \alpha^\top y=0}\ \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_jK(x_i,x_j),
+$$
+with decision function
+$$
+f(x) = \sum_{i\in\mathrm{SV}}\alpha_i^\star y_iK(x_i,x) + b^\star .
+$$
+Positive definiteness of $K$ is exactly what makes the dual objective concave (the matrix
+$Q_{ij} = y_iy_jK(x_i,x_j)$ is PSD, being $\diag(y)\mathbf{K}\diag(y)$), so the dual remains a convex
+program. Note also that $f$ is precisely the form the
+<TopicRef id="machine-learning/kernel-methods-and-rkhs">representer theorem</TopicRef> predicts, with
+the additional information that most coefficients are zero.
+
+## The margin generalisation bound
+
+<Theorem id="margin-bound" title="Margin-based generalisation bound">
+Let $\norm{x_i}_2\le R$ and consider the class $\Fcal_B = \{x\mapsto\ip wx : \norm w_2\le B\}$. Fix
+$\gamma>0$. With probability at least $1-\delta$, simultaneously for all $f\in\Fcal_B$,
+$$
+\P\big(Y f(X) \le 0\big)
+\;\le\;
+\frac1n\sum_{i=1}^n\one\big\{y_if(x_i)\le\gamma\big\}
++ \frac{2BR}{\gamma\sqrt n} + \sqrt{\frac{\log(1/\delta)}{2n}} .
+$$
+**No dependence on the dimension $d$.**
+</Theorem>
+
+<Proof>
+Let $\phi_\gamma(u) = \min\big(1,\max(0, 1 - u/\gamma)\big)$ be the ramp surrogate: it is
+$1/\gamma$-Lipschitz, equals $1$ for $u\le0$, equals $0$ for $u\ge\gamma$, and satisfies
+$$
+\one\{u\le0\} \le \phi_\gamma(u) \le \one\{u\le\gamma\}.
+$$
+
+By the <TopicRef id="learning-theory/vc-dimension-and-rademacher">Rademacher bound</TopicRef> applied
+to the class $\{(x,y)\mapsto\phi_\gamma(yf(x)) : f\in\Fcal_B\}$,
+$$
+\E\phi_\gamma(Yf(X)) \le \frac1n\sum_i\phi_\gamma(y_if(x_i)) + 2\mathfrak{R}_n(\phi_\gamma\circ\Fcal_B) + \sqrt{\frac{\log(1/\delta)}{2n}} .
+$$
+By <TopicRef id="learning-theory/vc-dimension-and-rademacher">Talagrand's contraction lemma</TopicRef>,
+$\mathfrak{R}_n(\phi_\gamma\circ\Fcal_B)\le\frac1\gamma\mathfrak{R}_n(\Fcal_B)$ (the sign $y_i$ can be
+absorbed into the Rademacher variables, since $y_i\eps_i$ is again a Rademacher sequence). And by the
+linear-class proposition, $\mathfrak{R}_n(\Fcal_B)\le BR/\sqrt n$.
+
+Finally use the two-sided sandwich on $\phi_\gamma$: the left-hand side is at least
+$\P(Yf(X)\le0)$ and the empirical term is at most the empirical $\gamma$-margin error.
+</Proof>
+
+<KeyIdea>
+Read the bound. It trades **empirical margin error** against $BR/(\gamma\sqrt n)$. Maximising the
+margin $\gamma$ at fixed $\norm w_2 \le B$ — which is exactly what the SVM primal does — directly
+minimises the bound's second term. So the algorithm is not a heuristic that happens to have a bound
+attached; the bound is the justification for the objective.
+
+And the absence of $d$ is the point. A linear classifier in infinite dimension (the kernel case) can
+still generalise, provided the margin is large relative to $BR$. This is the precise reason the
+kernel trick is not automatically a recipe for overfitting.
+</KeyIdea>
+
+<NotSaid>
+The bound has real limitations. $\gamma$ must be fixed **before** seeing the data, or a union bound
+over a grid of $\gamma$ values must be paid. $B$ and $R$ are typically unknown and must be estimated
+or bounded a priori. And the bound is usually numerically loose: for realistic $n$, $B$, $R$ and
+$\gamma$, the term $2BR/(\gamma\sqrt n)$ often exceeds $1$, making the statement vacuous even when the
+classifier performs well. It explains the *shape* of the right objective without certifying the
+performance of a particular trained model — which is the standard situation in
+<TopicRef id="learning-theory/erm-and-uniform-convergence">learning theory</TopicRef>.
+</NotSaid>
+
+## Solving the dual
+
+<Algorithm title="SMO — sequential minimal optimisation">
+<ol>
+<li><strong>Observation.</strong> The equality constraint $\sum_i\alpha_iy_i=0$ means no single $\alpha_i$ can be changed alone; two must move together.</li>
+<li><strong>Select</strong> a pair $(i,j)$ violating the KKT conditions most severely.</li>
+<li><strong>Solve exactly</strong> the two-variable subproblem: with $\alpha_iy_i+\alpha_jy_j$ held fixed, the objective is a one-dimensional concave quadratic on an interval, so it has a closed-form maximiser followed by clipping to the box $[0,C]$.</li>
+<li><strong>Update</strong> $b$ from the KKT conditions of the changed pair.</li>
+<li><strong>Repeat</strong> until the KKT conditions hold to tolerance.</li>
+</ol>
+</Algorithm>
+
+Each step is $O(n)$ (to update the cached decision values) and closed-form, which is why SMO made
+kernel SVMs practical. There is no need for a general QP solver.
+
+<Claim kind="empirical" id="svm-scaling" title="Why SVMs are no longer the default">
+SVMs dominated applied machine learning from roughly 1995 to 2012 and are now rare in large-scale
+settings.
+</Claim>
+
+<NotSaid>
+The reasons are computational, not theoretical:
+
+- The kernel matrix is $O(n^2)$ to store and the exact solve is $O(n^3)$; SMO reduces the constant but not the asymptotics. At $n = 10^7$ this is impossible.
+- Prediction costs $O(|\mathrm{SV}|)$ kernel evaluations, and the number of support vectors typically grows linearly with $n$ on noisy problems, so inference does not amortise.
+- Multi-class requires one-versus-rest or one-versus-one reductions rather than a native formulation.
+- The kernel must be chosen; learning the representation from data, which is what deep networks do, has proved more effective on perceptual tasks.
+
+What has *not* aged is the mathematics. The margin theory, the duality derivation and the
+representer-theorem structure are all still correct and still the cleanest example in the subject of
+an algorithm derived from a generalisation bound. Linear SVMs, trained by primal methods on the hinge
+loss, remain competitive and widely used for high-dimensional sparse data.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="svm-margin-distance" />
+<ProblemRef id="svm-derive-hard-dual" />
+<ProblemRef id="svm-derive-soft-dual" />
+<ProblemRef id="svm-kkt-regimes" />
+<ProblemRef id="svm-hinge-equivalence" />
+<ProblemRef id="svm-two-point-dual" />
+<ProblemRef id="svm-margin-bound" />
+<ProblemRef id="svm-implement-smo" />

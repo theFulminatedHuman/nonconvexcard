@@ -1,0 +1,315 @@
+---
+title: Convolution, Recurrence and Normalisation
+summary: Equivariance as the defining property of convolution, the Fourier view, the vanishing-gradient computation for RNNs, and the LSTM gating equations derived from it.
+field: deep-learning
+level: 2
+order: 20
+prerequisites: [deep-learning/approximation-and-backpropagation]
+tags: [convolution, equivariance, fourier, cnn, rnn, lstm, gru, batch norm, layer norm]
+estimated_time: 3h
+papers: [alexnet, resnet, batchnorm]
+claims:
+  - id: conv-equivariance
+    kind: theorem
+    title: Translation-equivariant linear maps are exactly convolutions
+    summary: Equivariance is not a property convolution happens to have; it characterises convolution completely.
+    proved: true
+    tags: [convolution, equivariance, characterisation]
+  - id: conv-theorem
+    kind: theorem
+    title: Convolution theorem
+    summary: Convolution becomes pointwise multiplication in the Fourier basis, which diagonalises every convolution at once.
+    proved: true
+    tags: [fourier, diagonalisation]
+  - id: receptive-field
+    kind: proposition
+    title: Receptive field growth
+    summary: Stacked convolutions grow the receptive field linearly, dilation grows it exponentially.
+    proved: true
+    tags: [receptive field, dilation]
+  - id: rnn-jacobian
+    kind: proposition
+    title: The RNN gradient is a product of recurrent Jacobians
+    summary: Backpropagation through time multiplies the same matrix T times, so the gradient decays or explodes exponentially in the sequence length.
+    proved: true
+    tags: [rnn, vanishing gradient, bptt]
+  - id: lstm-gating
+    kind: proposition
+    title: The LSTM cell state has an additive path with Jacobian equal to the forget gate
+    summary: Gating replaces a matrix product by a product of scalars in (0,1), which is what makes long-range gradients survivable.
+    proved: true
+    tags: [lstm, gating, constant error carousel]
+  - id: batchnorm-mechanism
+    kind: empirical
+    title: Why batch normalisation helps is not settled
+    summary: The original internal-covariate-shift explanation has been challenged; smoothing of the loss landscape is the leading alternative.
+    proved: false
+    tags: [batch norm, open question]
+references:
+  - key: lecun-1989
+    title: Backpropagation Applied to Handwritten Zip Code Recognition
+    authors: Yann LeCun and collaborators
+    year: 1989
+    kind: paper
+  - key: hochreiter-schmidhuber
+    title: Long Short-Term Memory
+    authors: Sepp Hochreiter and Jürgen Schmidhuber
+    year: 1997
+    kind: paper
+  - key: pascanu-et-al
+    title: On the difficulty of training Recurrent Neural Networks
+    authors: Razvan Pascanu, Tomas Mikolov and Yoshua Bengio
+    year: 2013
+    kind: paper
+    url: https://arxiv.org/abs/1211.5063
+  - key: ioffe-szegedy
+    title: 'Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift'
+    authors: Sergey Ioffe and Christian Szegedy
+    year: 2015
+    kind: paper
+    url: https://arxiv.org/abs/1502.03167
+  - key: santurkar-et-al
+    title: How Does Batch Normalization Help Optimization?
+    authors: Shibani Santurkar, Dimitris Tsipras, Andrew Ilyas and Aleksander Mądry
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1805.11604
+  - key: cohen-welling
+    title: Group Equivariant Convolutional Networks
+    authors: Taco S. Cohen and Max Welling
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1602.07576
+---
+
+## Convolution is forced by equivariance
+
+<Definition id="conv-def" title="Discrete convolution">
+For signals on $\Z_n$ (cyclically indexed),
+$$
+(k * x)[i] = \sum_{j\in\Z_n} k[j]\,x[i-j] .
+$$
+Let $T_s$ denote the shift $(T_sx)[i] = x[i-s]$.
+</Definition>
+
+<Theorem id="conv-equivariance" title="Translation-equivariant linear maps are exactly convolutions">
+Let $A:\R^{\Z_n}\to\R^{\Z_n}$ be linear. Then
+$$
+A T_s = T_s A \quad\text{for all } s\in\Z_n
+\qquad\Longleftrightarrow\qquad
+Ax = k*x \ \text{ for some } k .
+$$
+</Theorem>
+
+<Proof>
+($\Leftarrow$) Compute: $(k*(T_sx))[i] = \sum_jk[j]x[i-s-j] = (k*x)[i-s] = (T_s(k*x))[i]$.
+
+($\Rightarrow$) Let $e_0$ be the indicator of index $0$ and set $k = Ae_0$. Since $e_m = T_me_0$,
+equivariance gives $Ae_m = AT_me_0 = T_mAe_0 = T_mk$. Any $x = \sum_mx[m]e_m$, so by linearity
+$$
+(Ax)[i] = \sum_m x[m]\,(T_mk)[i] = \sum_m x[m]\,k[i-m] = (k*x)[i].
+$$
+</Proof>
+
+<KeyIdea>
+Convolution is not a clever choice of architecture; it is the *only* linear map commuting with
+translation. So a designer who wants translation equivariance has no freedom at all in the linear
+part — the weight sharing in a CNN is a theorem, not a heuristic. This is the template for the whole
+geometric-deep-learning programme: fix a symmetry group, and the equivariant linear maps are forced.
+Cohen and Welling carry this out for rotations and reflections.
+</KeyIdea>
+
+<Theorem id="conv-theorem" title="Convolution theorem">
+Let $\hat x[\omega] = \sum_i x[i]e^{-2\pi\i\omega i/n}$ be the discrete Fourier transform. Then
+$$
+\widehat{k*x}[\omega] = \hat k[\omega]\,\hat x[\omega].
+$$
+Equivalently: the Fourier basis diagonalises every convolution operator simultaneously, with
+eigenvalues $\hat k[\omega]$.
+</Theorem>
+
+<Proof>
+$$
+\widehat{k*x}[\omega] = \sum_i\sum_j k[j]x[i-j]e^{-2\pi\i\omega i/n}.
+$$
+Substitute $i = j+m$ and split the exponential:
+$$
+= \sum_jk[j]e^{-2\pi\i\omega j/n}\sum_m x[m]e^{-2\pi\i\omega m/n} = \hat k[\omega]\hat x[\omega].
+$$
+For the diagonalisation statement: the character $\chi_\omega[i] = e^{2\pi\i\omega i/n}$ satisfies
+$k*\chi_\omega = \hat k[\omega]\,\chi_\omega$ by the same computation, so each $\chi_\omega$ is an
+eigenvector with the stated eigenvalue.
+</Proof>
+
+<Note title="What the Fourier view buys">
+Three things. It makes the $O(n\log n)$ FFT-based convolution possible. It explains what a learned
+filter *is* — a frequency response, which is why visualising early CNN filters shows oriented
+band-pass structures. And it makes the effect of stacking transparent: composing convolutions
+multiplies frequency responses, so a deep stack of small filters can realise a sharp frequency
+selectivity that no single small filter can.
+</Note>
+
+<Proposition id="receptive-field" title="Receptive field growth">
+Stacking $L$ convolutions of kernel size $k$ with stride $1$ gives receptive field
+$1 + L(k-1)$ — linear in depth. Using dilation $2^{\ell}$ at layer $\ell$ gives receptive field
+$1+(k-1)(2^L-1)$ — exponential in depth.
+</Proposition>
+
+<Proof>
+Each layer of kernel size $k$ and dilation $d$ extends the receptive field by $d(k-1)$. Summing with
+$d = 1$ gives $L(k-1)$; summing with $d = 2^{\ell-1}$ for $\ell=1,\dots,L$ gives
+$(k-1)\sum_{\ell<L}2^\ell = (k-1)(2^L-1)$.
+</Proof>
+
+Pooling and stride have the same effect by a different mechanism: they reduce spatial resolution so
+that a fixed kernel covers a larger fraction of the original input. Note that pooling also destroys
+equivariance and replaces it with approximate **invariance** — a max over a window is unchanged by
+small shifts within the window, which is what is wanted at the output but not in the middle.
+
+## Recurrence and the vanishing gradient
+
+<Definition id="rnn-def" title="Vanilla RNN">
+$$
+h_t = \rho\big(W h_{t-1} + Ux_t + b\big),\qquad t=1,\dots,T,
+$$
+with output $\hat y = g(h_T)$ and loss $\mathcal{J}$.
+</Definition>
+
+<Proposition id="rnn-jacobian" title="The RNN gradient is a product of recurrent Jacobians">
+$$
+\frac{\partial\mathcal{J}}{\partial h_1}
+= \left(\prod_{t=2}^{T} \diag\big(\rho'(z_t)\big)W^\top\right)\frac{\partial\mathcal{J}}{\partial h_T},
+$$
+where $z_t = Wh_{t-1}+Ux_t+b$. Consequently
+$$
+\left\|\frac{\partial\mathcal{J}}{\partial h_1}\right\|_2
+\le \big(\norm{\rho'}_\infty\norm{W}\big)^{T-1}\left\|\frac{\partial\mathcal{J}}{\partial h_T}\right\|_2 .
+$$
+If $\norm{\rho'}_\infty\norm W<1$ the gradient vanishes exponentially in $T$; if
+$\sigma_{\min}(W)\norm{\rho'}>1$ it explodes.
+</Proposition>
+
+<Proof>
+The chain rule through the recurrence gives
+$\partial h_t/\partial h_{t-1} = \diag(\rho'(z_t))W$, and composing over $t$ gives the product; the
+transpose appears because the adjoint propagates backwards. The bound is submultiplicativity. Note
+that **the same matrix $W$ appears at every step**, so unlike the feedforward case in the
+<TopicRef id="deep-learning/approximation-and-backpropagation">previous page</TopicRef> there is no
+averaging over independent layers: the growth rate is determined by the single spectral quantity
+$\norm{\rho'}_\infty\norm W$, with no possibility of the fluctuations cancelling.
+</Proof>
+
+<KeyIdea>
+For $\tanh$, $\norm{\rho'}_\infty = 1$, so stability requires $\norm W \approx 1$ exactly — a measure-zero
+condition. Either the gradient dies and the network cannot learn dependencies beyond a few dozen
+steps, or it explodes and training diverges. Gradient clipping addresses the explosion (it bounds the
+step, at the cost of biasing the direction); nothing about a vanilla RNN addresses the vanishing.
+</KeyIdea>
+
+<Proposition id="lstm-gating" title="The LSTM cell state has an additive path">
+The LSTM equations are
+$$
+\begin{aligned}
+f_t &= \sigma(W_f[h_{t-1},x_t]+b_f) &&\text{(forget)}\\
+i_t &= \sigma(W_i[h_{t-1},x_t]+b_i) &&\text{(input)}\\
+o_t &= \sigma(W_o[h_{t-1},x_t]+b_o) &&\text{(output)}\\
+\tilde c_t &= \tanh(W_c[h_{t-1},x_t]+b_c) &&\text{(candidate)}\\
+c_t &= f_t\odot c_{t-1} + i_t\odot\tilde c_t &&\text{(cell state)}\\
+h_t &= o_t\odot\tanh(c_t). &&\text{(hidden state)}
+\end{aligned}
+$$
+Along the cell-state path,
+$$
+\frac{\partial c_t}{\partial c_{t-1}} = \diag(f_t),
+\qquad\text{so}\qquad
+\frac{\partial c_T}{\partial c_1} = \diag\left(\prod_{t=2}^{T}f_t\right)
+$$
+(ignoring the indirect dependence through $h_{t-1}$). With $f_t \approx 1$ this product is
+$\approx1$ for any $T$.
+</Proposition>
+
+<Proof>
+Differentiate $c_t = f_t\odot c_{t-1}+i_t\odot\tilde c_t$ with respect to $c_{t-1}$, treating
+$f_t,i_t,\tilde c_t$ as functions of $h_{t-1}$ and $x_t$ only. The first term contributes
+$\diag(f_t)$ and the second contributes nothing. Composing over $t$ multiplies the diagonals.
+</Proof>
+
+<KeyIdea>
+Compare the two propositions. In a vanilla RNN the gradient is a product of **matrices** $W^\top$,
+whose norm is generically $\ne1$ and cannot be controlled per time step. In an LSTM the cell-state
+gradient is a product of **diagonal matrices with entries in $(0,1)$**, and each entry is *learned*.
+Setting $f_t\approx1$ gives an identity path — the "constant error carousel" of the original paper —
+so the network can learn which information to preserve and for how long. The gating is not a
+heuristic addition; it is the minimal modification that turns an uncontrollable matrix product into a
+controllable scalar one.
+
+The GRU makes the same move with fewer parameters, coupling the input and forget gates:
+$$
+h_t = (1-z_t)\odot h_{t-1} + z_t\odot\tilde h_t ,
+$$
+so the Jacobian along the state path is $\diag(1-z_t)$. Residual connections in a
+<TopicRef id="deep-learning/transformers">transformer</TopicRef> are the same idea again with the gate
+fixed at $1$: $\partial(x+F(x))/\partial x = I + \partial F/\partial x$.
+</KeyIdea>
+
+## Normalisation
+
+<Definition id="norm-def" title="Batch and layer normalisation">
+For a pre-activation $z$, both compute $\hat z = \gamma\odot\frac{z-\mu}{\sqrt{\sigma^2+\eps}}+\beta$;
+they differ in what the statistics are computed over:
+
+- **Batch norm**: $\mu,\sigma^2$ per feature, averaged over the batch. Depends on other examples; requires running statistics at inference.
+- **Layer norm**: $\mu,\sigma^2$ per example, averaged over features. Independent of the batch, which is why it is used in transformers and in any setting with variable-length sequences or batch size one.
+- **RMS norm**: layer norm without mean subtraction, $\hat z = \gamma\odot z/\sqrt{\overline{z^2}+\eps}$.
+</Definition>
+
+<Proposition id="norm-scale-invariance" title="Normalisation makes the layer scale-invariant in its weights">
+If $\hat z = (Wx - \mu)/\sigma$ with $\mu,\sigma$ the empirical mean and standard deviation of $Wx$,
+then replacing $W$ by $cW$ for $c>0$ leaves $\hat z$ unchanged. Consequently the gradient with
+respect to $W$ satisfies
+$$
+\nabla_{cW}\mathcal{J} = \frac1c\nabla_W\mathcal{J}\Big|_{W} ,
+$$
+so the effective step size scales as $1/\norm W^2$ relative to the direction of $W$.
+</Proposition>
+
+<Proof>
+Both $\mu$ and $\sigma$ are homogeneous of degree one in $W$, so the ratio is homogeneous of degree
+zero: $\hat z(cW) = \hat z(W)$. Differentiating the identity $\mathcal{J}(cW) = \mathcal{J}(W)$ in
+$W$ gives $c\,\nabla\mathcal{J}(cW) = \nabla\mathcal{J}(W)$.
+</Proof>
+
+This is a genuine and often-overlooked consequence: with normalisation, the *norm* of a weight matrix
+has no effect on the function, only on the effective learning rate. Weight decay in a normalised
+network therefore acts purely as a learning-rate schedule, which explains several otherwise puzzling
+empirical observations about the interaction of weight decay and learning rate.
+
+<Claim kind="empirical" id="batchnorm-mechanism" title="Why batch normalisation helps is not settled">
+Batch norm reliably accelerates training and permits larger learning rates. The original explanation
+— that it reduces "internal covariate shift" — has been directly challenged.
+</Claim>
+
+<NotSaid>
+Santurkar et al. ran the decisive experiment: they injected non-zero-mean, time-varying noise
+*after* batch norm layers, deliberately restoring covariate shift, and the training speed-up
+persisted. So covariate shift reduction is not the mechanism, or at least not the whole one.
+
+Their proposed alternative is that batch norm makes the loss landscape smoother, with smaller and
+more predictable gradient and Hessian norms along the training path, which permits larger stable
+steps. They provide supporting measurements and some analysis in restricted settings. Other proposed
+mechanisms include the scale-invariance effect above and an implicit regularisation from batch noise.
+
+The state of knowledge: batch norm works, the original explanation is wrong, and there are several
+partial explanations with supporting evidence and no consensus. This is a good example of a case
+where the engineering is far ahead of the theory, and of why it is worth labelling such claims as
+empirical rather than presenting a plausible story as established.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="cn-equivariance-characterisation" />
+<ProblemRef id="cn-convolution-theorem" />
+<ProblemRef id="cn-receptive-field" />
+<ProblemRef id="cn-rnn-vanishing" />
+<ProblemRef id="cn-lstm-jacobian" />
+<ProblemRef id="cn-batchnorm-scale-invariance" />

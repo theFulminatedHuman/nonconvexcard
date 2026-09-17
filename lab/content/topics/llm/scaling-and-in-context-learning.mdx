@@ -1,0 +1,271 @@
+---
+title: Scaling Laws, Fine-Tuning and In-Context Learning
+summary: The compute-optimal allocation computation, LoRA's rank argument, and what is actually known about how in-context learning works.
+field: llm
+level: 4
+order: 30
+prerequisites: [llm/language-modelling-and-cross-entropy, deep-learning-theory/what-is-proven]
+tags: [scaling laws, chinchilla, compute optimal, lora, fine-tuning, in-context learning, induction heads]
+estimated_time: 3h
+papers: [scaling-laws, chinchilla, lora, mixture-of-experts]
+claims:
+  - id: compute-optimal
+    kind: proposition
+    title: Compute-optimal allocation under a power-law loss
+    summary: Minimising the fitted loss at fixed compute gives parameter and token budgets that scale as powers of the compute, with the exponents determined by the loss exponents.
+    proved: true
+    tags: [chinchilla, compute optimal, lagrange]
+  - id: flops-estimate
+    kind: proposition
+    title: The 6ND FLOP estimate
+    summary: Training a dense transformer costs about six FLOPs per parameter per token, two for the forward pass and four for the backward.
+    proved: true
+    tags: [flops, compute accounting]
+  - id: lora-rank
+    kind: proposition
+    title: LoRA parameter count and the rank argument
+    summary: A rank-r update to a d-by-k matrix costs r(d+k) parameters instead of dk, and composes with the existing weight at no inference cost.
+    proved: true
+    tags: [lora, low rank, parameter efficiency]
+  - id: icl-status
+    kind: empirical
+    title: In-context learning
+    summary: Models perform tasks specified only in the prompt; several mechanisms are demonstrated in restricted settings and none accounts for the general phenomenon.
+    proved: false
+    tags: [in-context learning, induction heads, open question]
+  - id: icl-linear-regression
+    kind: theorem
+    title: Transformers can implement gradient descent in context
+    summary: There are explicit weight constructions under which a transformer's forward pass performs steps of gradient descent on an in-context regression problem.
+    proved: false
+    tags: [in-context learning, construction, gradient descent]
+  - id: moe-flops
+    kind: proposition
+    title: Mixture of experts decouples parameters from FLOPs
+    summary: Routing each token to k of E experts makes the compute proportional to k rather than E, at the cost of memory and load-balancing.
+    proved: true
+    tags: [mixture of experts, sparsity, flops]
+references:
+  - key: kaplan-2
+    title: Scaling Laws for Neural Language Models
+    authors: Jared Kaplan and collaborators
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2001.08361
+  - key: hoffmann-2
+    title: Training Compute-Optimal Large Language Models
+    authors: Jordan Hoffmann and collaborators
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2203.15556
+  - key: hu-lora
+    title: 'LoRA: Low-Rank Adaptation of Large Language Models'
+    authors: Edward J. Hu and collaborators
+    year: 2021
+    kind: paper
+    url: https://arxiv.org/abs/2106.09685
+  - key: olsson-induction
+    title: In-context Learning and Induction Heads
+    authors: Catherine Olsson and collaborators
+    year: 2022
+    kind: survey
+    url: https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html
+  - key: von-oswald-et-al
+    title: Transformers learn in-context by gradient descent
+    authors: Johannes von Oswald and collaborators
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2212.07677
+  - key: garg-et-al
+    title: What Can Transformers Learn In-Context? A Case Study of Simple Function Classes
+    authors: Shivam Garg, Dimitris Tsipras, Percy Liang and Gregory Valiant
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2208.01066
+  - key: shazeer-moe
+    title: 'Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer'
+    authors: Noam Shazeer and collaborators
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1701.06538
+---
+
+## Compute accounting
+
+<Proposition id="flops-estimate" title="The 6ND FLOP estimate">
+Training a dense transformer with $N$ non-embedding parameters on $D$ tokens costs approximately
+$$
+C \approx 6ND \text{ FLOPs}.
+$$
+</Proposition>
+
+<Proof>
+Every parameter participates in one multiply–accumulate per token in the forward pass, which is
+$2$ FLOPs (one multiply, one add). So the forward pass is $\approx2ND$.
+
+The backward pass computes two quantities per weight matrix: the gradient with respect to the input
+(one matrix product of the same shape as the forward) and the gradient with respect to the weights
+(another). Each costs the same as the forward product, so the backward pass is $\approx4ND$.
+
+Total $\approx6ND$. The estimate ignores attention's $O(n^2d)$ term, which is a correction of relative
+size $n/(6d)$ per the
+<TopicRef id="deep-learning/transformers">complexity table</TopicRef> — negligible when
+$n\ll d$ and not negligible for long context.
+</Proof>
+
+## Compute-optimal scaling
+
+<Proposition id="compute-optimal" title="Compute-optimal allocation under a power-law loss">
+Suppose the fitted loss is
+$$
+\mathcal{L}(N,D) = \mathcal{L}_\infty + \frac{A}{N^\alpha} + \frac{B}{D^\beta},
+$$
+and the compute budget is $C = 6ND$. Then the minimiser of $\mathcal{L}$ subject to fixed $C$
+satisfies
+$$
+N^\star \propto C^{\frac{\beta}{\alpha+\beta}},
+\qquad
+D^\star \propto C^{\frac{\alpha}{\alpha+\beta}} .
+$$
+In particular, if $\alpha = \beta$ then $N^\star$ and $D^\star$ both scale as $\sqrt C$ — that is,
+**in fixed proportion to each other**.
+</Proposition>
+
+<Proof>
+Substitute $D = C/(6N)$ and minimise over $N$:
+$$
+g(N) = \frac{A}{N^\alpha} + B\left(\frac{6N}{C}\right)^{\beta} .
+$$
+Differentiate:
+$$
+g'(N) = -\frac{\alpha A}{N^{\alpha+1}} + \frac{\beta B\,6^\beta N^{\beta-1}}{C^\beta} = 0
+\quad\Longrightarrow\quad
+N^{\alpha+\beta} = \frac{\alpha A\,C^\beta}{\beta B\,6^\beta},
+$$
+so $N^\star\propto C^{\beta/(\alpha+\beta)}$. Then $D^\star = C/(6N^\star)\propto C^{1-\beta/(\alpha+\beta)} = C^{\alpha/(\alpha+\beta)}$.
+Since $g$ is a sum of a decreasing and an increasing power of $N$, the stationary point is the unique
+minimum.
+</Proof>
+
+<KeyIdea>
+The fitted exponents decide the allocation, and the empirical finding of Hoffmann et al. is that
+$\alpha\approx\beta\approx0.34$, so $N^\star$ and $D^\star$ scale together as $C^{1/2}$ — roughly
+**20 tokens per parameter**. The earlier Kaplan et al. analysis, fitting the same functional family
+with different methodology (notably a fixed learning-rate schedule that disadvantaged the
+longer-trained runs), inferred $N^\star \propto C^{0.73}$ and therefore recommended models much larger
+and data much smaller.
+
+The lesson is worth stating plainly: the *form* of the law is empirical, the *exponents* are fitted,
+the allocation rule is a Lagrange computation on top of the fit, and the whole chain is only as
+reliable as the fit. A methodological change to the fit moved the recommendation by more than an
+order of magnitude. Compute-optimality is an engineering estimate, not a theorem.
+</KeyIdea>
+
+<NotSaid>
+The computation optimises **training loss at fixed training compute**. It says nothing about
+inference cost, and inference is where most lifetime compute is spent for a deployed model. For a
+model that will serve many queries, a smaller model trained on more tokens than the compute-optimal
+point is often the better system-level choice, even though it is suboptimal by this criterion. Recent
+practice reflects this, and the divergence is not a contradiction of the analysis but a different
+objective.
+</NotSaid>
+
+## Parameter-efficient fine-tuning
+
+<Proposition id="lora-rank" title="LoRA parameter count and the rank argument">
+Replace a frozen weight $W_0\in\R^{d\times k}$ by
+$$
+W = W_0 + \frac{\alpha}{r}BA, \qquad B\in\R^{d\times r},\ A\in\R^{r\times k},
+$$
+with $A$ initialised Gaussian and $B$ initialised to zero. Then
+
+- the number of trainable parameters is $r(d+k)$ instead of $dk$, a factor $dk/(r(d+k))$ reduction, which for $d=k$ is $d/(2r)$;
+- at initialisation $W = W_0$, so training starts from the pretrained function exactly;
+- after training, $BA$ can be folded into $W_0$, so inference cost is unchanged.
+</Proposition>
+
+<Proof>
+The counts are immediate. $B = 0$ gives $BA=0$ hence $W = W_0$. And $W_0 + \frac\alpha rBA$ is a
+single $d\times k$ matrix, so it may be precomputed.
+</Proof>
+
+<KeyIdea>
+Why should a *low-rank* update suffice? The
+<TopicRef id="deep-learning/transformers">multi-head decomposition</TopicRef> gives a partial answer:
+the operative objects in an attention layer are already the low-rank matrices
+$W_Q(W_K)^\top$ and $W_VW_O$, each of rank at most $d/h$. An update that changes attention behaviour
+therefore need not be full rank to be expressive in the relevant sense.
+
+That is an argument, not a theorem. The empirical finding that $r$ as small as $4$–$16$ recovers most
+of full fine-tuning's gain on many tasks is stronger evidence, and the accompanying observation that
+the *gradient* of the loss with respect to $W$ is low rank early in fine-tuning (being a sum of a few
+outer products per batch) is suggestive. There is no result establishing that the optimal fine-tuning
+update is approximately low rank in general, and tasks requiring substantial new knowledge do show a
+gap.
+</KeyIdea>
+
+<Proposition id="moe-flops" title="Mixture of experts decouples parameters from FLOPs">
+Replace an MLP block of $P$ parameters by $E$ expert blocks of $P$ parameters each, with a router
+sending every token to the top $k$ experts. Then the parameter count is $EP$ while the per-token
+FLOPs are proportional to $kP$. The ratio $E/k$ is the **sparsity factor**.
+</Proposition>
+
+<Proof>
+Parameters: $E$ copies. FLOPs: only the $k$ selected experts are evaluated per token, plus the
+router's negligible $O(dE)$. Hence FLOPs $\propto kP$ independent of $E$.
+</Proof>
+
+<NotSaid>
+The decoupling is real but the costs move rather than vanish. All $EP$ parameters must be resident in
+memory (or fetched), so memory bandwidth rather than FLOPs becomes the constraint. Routing is
+discrete and therefore non-differentiable, so training needs auxiliary load-balancing losses to
+prevent expert collapse — a single expert receiving all tokens is a stable and useless equilibrium.
+And the <TopicRef id="deep-learning-theory/what-is-proven">scaling laws</TopicRef> fitted for dense
+models do not transfer directly: a sparse model's loss depends on $E$, $k$ and $P$ separately, and the
+appropriate scaling law has to be refit.
+</NotSaid>
+
+## In-context learning
+
+<Claim kind="empirical" id="icl-status" title="In-context learning">
+A pretrained language model, with no parameter updates, performs tasks specified only by examples in
+its prompt — including tasks it was not explicitly trained on — with accuracy improving in the number
+of in-context examples.
+</Claim>
+
+<Theorem id="icl-linear-regression" title="Transformers can implement gradient descent in context">
+There exist explicit weight settings for a linear-attention transformer such that the forward pass on
+a prompt containing $(x_1,y_1),\dots,(x_m,y_m),x_{\text{query}}$ computes the prediction of $\ell$
+steps of gradient descent on the least-squares objective over those examples, where $\ell$ is the
+number of layers.
+</Theorem>
+
+Quoted from von Oswald et al.; Garg et al. independently showed that transformers *trained* on
+in-context regression tasks match or exceed the performance of least squares and of specialised
+estimators on those tasks. The construction is explicit and checkable, which makes it a genuine
+theorem about expressivity.
+
+<NotSaid>
+What these results establish and what they do not:
+
+- **Established.** A transformer *can* implement an optimisation algorithm in its forward pass, and transformers trained specifically on function-class regression tasks *do* behave like good estimators for those classes. In-context learning is therefore not mysterious in principle — there is a mechanism a transformer can implement.
+- **Not established.** That this is what a language model trained on text is doing. The constructions use linear attention, specific weight patterns, and a prompt format that encodes a clean regression problem; a language model's in-context behaviour on, say, translation or arithmetic has not been shown to be gradient descent on anything.
+
+A separate and complementary line of evidence is mechanistic. Olsson et al. identify **induction
+heads** — attention heads that implement the rule "find the previous occurrence of the current token
+and copy what followed it" — and show that their formation during training coincides with a sharp
+improvement in in-context learning ability, across model scales. This is strong evidence about *a*
+mechanism contributing to in-context learning, established by circuit-level analysis and ablation.
+
+The honest summary: the phenomenon is real and robust, two distinct partial mechanisms are documented
+(implicit optimisation in constructed settings, induction heads in real models), and there is no
+account of the general case. This sits in the same category as the other entries in the
+<TopicRef id="deep-learning-theory/what-is-proven">ledger</TopicRef>.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="sc-compute-optimal" />
+<ProblemRef id="sc-flops-estimate" />
+<ProblemRef id="sc-lora-count" />
+<ProblemRef id="sc-moe-sparsity" />

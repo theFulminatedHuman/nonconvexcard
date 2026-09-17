@@ -1,0 +1,84 @@
+---
+title: Denoising Diffusion Probabilistic Models
+authors: Jonathan Ho, Ajay Jain, Pieter Abbeel
+year: 2020
+venue: NeurIPS
+url: https://arxiv.org/abs/2006.11239
+arxiv: '2006.11239'
+field: deep-learning
+tags: [diffusion, score matching, generative model, variational bound]
+problem: GANs generate sharp samples but train unstably; VAEs train stably but generate blurry samples. Neither gives a stable objective with high sample quality.
+contribution: A model that learns to reverse a fixed Gaussian noising process, whose variational bound simplifies to a plain noise-prediction regression loss — stable to train, with sample quality matching or exceeding GANs.
+prerequisites:
+  - probability/expectation-and-conditioning
+  - probability/modes-of-convergence
+  - deep-learning/approximation-and-backpropagation
+descendants: []
+related: [gan, vae]
+---
+
+## What problem does this paper solve?
+
+A generative model with a stable, likelihood-based objective and GAN-level sample quality.
+
+## What mathematical objects are introduced?
+
+A fixed **forward** process adding Gaussian noise,
+$$
+q(x_t\mid x_{t-1}) = \Ncal\big(x_t;\sqrt{1-\beta_t}\,x_{t-1},\ \beta_tI\big),
+$$
+and a learned **reverse** process $p_\theta(x_{t-1}\mid x_t)$. A key identity makes training cheap: the
+forward process has a closed form at any $t$,
+$$
+q(x_t\mid x_0) = \Ncal\big(x_t;\sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t)I\big),
+\qquad \bar\alpha_t = \prod_{s\le t}(1-\beta_s),
+$$
+so $x_t$ can be sampled directly without simulating the chain.
+
+## What assumptions are made?
+
+That $\beta_t$ are small enough for the reverse conditionals to be approximately Gaussian, and that
+$\bar\alpha_T\approx0$ so $q(x_T)\approx\Ncal(0,I)$. Both are design choices under the modeller's
+control, which is why the training is stable.
+
+## What equations matter?
+
+The variational bound is the same
+<TopicRef id="probability/expectation-and-conditioning">ELBO</TopicRef> structure as a VAE with $T$
+latent layers. The paper's key simplification: reparameterising the mean prediction as a **noise**
+prediction and dropping the weighting terms gives
+$$
+\mathcal{L}_{\text{simple}} = \E_{t,x_0,\eps}\Big[\big\|\eps - \eps_\theta\big(\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\,\eps,\ t\big)\big\|_2^2\Big],
+$$
+an ordinary squared-loss regression. All the structure is in the forward process; the network just
+predicts noise.
+
+## What theorem or result is important?
+
+The equivalence, up to a $t$-dependent weighting, between the variational bound and
+$\mathcal{L}_{\text{simple}}$, and the connection to denoising score matching: $\eps_\theta$ is
+(up to scale) an estimate of $\nabla_{x_t}\log q(x_t)$, the score.
+
+## What proof techniques are used?
+
+Gaussian conditioning identities to obtain the closed forms; algebraic manipulation of the ELBO's
+per-step KL terms, each of which is a KL between two Gaussians and therefore closed-form.
+
+## What prior mathematics is required?
+
+Gaussian marginals and conditionals; KL between Gaussians; the ELBO; Markov chains.
+
+## Limitations
+
+Sampling requires $T$ network evaluations ($T=1000$ originally), orders of magnitude slower than a
+GAN's single pass — the motivation for the large subsequent literature on fast samplers. The
+likelihoods, while computable as a bound, are not competitive with autoregressive models. And the
+"approximately Gaussian reverse conditional" assumption degrades if $\beta_t$ are made large to
+shorten the chain.
+
+## Why it mattered
+
+It displaced GANs as the dominant approach to image generation within two years, and its objective is
+the basis of every current text-to-image and video generation system. It is also a satisfying case
+where the practical breakthrough came from *simplifying* a correct variational bound rather than
+replacing it.

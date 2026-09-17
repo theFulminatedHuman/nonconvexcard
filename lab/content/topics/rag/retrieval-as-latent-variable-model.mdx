@@ -1,0 +1,299 @@
+---
+title: Retrieval as a Latent-Variable Model
+summary: RAG written as marginalisation over a latent document, the exact decomposition of its error, and why retrieval failures propagate rather than average out.
+field: rag
+level: 4
+order: 30
+prerequisites: [rag/vector-search-and-ann, llm/language-modelling-and-cross-entropy]
+tags: [rag, latent variable, marginalisation, error propagation, reranking, query expansion, graph rag]
+estimated_time: 1d
+papers: [rag-original, dpr]
+claims:
+  - id: rag-marginal
+    kind: definition
+    title: RAG as marginalisation over a latent document
+    summary: The generation probability is a mixture over retrieved documents weighted by the retriever's posterior.
+    proved: false
+    tags: [latent variable, marginalisation]
+  - id: rag-sequence-vs-token
+    kind: proposition
+    title: RAG-sequence and RAG-token are different models
+    summary: Marginalising once per sequence and once per token give different distributions, and only the second can switch sources mid-generation.
+    proved: true
+    tags: [rag-sequence, rag-token]
+  - id: rag-elbo
+    kind: theorem
+    title: A lower bound on the RAG log-likelihood
+    summary: Jensen's inequality gives an evidence lower bound whose gap is the KL divergence between the retriever posterior and the true posterior.
+    proved: true
+    tags: [elbo, jensen, variational]
+  - id: error-propagation
+    kind: theorem
+    title: Retrieval error propagates into generation
+    summary: The total variation distance between the RAG output and the oracle output is bounded by the retriever's probability of missing the relevant document.
+    proved: true
+    tags: [error propagation, total variation, bound]
+  - id: error-propagation-tight
+    kind: proposition
+    title: The error bound is attained
+    summary: There are instances where a retrieval failure changes the output distribution by exactly the failure probability, so the bound cannot be improved.
+    proved: true
+    tags: [tightness, worst case]
+  - id: reranking-gain
+    kind: proposition
+    title: What reranking can and cannot do
+    summary: A reranker improves precision within the retrieved set and cannot exceed the first-stage recall.
+    proved: true
+    tags: [reranking, recall ceiling]
+  - id: rag-variants
+    kind: heuristic
+    title: RAG variants as choices about the latent structure
+    summary: Corrective, agentic, hybrid and graph RAG are different ways of shaping the posterior over documents, not different probabilistic frameworks.
+    proved: false
+    tags: [corrective rag, agentic rag, graph rag, hybrid]
+references:
+  - key: lewis-rag
+    title: 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks'
+    authors: Patrick Lewis and collaborators
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2005.11401
+  - key: guu-realm
+    title: 'REALM: Retrieval-Augmented Language Model Pre-Training'
+    authors: Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat and Ming-Wei Chang
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2002.08909
+  - key: izacard-fid
+    title: Leveraging Passage Retrieval with Generative Models for Open Domain Question Answering
+    authors: Gautier Izacard and Edouard Grave
+    year: 2021
+    kind: paper
+    url: https://arxiv.org/abs/2007.01282
+  - key: shi-et-al-distraction
+    title: Large Language Models Can Be Easily Distracted by Irrelevant Context
+    authors: Freda Shi and collaborators
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2302.00093
+  - key: liu-lost-middle
+    title: 'Lost in the Middle: How Language Models Use Long Contexts'
+    authors: Nelson F. Liu and collaborators
+    year: 2024
+    kind: paper
+    url: https://arxiv.org/abs/2307.03172
+---
+
+## The model
+
+<Definition id="rag-marginal" title="RAG as marginalisation over a latent document">
+Let $x$ be a query, $y$ a response, and $z$ a document from a corpus $\Zcal$. Treat $z$ as a latent
+variable:
+$$
+p(y\mid x) = \sum_{z\in\Zcal} \underbrace{p_\eta(z\mid x)}_{\text{retriever}}\ \underbrace{p_\theta(y\mid x,z)}_{\text{generator}} .
+$$
+In practice the sum is truncated to the top-$k$ retrieved documents, with the retriever posterior
+$$
+p_\eta(z\mid x) = \frac{\exp\big(\ip{f_\eta(x)}{g_\eta(z)}\big)}{\sum_{z'\in\mathrm{top}\text{-}k}\exp\big(\ip{f_\eta(x)}{g_\eta(z')}\big)} .
+$$
+</Definition>
+
+<Intuition>
+The whole of RAG is one line of probability: the answer depends on a document you do not observe, so
+sum over the possibilities weighted by how likely each is. Everything that distinguishes RAG systems —
+chunking, hybrid search, reranking, query rewriting, iterative retrieval — is a choice about how to
+construct or sharpen $p_\eta(z\mid x)$, not a change to this equation.
+</Intuition>
+
+<Proposition id="rag-sequence-vs-token" title="RAG-sequence and RAG-token are different models">
+$$
+p_{\text{seq}}(y\mid x) = \sum_z p_\eta(z\mid x)\prod_{t=1}^{|y|}p_\theta(y_t\mid x,z,y_{<t}),
+\qquad
+p_{\text{tok}}(y\mid x) = \prod_{t=1}^{|y|}\sum_z p_\eta(z\mid x)\,p_\theta(y_t\mid x,z,y_{<t}).
+$$
+These are not equal: the first is a mixture of products and the second a product of mixtures.
+$p_{\text{seq}}$ commits to a single document for the whole response; $p_{\text{tok}}$ can draw
+different tokens from different documents.
+</Proposition>
+
+<Proof>
+A sum of products need not equal the product of the sums. Concretely, take $|y|=2$, two documents
+$z_1,z_2$ with equal weight $1/2$, and generators that are deterministic and disagree:
+$p_\theta(\cdot\mid z_1)$ puts mass $1$ on $y = (a,a)$ and $p_\theta(\cdot\mid z_2)$ on $y = (b,b)$.
+Then $p_{\text{seq}}((a,b)) = 0$, while
+$p_{\text{tok}}((a,b)) = \tfrac12\cdot\tfrac12 = \tfrac14$. The token-level model assigns positive
+probability to a response that no single document supports.
+</Proof>
+
+<Note title="The trade-off this exposes">
+$p_{\text{tok}}$ can synthesise across documents, which is necessary for multi-hop questions.
+$p_{\text{seq}}$ cannot, but for that reason every generated response is attributable to exactly one
+source — which is what a citation-bearing system needs. The example in the proof is also a warning:
+token-level mixing can produce a fluent response that is inconsistent with every individual document,
+which is one precise mechanism by which a grounded system can still be wrong.
+
+Fusion-in-Decoder takes a third route: encode each document separately and let the decoder attend
+over all of them jointly, so the mixing happens inside attention rather than in an explicit
+marginalisation.
+</Note>
+
+## A variational view
+
+<Theorem id="rag-elbo" title="A lower bound on the RAG log-likelihood">
+For any distribution $q(z)$ over documents,
+$$
+\log p(y\mid x) \;\ge\; \E_{z\sim q}\big[\log p_\theta(y\mid x,z)\big] - \mathrm{KL}\big(q(z)\,\|\,p_\eta(z\mid x)\big),
+$$
+with equality if and only if $q(z) = p(z\mid x,y)$, the true posterior given both query and answer.
+</Theorem>
+
+<Proof>
+Write the marginal as an expectation under $q$ and apply Jensen:
+$$
+\log\sum_zp_\eta(z\mid x)p_\theta(y\mid x,z)
+= \log\E_{z\sim q}\left[\frac{p_\eta(z\mid x)p_\theta(y\mid x,z)}{q(z)}\right]
+\ge \E_{z\sim q}\log\frac{p_\eta(z\mid x)p_\theta(y\mid x,z)}{q(z)} ,
+$$
+and the right-hand side rearranges into the stated form. The Jensen gap is exactly
+$\mathrm{KL}\big(q(z)\|p(z\mid x,y)\big)$, which vanishes iff $q$ is the true posterior.
+</Proof>
+
+<KeyIdea>
+The bound identifies what a retriever *should* approximate: not $p(z\mid x)$, the documents relevant
+to the query, but $p(z\mid x,y)$, the documents that explain the answer. Those differ, and the gap is
+the reason two-stage training helps — the retriever trained on query–document relevance is optimising
+the wrong posterior, and methods that distil the generator's likelihood back into the retriever
+(REALM, and the retriever-update schemes that follow it) are closing exactly this gap.
+</KeyIdea>
+
+## Error propagation
+
+<Theorem id="error-propagation" title="Retrieval error propagates into generation">
+Fix a query $x$ and suppose there is a set $Z^\star$ of documents sufficient to answer it. Let
+$$
+\gamma = p_\eta\big(Z^\star \mid x\big)
+$$
+be the retriever's probability of supplying a sufficient document (its recall, in probability form).
+Let $p_{\mathrm{RAG}}(\cdot\mid x)$ be the RAG output distribution and $p_{\mathrm{oracle}}(\cdot\mid x)$
+the distribution obtained by conditioning on $Z^\star$ with certainty. Then
+$$
+\big\| p_{\mathrm{RAG}}(\cdot\mid x) - p_{\mathrm{oracle}}(\cdot\mid x)\big\|_{\mathrm{TV}} \;\le\; 1-\gamma .
+$$
+</Theorem>
+
+<Proof>
+Write $A = Z^\star$ and decompose the mixture:
+$$
+p_{\mathrm{RAG}}(y) = \gamma\,\tilde p_A(y) + (1-\gamma)\,\tilde p_{A^c}(y),
+$$
+where $\tilde p_A$ and $\tilde p_{A^c}$ are the generator's outputs averaged over $A$ and over its
+complement, under the conditional retriever distributions. And $p_{\mathrm{oracle}} = \tilde p_A$.
+Hence
+$$
+p_{\mathrm{RAG}} - p_{\mathrm{oracle}} = (1-\gamma)\big(\tilde p_{A^c} - \tilde p_A\big),
+$$
+so
+$$
+\norm{p_{\mathrm{RAG}}-p_{\mathrm{oracle}}}_{\mathrm{TV}}
+= (1-\gamma)\,\norm{\tilde p_{A^c}-\tilde p_A}_{\mathrm{TV}} \le 1-\gamma ,
+$$
+since total variation distance between probability measures is at most $1$.
+</Proof>
+
+<Proposition id="error-propagation-tight" title="The bound is attained">
+There are instances with equality. Take a binary answer space $\{y_0,y_1\}$, a generator that outputs
+$y_1$ with probability $1$ given any $z\in Z^\star$ and $y_0$ with probability $1$ given any
+$z\notin Z^\star$. Then $\norm{\tilde p_{A^c}-\tilde p_A}_{\mathrm{TV}}=1$ and the bound holds with
+equality.
+</Proposition>
+
+<Proof>
+Direct substitution into the decomposition above.
+</Proof>
+
+<KeyIdea>
+Read the bound as: **retrieval error is a hard ceiling, not a soft degradation.** A retriever that
+fails $10\%$ of the time permits the output distribution to be wrong on $10\%$ of the probability
+mass, and the tightness proposition shows a generator can realise the whole of that error.
+
+There is no averaging-out. One might hope that the $k-1$ irrelevant documents in the context act as
+neutral noise the model ignores; the evidence is against that. Shi et al. show that irrelevant
+context measurably degrades reasoning accuracy, and Liu et al. show that relevant context placed in
+the middle of a long prompt is used substantially less than context at either end. So the failure
+modes compound rather than cancel: missing documents cap the achievable quality, and *extra*
+documents actively hurt.
+
+Combined with the <TopicRef id="rag/vector-search-and-ann">multiplicative recall</TopicRef> of the
+pipeline, the arithmetic is unforgiving. A chunker that splits the answer across boundaries
+($\gamma_1 = 0.95$), an ANN index at $\gamma_2 = 0.9$, and a top-$k$ truncation at $\gamma_3 = 0.95$
+give $\gamma \approx 0.81$ — so nearly a fifth of the output distribution is unconstrained by the
+evidence, before the generator makes a single mistake of its own.
+</KeyIdea>
+
+## Reranking
+
+<Proposition id="reranking-gain" title="What reranking can and cannot do">
+Let the first stage return a candidate set $C$ with $\P(Z^\star\cap C\ne\emptyset) = \gamma_1$, and let
+a reranker select the top $k'<|C|$ from $C$. Then the post-rerank recall satisfies
+$$
+\gamma_{\text{rerank}} = \gamma_1\cdot\P\big(\text{relevant document in top }k' \mid \text{it is in } C\big) \le \gamma_1 .
+$$
+Reranking can only improve the **precision** of the final set, never the recall of the pipeline.
+</Proposition>
+
+<Proof>
+The reranker's output is a subset of $C$, so the relevant document is in the output only if it was in
+$C$. Conditioning on that event gives the product, and the second factor is at most $1$.
+</Proof>
+
+<Note title="Why rerankers are used anyway">
+Precision matters for two reasons the recall bound does not capture. Context length is finite and
+expensive, so a reranker lets a large $|C|$ (high $\gamma_1$) be reduced to a small $k'$ that fits.
+And by the distraction results above, *removing* irrelevant documents improves generation quality
+directly. So the right design is: retrieve broadly with a cheap bi-encoder to maximise $\gamma_1$,
+then rerank aggressively with an expensive cross-encoder to maximise precision. The cross-encoder can
+afford full query–document attention because it scores only $|C|$ pairs rather than the whole corpus;
+that asymmetry is the entire architectural reason for the two stages.
+</Note>
+
+## The variant landscape
+
+<Claim kind="heuristic" id="rag-variants" title="RAG variants as choices about the latent structure">
+The named RAG variants are all interventions on the posterior $p_\eta(z\mid x)$ or on the latent
+space $\Zcal$, within the same probabilistic model.
+</Claim>
+
+| Variant | What it changes | In the model |
+| --- | --- | --- |
+| Naive RAG | — | one-shot $p_\eta(z\mid x)$, top-$k$, concatenate |
+| Hybrid retrieval | scoring function | $p_\eta \propto \exp(\lambda s_{\text{dense}} + (1-\lambda)s_{\text{BM25}})$ |
+| Reranking | truncation of the support | two-stage construction of $p_\eta$ |
+| Query expansion / HyDE | the conditioning variable | replace $x$ by $\tilde x = h(x)$ closer to document space |
+| Corrective RAG | conditional re-retrieval | evaluate sufficiency, re-draw $z$ if inadequate |
+| Agentic / iterative RAG | sequential latent | $z_1,\dots,z_m$ drawn adaptively, a latent *sequence* not a latent variable |
+| Graph RAG | the latent space itself | $\Zcal$ becomes a graph; retrieval returns a subgraph, so multi-hop paths are single latents |
+| Fusion-in-Decoder | where mixing happens | attention over separately encoded documents, not an explicit sum |
+
+<NotSaid>
+Two honest caveats about this table.
+
+First, the fact that all of these fit one framework does not mean they are equally good or that the
+framework predicts which will win. The probabilistic view organises the design space; it does not
+supply a theory of retrieval quality, and the comparative evidence between variants is empirical and
+benchmark-dependent.
+
+Second, the iterative and agentic variants strictly leave the single-latent model: with $m$ adaptive
+retrieval rounds the object is a latent *trajectory*, the marginalisation is over sequences, and the
+error analysis above does not apply directly — each round's failure probability compounds, and there
+is no clean analogue of the total-variation bound. That is a genuine gap: the systems being built are
+ahead of the analysis, and the error propagation for multi-round retrieval has not, to this author's
+knowledge, been characterised.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="rg-sequence-vs-token" />
+<ProblemRef id="rg-elbo" />
+<ProblemRef id="rg-error-propagation" />
+<ProblemRef id="rg-recall-arithmetic" />
+<ProblemRef id="rg-implement-rag" />

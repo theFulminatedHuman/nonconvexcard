@@ -1,0 +1,617 @@
+problems:
+  # ----------------------------------------------------------------- open ---
+  # These carry difficulty `research`. Their `solution` field is NOT a solution:
+  # it is an account of what is known and where the argument stops. The problem
+  # page renders research-difficulty problems under "What is known" for exactly
+  # this reason.
+  - id: op-sgd-global-minima
+    title: "Open: does SGD find global minima of deep networks?"
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: research
+    type: proof
+    estimated_time: research
+    abyss: true
+    also: [stochastic-optimization]
+    tags: [open problem, sgd, non-convex, global minimum]
+    statement: |
+      Give conditions on a network architecture, a data distribution and a step-size schedule —
+      conditions that a network actually used in practice satisfies — under which stochastic gradient
+      descent provably converges to a global minimiser of the training loss. Or exhibit a practically
+      relevant setting in which it provably does not.
+
+      This is an open problem. It is stated here so you can see where the guarantees stop.
+    solution: |
+      **This is not solved. What follows is the state of the argument, not an answer.**
+
+      **What is proved.**
+
+      - *Convex surrogates.* For convex $L$-smooth objectives, SGD with $\eta_t \asymp 1/\sqrt{t}$
+        converges to the global optimum at rate $O(1/\sqrt{t})$ in expectation. Deep networks are not
+        convex in their parameters, so this says nothing directly.
+      - *Stationarity, not optimality.* For smooth non-convex objectives with bounded gradient
+        variance, SGD satisfies $\min_{t\le T}\E\|\nabla f(x_t)\|_2^2 = O(1/\sqrt{T})$. This is a
+        statement about **stationary points**. A stationary point may be a saddle, a local minimum or
+        a global one, and the bound does not distinguish them.
+      - *Escaping strict saddles.* Perturbed gradient methods escape strict saddle points in
+        polynomial time. This upgrades "stationary" to "second-order stationary", which is still not
+        "global".
+      - *Infinite-width regimes.* In the NTK regime — width $\to\infty$ with the corresponding
+        parameterisation and initialisation scale — training becomes effectively linear in the
+        parameters, the loss becomes convex in the relevant coordinates, and global convergence
+        follows from a Polyak–Łojasiewicz condition. The catch is severe: the required widths are
+        astronomically larger than any trained network, and in this regime the network provably does
+        **not** learn features, which is the thing practitioners believe makes deep learning work.
+      - *Over-parameterised shallow cases.* Global convergence is known for specific architectures
+        under strong width and initialisation conditions. These results are real theorems about real
+        assumptions; none of the assumptions describes a transformer.
+
+      **Where the argument stops.** Every route above buys global optimality by purchasing
+      *effective convexity* — through width, through linearisation, or through a PL/gradient-dominance
+      condition assumed rather than derived. Nobody has shown that a finite-width network trained on a
+      real distribution satisfies any such condition, and there is no proof technique in the
+      literature that reaches global optimality without one.
+
+      **What is honestly known empirically.** Training loss on over-parameterised networks routinely
+      reaches values indistinguishable from zero, including on randomly labelled data. That is an
+      observation, reproduced many times. It is not a theorem, and "SGD finds global minima" is not a
+      statement anyone has proved for the networks people train.
+
+      **To make progress.** Either (a) identify a verifiable geometric property of realistic loss
+      landscapes that implies gradient dominance, or (b) construct a realistic architecture and
+      distribution where SGD provably stalls above the global optimum. A negative result here would
+      be as valuable as a positive one, and is arguably more likely.
+
+  - id: op-adam-transformers
+    title: "Open: why does Adam beat SGD on transformers?"
+    field: stochastic-optimization
+    topic: stochastic-optimization/adaptive-methods
+    difficulty: research
+    type: proof
+    estimated_time: research
+    abyss: true
+    also: [llm, deep-learning-theory]
+    tags: [open problem, adam, adaptive methods, transformers]
+    statement: |
+      On convex problems, and in the worst-case non-convex analyses, adaptive methods have no
+      asymptotic advantage over well-tuned SGD; several analyses give them strictly worse constants.
+      On transformer language models the gap is large, reproducible, and survives careful tuning of
+      SGD.
+
+      Explain it. Give a property of the objective — provable or at least measurable — that implies a
+      separation between Adam and SGD, and verify it holds for transformer training.
+    solution: |
+      **This is not solved. What follows is the state of the argument, not an answer.**
+
+      **What the theory actually gives.** Under standard smoothness and bounded-variance assumptions,
+      AdaGrad-style methods achieve the same $O(1/\sqrt{T})$ stationarity rate as SGD, with a
+      dependence on the *maximum* coordinate-wise gradient scale rather than the global Lipschitz
+      constant. That buys robustness to per-coordinate scaling — a real advantage when the gradient
+      scales are heterogeneous, and no advantage at all when they are not. Adam's original
+      convergence proof was shown to be incorrect; the method is now analysed either in modified
+      forms or under additional assumptions.
+
+      **Candidate explanations, and their status.**
+
+      - *Heterogeneous curvature across blocks.* Measurements of the Hessian spectrum in transformers
+        report that different parameter blocks (embeddings, attention, MLP, layer norm) have curvature
+        scales separated by orders of magnitude. A per-coordinate step size directly addresses this.
+        Status: measured and plausible; no theorem connecting the measurement to the observed gap.
+      - *Heavy-tailed class imbalance.* Language modelling has an extremely skewed token
+        distribution, so gradients for rare tokens are rare and small. Experiments show the SGD–Adam
+        gap tracks this imbalance, and shrinks when it is removed. Status: a strong empirical finding
+        with a mechanism, not a proof.
+      - *Heavy-tailed gradient noise.* If the stochastic gradient has infinite variance, the
+        bounded-variance analyses do not apply and the comparison changes. Status: disputed — whether
+        the noise is genuinely heavy-tailed depends on the estimator and the batch size.
+      - *Sign descent.* Adam with $\beta_1=\beta_2=0$ is sign SGD, which explains part but not all of
+        the gap. Status: a useful decomposition, not an explanation.
+
+      **Where the argument stops.** Each candidate explains some of the gap in some experiments. None
+      predicts its size. There is no theorem of the form "under condition C, satisfied by transformer
+      training, Adam converges $k$ times faster than optimally tuned SGD".
+
+      **To make progress.** State a condition C that is (i) checkable from measurements on a real
+      training run, (ii) provably implies a separation, and (iii) actually holds. The gap between
+      (ii) and (iii) is where every current attempt fails.
+
+  - id: op-nonvacuous-bounds
+    title: "Open: generalisation bounds that track the generalisation gap"
+    field: learning-theory
+    topic: learning-theory/bias-variance-and-double-descent
+    difficulty: research
+    type: proof
+    estimated_time: research
+    abyss: true
+    also: [deep-learning-theory]
+    tags: [open problem, generalisation, pac-bayes, bounds]
+    statement: |
+      Produce a generalisation bound for deep networks that is simultaneously: non-vacuous (below the
+      trivial bound of 1 for a 0–1 loss), computable from the trained model and the training set, and
+      *correlated with the measured test gap* across architectures, dataset sizes and label noise
+      levels — so that when the true gap doubles, the bound moves in the same direction.
+
+      The third requirement is the open one.
+    solution: |
+      **This is not solved. What follows is the state of the argument, not an answer.**
+
+      **Why the classical bounds fail here.** Uniform-convergence bounds scale with a capacity measure
+      of the hypothesis class — VC dimension, Rademacher complexity, norm-based margin quantities. For
+      networks with more parameters than training points these measures are large enough to make the
+      bound exceed 1, which is vacuous for a 0–1 loss. Worse, the same network trained on randomly
+      relabelled data fits perfectly, so the *class* demonstrably has enough capacity to memorise:
+      any bound that depends only on the class, and not on the particular solution SGD found, cannot
+      distinguish the two cases.
+
+      **What has worked, partially.**
+
+      - *PAC-Bayes with a data-dependent prior.* Optimising a stochastic network's posterior against a
+        PAC-Bayes bound gives genuinely non-vacuous numbers, first on MNIST and later, with heavy
+        compression, on larger models including language models. These are real, verified bounds.
+      - *Compression-based bounds.* If the trained network can be compressed to $k$ bits without
+        losing accuracy, a counting argument bounds generalisation in terms of $k$. Non-vacuous when
+        compression is aggressive.
+
+      **Where the argument stops.** The non-vacuous bounds are typically an order of magnitude above
+      the observed gap, and — the actual open problem — they do not *track* it. Interventions that
+      change the true test gap a great deal (more data, label noise, architecture changes) often move
+      these bounds by comparatively little, or in the wrong direction. A bound that is numerically
+      valid but insensitive to the thing it bounds explains nothing.
+
+      There is also a structural result to reckon with: several authors have exhibited settings where
+      *any* bound derived from uniform convergence over the relevant class must be vacuous, even
+      though the learned predictor generalises. If that is the general situation, the answer will not
+      be a better capacity measure; it will be a different proof technique, conditioned on the
+      algorithm and the data rather than the class.
+
+      **To make progress.** Fix a benchmark of interventions with known effects on the test gap, and
+      require any proposed bound to reproduce their *ordering*. Correlation, not just validity, is
+      the bar.
+
+  - id: op-scaling-law-exponents
+    title: "Open: why are neural scaling laws power laws?"
+    field: llm
+    topic: llm/scaling-and-in-context-learning
+    difficulty: research
+    type: proof
+    estimated_time: research
+    abyss: true
+    also: [learning-theory]
+    tags: [open problem, scaling laws, exponents, power law]
+    statement: |
+      Empirically, test loss of a language model follows $L(N) \approx L_\infty + (N_c/N)^{\alpha_N}$
+      in parameters and an analogous law in data, over many orders of magnitude, with exponents that
+      are stable within a family and vary across modalities.
+
+      Derive the functional form from a stated model of the data and the architecture, and predict
+      $\alpha_N$ from measurable properties of the data distribution.
+    solution: |
+      **This is not solved. What follows is the state of the argument, not an answer.**
+
+      **What is established.** The empirical fits are excellent and have been reproduced across
+      laboratories, architectures and modalities. They are good enough to be used for compute
+      allocation decisions in production. They are measurements.
+
+      **Partial derivations.**
+
+      - *Intrinsic-dimension arguments.* If the data lie near a manifold of dimension $d$ and the
+        model is effectively performing piecewise approximation on it, classical approximation theory
+        gives an error decaying like (resolution)$^{-\beta}$, which converts to a power law in
+        parameters with exponent tied to $d$. This predicts the *form* and gives an exponent in terms
+        of an intrinsic dimension that is itself hard to measure, and the predicted values do not
+        reliably match the fitted ones.
+      - *Heavy-tailed feature spectra.* If the covariance of the learned features has a power-law
+        spectrum with exponent $\gamma$, random-matrix and kernel-regression analyses give a power-law
+        generalisation error with an exponent determined by $\gamma$. This is a theorem in the kernel
+        setting. Whether trained networks are in that setting is the gap.
+      - *Toy models.* Exactly solvable models (discrete Zipf-distributed features, random feature
+        regression) reproduce power laws and make the mechanism transparent. They are not language
+        models.
+
+      **Where the argument stops.** Each derivation produces a power law under assumptions that
+      convert one unmeasured quantity into another. None predicts, from properties of a corpus you
+      can measure before training, the exponent you will fit afterwards. Nor does any current theory
+      predict the irreducible term $L_\infty$, or say when a law will break — which matters, since a
+      compute plan built on an extrapolated fit is a bet on a measured regularity continuing to hold.
+
+      **To make progress.** The falsifiable version: name a statistic of the training distribution,
+      compute it on two corpora, predict the two exponents *in advance*, then train.
+
+  - id: op-edge-of-stability
+    title: "Open: the edge of stability"
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: research
+    type: proof
+    estimated_time: research
+    abyss: true
+    also: [optimization]
+    tags: [open problem, edge of stability, sharpness, curvature]
+    statement: |
+      Classical analysis says gradient descent on an $L$-smooth objective needs $\eta < 2/L$ to be
+      stable. In deep network training the largest Hessian eigenvalue is observed to *rise* until it
+      sits just above $2/\eta$ and then hover there, with the loss decreasing non-monotonically but
+      decreasing.
+
+      Explain it: give a class of objectives on which gradient descent provably enters and remains in
+      this regime, and prove the loss still decreases.
+    solution: |
+      **This is not solved in general. What follows is the state of the argument.**
+
+      **The observation.** Across architectures and datasets, full-batch gradient descent shows two
+      phases: *progressive sharpening*, in which the top Hessian eigenvalue $\lambda_{\max}$ grows,
+      and then a plateau at $\lambda_{\max} \approx 2/\eta$ — precisely the classical stability
+      threshold — where training continues with the loss oscillating locally while trending down.
+      This has been reproduced widely.
+
+      **Why it contradicts the standard picture.** The descent lemma gives
+      $f(x_{t+1}) \le f(x_t) - \eta(1-\eta L/2)\|\nabla f(x_t)\|^2$, which is a guarantee only for
+      $\eta < 2/L$. At the edge of stability the iterates violate the condition the guarantee needs,
+      yet training works. So the standard analysis is not merely loose here; its hypothesis is false.
+
+      **What is proved.** Rigorous analyses exist for specific low-dimensional or two-layer models,
+      where the mechanism can be made explicit: the oscillation along the sharpest direction couples
+      to motion along flatter directions, and the dynamics are driven towards lower sharpness. These
+      are genuine theorems about genuine (small) models. There are also results showing that
+      gradient descent at large step sizes implicitly penalises sharpness, which is consistent with
+      the plateau.
+
+      **Where the argument stops.** No result covers realistic networks, and none predicts the
+      plateau's height beyond the $2/\eta$ heuristic or the sharpening rate before it. The
+      relationship to the flat-minima folklore — does hovering at the edge of stability *cause*
+      better generalisation? — is not established in either direction.
+
+      **To make progress.** Identify the minimal structural ingredient. The candidate is a
+      non-degenerate third-order term coupling the sharp direction to flat ones; a theorem of the form
+      "if that coupling is bounded below, gradient descent enters and remains at the edge of
+      stability, and the loss decreases" would settle the mechanism even if the constants were poor.
+
+  - id: op-explicit-rip-matrices
+    title: "Open: explicit RIP matrices beyond the square-root barrier"
+    field: high-dimensional-statistics
+    topic: high-dimensional-statistics/sparse-recovery-and-the-lasso
+    difficulty: research
+    type: proof
+    estimated_time: research
+    abyss: true
+    also: [high-dimensional-probability]
+    tags: [open problem, restricted isometry, explicit construction, derandomisation]
+    statement: |
+      Random matrices satisfy the restricted isometry property of order $s$ with
+      $m = O(s\log(d/s))$ rows, with high probability. Deterministic constructions are far weaker:
+      standard coherence-based arguments certify RIP only up to $s = O(\sqrt m)$.
+
+      Construct, explicitly and in polynomial time, an $m \times d$ matrix satisfying RIP of order
+      $s = m^{1/2+\epsilon}$ for some fixed $\epsilon>0$ — or better, $s = \tilde O(m)$, matching the
+      random case.
+    solution: |
+      **This is open. What follows is the state of the argument, not an answer.**
+
+      **Why the square root appears.** The workhorse deterministic tool is coherence: if every pair of
+      distinct normalised columns has $|\langle a_i, a_j\rangle| \le \mu$, then Gershgorin's theorem
+      gives RIP of order $s$ with constant $\delta_s \le (s-1)\mu$. The Welch bound forces
+      $\mu \gtrsim 1/\sqrt m$ once $d \gg m$, so this route certifies RIP only while
+      $s \lesssim \sqrt m$. The barrier is in the *proof technique*, not obviously in the matrices:
+      coherence controls $2 \times 2$ interactions, and RIP is a statement about $s \times s$
+      submatrices.
+
+      **What has been achieved.** One construction is known to break the barrier, by
+      $s = m^{1/2+\epsilon}$ for a small explicit $\epsilon$, using additive-combinatorial input
+      (bounds on additive energy) rather than coherence. It is a genuine improvement and it is a long
+      way from $\tilde O(m)$.
+
+      **A hardness result to respect.** *Certifying* that a given matrix satisfies RIP is NP-hard in
+      general. So the target is a construction that comes with a proof, not a search procedure that
+      finds a good matrix and verifies it afterwards — the latter is ruled out.
+
+      **Where the argument stops.** Every known deterministic proof controls submatrices through
+      pairwise quantities, and every pairwise quantity is capped by Welch. Breaking $\tilde O(m)$
+      seems to need a fundamentally different certificate of near-isometry on sparse supports.
+
+      **Why it matters.** A random sensing matrix must be stored or regenerated and cannot be
+      structured for fast multiplication in general; an explicit one could be. The gap between what
+      randomness gives and what we can construct is one of the sharpest examples of the
+      probabilistic method outrunning explicit construction.
+
+  # ------------------------------------------------------- hard but solved ---
+  - id: ol-nesterov-lower-bound
+    title: The Ω(1/t²) lower bound for first-order methods
+    field: advanced-optimization
+    topic: advanced-optimization/acceleration
+    difficulty: olympiad
+    type: proof
+    estimated_time: 1d
+    abyss: true
+    tags: [lower bound, acceleration, optimality, worst case]
+    statement: |
+      Prove that for every first-order method whose iterates satisfy
+      $$
+      x_t \in x_0 + \operatorname{span}\{\nabla f(x_0),\dots,\nabla f(x_{t-1})\},
+      $$
+      and for every $t \le (d-1)/2$, there exists a convex $L$-smooth function $f$ on $\R^d$ with
+      $$
+      f(x_t) - f^\star \ \ge\ \frac{3L\|x_0-x^\star\|_2^2}{32(t+1)^2}.
+      $$
+      Conclude that Nesterov's method is optimal in this class up to a constant.
+    hints:
+      - The whole proof is one carefully chosen quadratic. Take $f(x) = \frac{L}{8}\big(x_1^2 + \sum_{i=1}^{d-1}(x_i-x_{i+1})^2 + x_d^2\big) - \frac{L}{4}x_1$ — a tridiagonal quadratic whose Hessian is a discrete Laplacian.
+      - Compute the support of the gradient. At $x_0 = 0$ the gradient has only its first coordinate non-zero; after one step only the first two coordinates can be non-zero, and so on. This is the key structural fact.
+      - The span condition therefore forces $x_t$ to live in the first $t$ coordinates. Minimise $f$ over that subspace exactly, and compare with the unconstrained minimum.
+    solution: |
+      **Setup.** Fix $t$ and $d \ge 2t+1$. Let $A \in \R^{d\times d}$ be the tridiagonal matrix with
+      $2$ on the diagonal and $-1$ on the off-diagonals, and set
+      $$
+      f(x) = \frac{L}{8}\,x^\top A x - \frac{L}{4}\,e_1^\top x .
+      $$
+
+      *Smoothness.* $A$ is a discrete Laplacian with $0 \preceq A \preceq 4I$, so
+      $0 \preceq \nabla^2 f = \frac{L}{4}A \preceq LI$: the function is convex and $L$-smooth.
+
+      **Step 1: the gradient propagates one coordinate per step.** We have
+      $\nabla f(x) = \frac{L}{4}(Ax - e_1)$. Because $A$ is tridiagonal, if $x$ is supported on the
+      first $k$ coordinates then $Ax$ is supported on the first $k+1$. Starting from $x_0 = 0$,
+      $\nabla f(x_0) = -\frac{L}{4}e_1$ is supported on coordinate $1$; inductively, if every iterate
+      up to $x_{k}$ is supported on the first $k$ coordinates then every gradient computed so far is
+      supported on the first $k+1$, so the span condition puts $x_{k+1}$ in the first $k+1$
+      coordinates. Hence
+      $$
+      x_t \in \mathcal{K}_t := \{x : x_i = 0 \text{ for } i > t\}.
+      $$
+
+      **Step 2: solve the unconstrained problem.** $\nabla f(x)=0$ means $Ax = e_1$. The solution is
+      $$
+      x^\star_i = 1 - \frac{i}{d+1}, \qquad i = 1,\dots,d,
+      $$
+      as is checked directly from the tridiagonal recursion $-x_{i-1}+2x_i-x_{i+1}=0$ for $i\ge2$ with
+      the boundary conditions. Then
+      $$
+      f^\star = \frac{L}{8}(x^\star)^\top A x^\star - \frac{L}{4}e_1^\top x^\star
+      = -\frac{L}{8}e_1^\top x^\star = -\frac{L}{8}\Big(1-\frac{1}{d+1}\Big),
+      $$
+      using $Ax^\star = e_1$ twice, and
+      $$
+      \|x_0 - x^\star\|_2^2 = \sum_{i=1}^d\Big(1-\frac{i}{d+1}\Big)^2 \le \frac{d+1}{3}.
+      $$
+
+      **Step 3: solve the problem restricted to $\mathcal{K}_t$.** Restricted to the first $t$
+      coordinates, $f$ is the same problem in dimension $t$: the restricted Hessian is the $t \times t$
+      tridiagonal Laplacian and the linear term is unchanged. So by Step 2 applied with $d$ replaced
+      by $t$,
+      $$
+      \min_{x\in\mathcal{K}_t} f(x) = -\frac{L}{8}\Big(1 - \frac{1}{t+1}\Big).
+      $$
+
+      **Step 4: combine.** Since $x_t \in \mathcal{K}_t$,
+      $$
+      f(x_t) - f^\star \ \ge\ -\frac{L}{8}\Big(1-\frac{1}{t+1}\Big) + \frac{L}{8}\Big(1-\frac{1}{d+1}\Big)
+      = \frac{L}{8}\left(\frac{1}{t+1} - \frac{1}{d+1}\right).
+      $$
+      Choosing $d = 2t+1$ gives $\frac{1}{t+1}-\frac{1}{2t+2} = \frac{1}{2(t+1)}$, so
+      $$
+      f(x_t)-f^\star \ \ge\ \frac{L}{16(t+1)} .
+      $$
+      **Step 5: express it in the scale-invariant form.** From Step 2 with $d = 2t+1$,
+      $$
+      \|x_0-x^\star\|_2^2 \ \le\ \frac{d+1}{3} = \frac{2(t+1)}{3},
+      \qquad\text{equivalently}\qquad
+      \frac{3\|x_0-x^\star\|_2^2}{2(t+1)} \ \le\ 1 .
+      $$
+      Multiplying the bound of Step 4 by this quantity, which is at most $1$, only weakens it:
+      $$
+      f(x_t)-f^\star \ \ge\ \frac{L}{16(t+1)}
+      \ \ge\ \frac{L}{16(t+1)}\cdot\frac{3\|x_0-x^\star\|_2^2}{2(t+1)}
+      = \frac{3L\|x_0-x^\star\|_2^2}{32(t+1)^2},
+      $$
+      which is the claim.
+
+      **What this establishes.** No method that forms its iterates from the span of observed gradients
+      can beat $O(1/t^2)$ on smooth convex problems in the regime $t \lesssim d$. Nesterov's
+      accelerated method attains $O(L\|x_0-x^\star\|^2/t^2)$, so it is optimal in this class up to an
+      absolute constant — and this is why acceleration is not merely a trick that happens to work:
+      it is the boundary.
+
+      **Read the hypothesis carefully.** The bound applies to methods restricted to the gradient span
+      and to $t \lesssim d$. It says nothing about methods that use second-order information, and
+      nothing about the regime $t \gg d$, where the geometry is different.
+
+  - id: ol-hanson-wright
+    title: Prove the Hanson–Wright inequality
+    field: high-dimensional-probability
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: olympiad
+    type: proof
+    estimated_time: 1d
+    abyss: true
+    tags: [hanson-wright, quadratic forms, decoupling, concentration]
+    statement: |
+      Let $X = (X_1,\dots,X_n)$ have independent, mean-zero, sub-Gaussian coordinates with
+      $\|X_i\|_{\psi_2} \le K$, and let $A \in \R^{n\times n}$. Prove that for every $t \ge 0$,
+      $$
+      \P\Big(\big|X^\top A X - \E X^\top A X\big| \ge t\Big)
+      \ \le\ 2\exp\left[-c\min\left(\frac{t^2}{K^4\|A\|_F^2},\ \frac{t}{K^2\|A\|}\right)\right],
+      $$
+      with $c$ an absolute constant. Then explain why **both** norms of $A$ must appear.
+    hints:
+      - Split $X^\top A X = \sum_i A_{ii}X_i^2 + \sum_{i\ne j}A_{ij}X_iX_j$. The diagonal part is a sum of independent sub-exponential variables — Bernstein handles it.
+      - For the off-diagonal part, bound the moment generating function. Decoupling replaces $\sum_{i\neq j}A_{ij}X_iX_j$ by $\sum_{i,j}A_{ij}X_iX_j'$ with an independent copy $X'$, at the cost of an absolute constant.
+      - With $X$ frozen, $\sum_{i,j}A_{ij}X_iX_j'$ is sub-Gaussian in $X'$ with parameter $\|A^\top X\|_2$. Take the expectation over $X$ of the resulting Gaussian-type MGF, and handle $\E\exp(\lambda^2\|A^\top X\|_2^2)$ by comparing with a Gaussian quadratic form, which can be diagonalised.
+    solution: |
+      Write $S = X^\top A X - \E X^\top A X$ and split along the diagonal:
+      $$
+      S = \underbrace{\sum_{i} A_{ii}\big(X_i^2 - \E X_i^2\big)}_{S_{\mathrm{diag}}}
+      \ +\ \underbrace{\sum_{i \ne j} A_{ij} X_i X_j}_{S_{\mathrm{off}}} .
+      $$
+      It suffices to prove the bound for each part with $t/2$, since $\P(|S|\ge t) \le
+      \P(|S_{\mathrm{diag}}|\ge t/2) + \P(|S_{\mathrm{off}}|\ge t/2)$.
+
+      **Part 1: the diagonal.** $X_i$ sub-Gaussian with $\|X_i\|_{\psi_2}\le K$ implies $X_i^2$ is
+      sub-exponential with $\|X_i^2\|_{\psi_1} \le \|X_i\|_{\psi_2}^2 \le K^2$, and centring preserves
+      this up to an absolute constant. Bernstein's inequality for independent sub-exponential
+      summands gives
+      $$
+      \P\big(|S_{\mathrm{diag}}| \ge t/2\big) \le
+      2\exp\left[-c_1\min\left(\frac{t^2}{K^4\sum_i A_{ii}^2},\ \frac{t}{K^2\max_i|A_{ii}|}\right)\right].
+      $$
+      Since $\sum_i A_{ii}^2 \le \|A\|_F^2$ and $\max_i |A_{ii}| \le \|A\|$, this is of the required
+      form.
+
+      **Part 2: the off-diagonal.** We bound the MGF. Fix $\lambda$ with $|\lambda| \le c_2/(K^2\|A\|)$.
+
+      *Decoupling.* Let $X'$ be an independent copy of $X$. The decoupling inequality for
+      off-diagonal chaos gives an absolute constant $C$ with
+      $$
+      \E\exp(\lambda S_{\mathrm{off}}) \ \le\ \E\exp\Big(C\lambda \sum_{i,j} A_{ij} X_i X_j'\Big).
+      $$
+
+      *Condition on $X$.* Given $X$, the sum $\sum_{i,j}A_{ij}X_iX_j' = \langle A^\top X, X'\rangle$
+      is a linear form in the independent sub-Gaussian vector $X'$, hence sub-Gaussian with parameter
+      $CK\|A^\top X\|_2$. Therefore
+      $$
+      \E_{X'}\exp\big(C\lambda\langle A^\top X, X'\rangle\big)
+      \ \le\ \exp\big(C'\lambda^2K^2\|A^\top X\|_2^2\big).
+      $$
+
+      *Take the expectation over $X$.* We need $\E\exp(\mu\|A^\top X\|_2^2)$ for
+      $\mu = C'\lambda^2K^2$. Comparison with a Gaussian vector $g \sim \Ncal(0, I_n)$ — valid up to
+      absolute constants because the coordinates of $X$ are sub-Gaussian with parameter $K$ — reduces
+      this to $\E\exp(C''\mu K^2\|A^\top g\|_2^2)$. Diagonalise: with $s_i$ the singular values of
+      $A$, $\|A^\top g\|_2^2 \overset{d}{=} \sum_i s_i^2 g_i^2$ with $g_i$ i.i.d. standard normal, so
+      $$
+      \E\exp\Big(\nu\sum_i s_i^2 g_i^2\Big) = \prod_i (1-2\nu s_i^2)^{-1/2},
+      \qquad \nu := C''\mu K^2,
+      $$
+      which is finite provided $2\nu s_i^2 \le 1/2$ for all $i$, i.e. $\nu \le 1/(4\|A\|^2)$. Using
+      $(1-u)^{-1/2} \le e^{u}$ for $u \in [0,1/2]$,
+      $$
+      \prod_i (1-2\nu s_i^2)^{-1/2} \le \exp\Big(2\nu \sum_i s_i^2\Big) = \exp\big(2\nu\|A\|_F^2\big).
+      $$
+
+      *Collect.* Substituting $\nu = C''C'\lambda^2K^4$ back,
+      $$
+      \E\exp(\lambda S_{\mathrm{off}}) \ \le\ \exp\big(C_3\lambda^2 K^4 \|A\|_F^2\big)
+      \qquad\text{for all } |\lambda| \le \frac{c_2}{K^2\|A\|}.
+      $$
+
+      *Chernoff.* For $t \ge 0$, $\P(S_{\mathrm{off}} \ge t/2) \le \exp(C_3\lambda^2K^4\|A\|_F^2 - \lambda t/2)$.
+      Optimising over the admissible range of $\lambda$ gives the unconstrained optimum
+      $\lambda = t/(4C_3K^4\|A\|_F^2)$ when that value is admissible — yielding the sub-Gaussian
+      branch $\exp(-c t^2/(K^4\|A\|_F^2))$ — and otherwise the endpoint
+      $\lambda = c_2/(K^2\|A\|)$ — yielding the sub-exponential branch $\exp(-ct/(K^2\|A\|))$.
+      Applying the same argument to $-S_{\mathrm{off}}$ and combining with Part 1 gives the stated
+      two-sided bound.
+
+      **Why both norms appear.** The two branches correspond to two different worst cases, and each is
+      attained.
+
+      - *Frobenius branch.* Take $A = I_n$ and $X$ with i.i.d. standard Gaussian coordinates. Then
+        $X^\top A X - \E = \sum_i (g_i^2-1)$, a sum of $n$ independent centred $\chi^2_1$ variables,
+        whose fluctuations are of order $\sqrt n = \|I_n\|_F$. Near the mean the behaviour is
+        Gaussian with variance $\asymp \|A\|_F^2$: the Frobenius norm is the variance proxy.
+      - *Operator branch.* Take $A = e_1e_1^\top$, so $X^\top A X = g_1^2$, a single $\chi^2_1$. Its
+        upper tail is $e^{-t/2}$ — exponential, not Gaussian, and governed by $\|A\| = 1$. Far in the
+        tail a single heavy coordinate dominates, and the operator norm is what controls it.
+
+      No single-norm bound can cover both: $\|A\|_F$ can exceed $\|A\|$ by $\sqrt n$, and the
+      inequality has to be tight in each regime separately. This mixed sub-Gaussian/sub-exponential
+      shape is exactly the tail of a quadratic form, and it is why Hanson–Wright — not a plain
+      Hoeffding argument — is the right tool for norms of random projections and for covariance
+      estimation.
+
+  - id: ol-marchenko-pastur-stieltjes
+    title: Derive the Marchenko–Pastur law via the Stieltjes transform
+    field: random-matrix-theory
+    topic: random-matrix-theory/marchenko-pastur
+    difficulty: olympiad
+    type: proof
+    estimated_time: 1d
+    abyss: true
+    tags: [marchenko-pastur, stieltjes transform, self-consistent equation, resolvent]
+    statement: |
+      Let $X$ be $n \times d$ with i.i.d. entries of mean $0$ and variance $1$, and let
+      $S = \frac1n X^\top X$ with $d/n \to \gamma \in (0,1]$. Derive the limiting spectral density
+      $$
+      \varrho_{\mathrm{MP}}(x) = \frac{\sqrt{(\lambda_+-x)(x-\lambda_-)}}{2\pi\gamma x},
+      \qquad \lambda_\pm = (1\pm\sqrt\gamma)^2,
+      $$
+      by: defining the Stieltjes transform, deriving the self-consistent equation it satisfies in the
+      limit, solving it, and inverting. State clearly which step is the one requiring concentration
+      (and which this derivation therefore assumes).
+    hints:
+      - Define $m(z) = \int \frac{\varrho(x)}{x-z}\,dx = \lim \frac1d \tr (S - zI)^{-1}$ for $z$ off the real axis, and recall the inversion formula $\varrho(x) = \frac1\pi \lim_{\eta\downarrow0}\Im\, m(x+i\eta)$.
+      - Use the Schur complement to write the $(1,1)$ entry of the resolvent in terms of the resolvent of the matrix with the first column removed, then argue that the quadratic form concentrates on its mean — this is where Hanson–Wright enters.
+      - You should reach $m(z) = \big(1 - \gamma - \gamma z\, m(z) - z\big)^{-1}$. Solve the resulting quadratic and choose the branch with $\Im\, m > 0$ for $\Im\, z > 0$.
+    solution: |
+      **Step 1: the object.** For $z \in \mathbb{C}^+$ define the Stieltjes transform of the empirical
+      spectral measure of $S$,
+      $$
+      m_d(z) = \frac1d \tr (S-zI)^{-1} = \frac1d\sum_{i=1}^d \frac{1}{\lambda_i - z}.
+      $$
+      $m_d$ is analytic on $\mathbb{C}^+$ with $\Im\, m_d > 0$ there, and the measure is recovered by
+      $\varrho(x) = \frac1\pi\lim_{\eta\downarrow0}\Im\, m(x+i\eta)$. Proving convergence of the
+      spectral measure is therefore the same as proving convergence of $m_d$ pointwise on
+      $\mathbb{C}^+$.
+
+      **Step 2: Schur complement.** Write $S = \frac1n\sum_{k=1}^n x_kx_k^\top$ where $x_k \in \R^d$
+      are the rows of $X$. Let $G = (S-zI)^{-1}$ be the resolvent. By the Schur complement formula,
+      the $j$-th diagonal entry satisfies
+      $$
+      G_{jj} = \frac{1}{-z + S_{jj} - s_j^\top (S^{(j)} - zI)^{-1} s_j},
+      $$
+      where $S^{(j)}$ is $S$ with row and column $j$ removed and $s_j$ is the $j$-th column of $S$
+      with entry $j$ removed.
+
+      **Step 3: the concentration step.** The quadratic form $s_j^\top(S^{(j)}-zI)^{-1}s_j$ is a
+      quadratic form in the entries of column $j$ of $X$, which are independent of $S^{(j)}$. By
+      Hanson–Wright, conditionally on $S^{(j)}$,
+      $$
+      s_j^\top (S^{(j)}-zI)^{-1} s_j \ \approx\ \frac1n \tr (S^{(j)}-zI)^{-1}
+      $$
+      with fluctuations of order $n^{-1/2}$ in the relevant norms, uniformly for $z$ with
+      $\Im\, z \ge \eta_0 > 0$. **This is the step that requires concentration, and this derivation
+      assumes it** — turning the approximation into a theorem requires quantitative control of the
+      error, plus a rank-one interlacing argument showing
+      $\frac1d\tr(S^{(j)}-zI)^{-1} = m_d(z) + O(1/d)$. Those estimates are the technical content of a
+      full proof; everything else here is algebra.
+
+      **Step 4: the self-consistent equation.** Substituting the approximation, every diagonal entry
+      of $G$ has the same limit, so with $\gamma = d/n$,
+      $$
+      m(z) = \frac{1}{-z + 1 - \gamma - \gamma z\, m(z)},
+      $$
+      after accounting for the normalisation $\frac1n\tr = \gamma \cdot \frac1d\tr$ and for the
+      aspect-ratio bookkeeping between the $d\times d$ and $n\times n$ resolvents. Equivalently,
+      $$
+      \gamma z\, m(z)^2 + \big(z + \gamma - 1\big) m(z) + 1 = 0 .
+      $$
+
+      **Step 5: solve and choose the branch.**
+      $$
+      m(z) = \frac{-(z+\gamma-1) \pm \sqrt{(z+\gamma-1)^2 - 4\gamma z}}{2\gamma z}.
+      $$
+      Exactly one branch satisfies $\Im\, m(z) > 0$ for $z \in \mathbb{C}^+$ and
+      $m(z) \sim -1/z$ as $|z| \to \infty$ (which any Stieltjes transform of a probability measure
+      must); that is the solution.
+
+      **Step 6: invert.** The discriminant factorises:
+      $$
+      (z+\gamma-1)^2 - 4\gamma z = \big(z - (1-\sqrt\gamma)^2\big)\big(z-(1+\sqrt\gamma)^2\big)
+      = (z-\lambda_-)(z-\lambda_+).
+      $$
+      For $x \in (\lambda_-,\lambda_+)$ this is negative, so the square root is purely imaginary and,
+      as $\eta \downarrow 0$,
+      $$
+      \Im\, m(x+i\eta) \longrightarrow \frac{\sqrt{(\lambda_+-x)(x-\lambda_-)}}{2\gamma x}.
+      $$
+      Dividing by $\pi$,
+      $$
+      \varrho_{\mathrm{MP}}(x) = \frac{\sqrt{(\lambda_+-x)(x-\lambda_-)}}{2\pi\gamma x},
+      \qquad x \in [\lambda_-,\lambda_+],
+      $$
+      and outside $[\lambda_-,\lambda_+]$ the discriminant is positive, the square root real, and
+      $\Im\, m = 0$: no mass. For $\gamma > 1$ the same computation holds with an additional atom of
+      mass $1-1/\gamma$ at $0$, from the forced rank deficiency of $S$.
+
+      **What to take from this.** The derivation is almost entirely algebraic once the self-consistent
+      equation is in hand, and the entire probabilistic content sits in Step 3. That is the
+      characteristic shape of resolvent arguments in random matrix theory: identify a fixed-point
+      equation, prove one concentration estimate, and let complex analysis do the rest.

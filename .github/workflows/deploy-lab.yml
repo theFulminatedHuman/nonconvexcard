@@ -1,0 +1,91 @@
+# Builds the AI Mathematics Research Lab (lab/) and publishes the static export
+# to GitHub Pages.
+#
+# Nothing here publishes anything until Settings → Pages → Source is set to
+# "GitHub Actions". Until then this workflow builds and uploads an artifact that
+# is never served. Switching that setting replaces whatever Pages currently
+# serves — for this repository, the Jekyll site at the root — with this
+# application, so it is deliberately a setting you change by hand.
+#
+# `workflow_dispatch` only becomes available once this file is on the default
+# branch: GitHub reads manual triggers from the default branch, not from
+# feature branches.
+name: Deploy lab to GitHub Pages
+
+on:
+  # Deploy whenever the app changes on the default branch.
+  push:
+    branches: [master]
+    paths:
+      - 'lab/**'
+      - '.github/workflows/deploy-lab.yml'
+  # And on demand, for a redeploy without a code change.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deployments at once; cancel a queued one rather than a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lab
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: lab/package-lock.json
+
+      # A project page is served from https://<owner>.github.io/<repo>/, so the
+      # export needs that prefix. A user or organisation page (repository named
+      # <owner>.github.io) is served from the root and needs no prefix.
+      - name: Resolve base path
+        id: base
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          repo=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          if [ "$repo" = "$owner.github.io" ]; then
+            echo "path=" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=/${{ github.event.repository.name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: npm ci
+
+      - run: npm test
+
+      # `next build` type-checks the project with the same tsconfig
+      # (`typescript.ignoreBuildErrors` is false), and it regenerates the
+      # `next-env.d.ts` that a standalone `tsc` run would need, so the build is
+      # both the compile step and the type check.
+      - name: Build static export
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.path }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: lab/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

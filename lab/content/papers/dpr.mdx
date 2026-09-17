@@ -1,0 +1,76 @@
+---
+title: Dense Passage Retrieval for Open-Domain Question Answering
+authors: Vladimir Karpukhin, Barlas Oğuz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, Wen-tau Yih
+year: 2020
+venue: EMNLP
+url: https://arxiv.org/abs/2004.04906
+arxiv: '2004.04906'
+field: rag
+tags: [dense retrieval, dpr, contrastive, in-batch negatives, bi-encoder]
+problem: Sparse lexical retrieval such as BM25 fails when the question and the answer passage share no vocabulary, and earlier dense methods had not beaten it.
+contribution: A dual-encoder trained with a contrastive loss using in-batch negatives and hard negatives, which outperforms BM25 substantially and became the standard dense retriever recipe.
+prerequisites:
+  - rag/embedding-geometry-and-similarity
+  - rag/vector-search-and-ann
+  - machine-learning/logistic-regression
+descendants: [rag-original]
+related: [rag-original]
+---
+
+## What problem does this paper solve?
+
+The vocabulary-mismatch failure of lexical retrieval, and the practical question of how to train a
+dense retriever without prohibitive negative-sampling cost.
+
+## What mathematical objects are introduced?
+
+Two encoders $f_Q,f_Z$ and the similarity $s(q,z) = \ip{f_Q(q)}{f_Z(z)}$, trained with the
+softmax contrastive loss over a positive and $n$ negatives:
+$$
+\mathcal{L} = -\log\frac{e^{s(q,z^+)}}{e^{s(q,z^+)}+\sum_{j=1}^n e^{s(q,z_j^-)}} .
+$$
+
+## What assumptions are made?
+
+That other passages in the same batch are valid negatives for a given question. This is the
+**in-batch negatives** trick: with batch size $B$ it supplies $B-1$ negatives at no extra encoder
+cost, since every passage in the batch must be encoded anyway. The assumption fails when the batch
+contains a false negative — a passage that does in fact answer the question.
+
+## What equations matter?
+
+The contrastive loss above is exactly a
+<TopicRef id="machine-learning/logistic-regression">softmax classification</TopicRef> over the batch,
+so its gradient is the familiar prediction-minus-target form. The loss also has a direct geometric
+reading: it pushes $f_Q(q)$ towards $f_Z(z^+)$ and away from the other directions, which is the
+mechanism that counteracts the
+<TopicRef id="rag/embedding-geometry-and-similarity">anisotropy</TopicRef> of raw pretrained
+encoders.
+
+## What theorem or result is important?
+
+No theorem. Top-20 retrieval accuracy improved from $59\%$ (BM25) to $79\%$ on Natural Questions,
+and the downstream QA accuracy improved correspondingly.
+
+## What proof techniques are used?
+
+None; ablations on negative selection (random, BM25-hard, in-batch) establish that hard negatives
+matter most.
+
+## What prior mathematics is required?
+
+Inner-product similarity and normalisation; the softmax and cross-entropy gradient;
+approximate nearest-neighbour search for the index.
+
+## Limitations
+
+The bi-encoder computes no query–document interaction, so it cannot express matching that requires
+attending jointly — which is why a cross-encoder reranker is added on top, at the cost of the
+<TopicRef id="rag/vector-search-and-ann">recall ceiling</TopicRef> argument applying. Training is
+sensitive to negative mining. And the index must be rebuilt whenever $f_Z$ changes, which is why
+end-to-end retriever training is awkward.
+
+## Why it mattered
+
+It established the dual-encoder-with-in-batch-negatives recipe that every production embedding model
+still uses, and it made dense retrieval the default rather than a research curiosity.

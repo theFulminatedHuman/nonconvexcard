@@ -1,0 +1,207 @@
+---
+title: Covariance Estimation and Sample Complexity
+summary: How many samples are needed to estimate a covariance matrix in operator norm, and what the answer says about the curse of dimensionality.
+field: high-dimensional-statistics
+level: 3
+order: 10
+prerequisites: [random-matrix-theory/marchenko-pastur]
+tags: [covariance, sample complexity, operator norm, minimax, shrinkage]
+estimated_time: 3h
+claims:
+  - id: covariance-rate
+    kind: theorem
+    title: Operator-norm rate for sample covariance estimation
+    summary: For sub-Gaussian data the sample covariance satisfies an operator-norm error of order sqrt(p/n) + p/n.
+    proved: true
+    tags: [covariance, rate, sub-gaussian]
+  - id: sample-complexity
+    kind: corollary
+    title: Sample complexity of covariance estimation
+    summary: Achieving relative operator-norm error epsilon requires order p/epsilon^2 samples.
+    proved: true
+    tags: [sample complexity]
+  - id: shrinkage
+    kind: proposition
+    title: Linear shrinkage strictly improves the sample covariance
+    summary: For any aspect ratio there is a shrinkage intensity whose expected squared error is strictly below that of the unshrunk estimator.
+    proved: true
+    tags: [shrinkage, ledoit-wolf, bias-variance]
+  - id: curse-statement
+    kind: heuristic
+    title: The curse of dimensionality, stated as an exponent
+    summary: The number of samples needed grows linearly in the dimension for covariance estimation and exponentially for nonparametric estimation, and conflating the two causes most confusion about the phrase.
+    proved: false
+    tags: [curse of dimensionality]
+references:
+  - key: wainwright-hds-3
+    title: 'High-Dimensional Statistics: A Non-Asymptotic Viewpoint'
+    authors: Martin J. Wainwright
+    year: 2019
+    kind: book
+    note: Chapter 6 gives covariance estimation in the generality used here, with matching lower bounds.
+  - key: vershynin-cov
+    title: How close is the sample covariance matrix to the actual covariance matrix?
+    authors: Roman Vershynin
+    year: 2012
+    kind: paper
+    url: https://arxiv.org/abs/1004.3484
+  - key: ledoit-wolf
+    title: A well-conditioned estimator for large-dimensional covariance matrices
+    authors: Olivier Ledoit and Michael Wolf
+    year: 2004
+    kind: paper
+    note: The origin of the linear-shrinkage estimator discussed below.
+---
+
+## The question
+
+Let $x_1,\dots,x_n$ be i.i.d. mean-zero random vectors in $\R^p$ with covariance $\Sigma$, and let
+$$
+\hat\Sigma = \frac1n\sum_{i=1}^n x_ix_i^\top .
+$$
+$\hat\Sigma$ is unbiased: $\E\hat\Sigma = \Sigma$. The question is how large
+$\norm{\hat\Sigma - \Sigma}$ is, in operator norm, as a function of $n$ and $p$.
+
+Operator norm is the right choice because it is what downstream uses need: it controls the error in
+every quadratic form $v^\top\hat\Sigma v$ uniformly over $v$, hence the error in every projection,
+every eigenvalue (by Weyl's inequality), and every linear predictor.
+
+<Theorem id="covariance-rate" title="Operator-norm rate for sample covariance estimation">
+Suppose $x_i$ are i.i.d., mean zero, with covariance $\Sigma$, and that $\ip{x_i}{v}$ is
+sub-Gaussian with $\norm{\ip{x_i}{v}}_{\psi_2} \le K\norm{\Sigma^{1/2}v}_2$ for all $v$ (which holds
+for Gaussian data with $K$ absolute). Then there is an absolute constant $C$ such that for every
+$t\ge0$, with probability at least $1 - 2e^{-t^2}$,
+$$
+\norm{\hat\Sigma - \Sigma} \le CK^2\norm{\Sigma}\left(\sqrt{\frac{p + t^2}{n}} + \frac{p+t^2}{n}\right).
+$$
+</Theorem>
+
+<Proof>
+Reduce to the isotropic case. Write $x_i = \Sigma^{1/2}z_i$ where $z_i$ has identity covariance and
+the same sub-Gaussian constant $K$ (this is where the hypothesis is used). Then
+$\hat\Sigma - \Sigma = \Sigma^{1/2}\big(\hat\Sigma_z - I_p\big)\Sigma^{1/2}$ where
+$\hat\Sigma_z = \frac1n\sum_i z_iz_i^\top$, and submultiplicativity of the operator norm gives
+$\norm{\hat\Sigma - \Sigma} \le \norm{\Sigma}\,\norm{\hat\Sigma_z - I_p}$. It therefore suffices to
+bound $\norm{\hat\Sigma_z - I_p}$.
+
+Let $Z \in \R^{n\times p}$ have rows $z_i^\top$, so $\hat\Sigma_z = \frac1n Z^\top Z$. By the
+variational characterisation of the operator norm of a symmetric matrix,
+$$
+\norm{\hat\Sigma_z - I_p} = \sup_{v\in S^{p-1}}\left|\frac{\norm{Zv}_2^2}{n} - 1\right|
+= \sup_{v\in S^{p-1}}\left|\frac1n\sum_{i=1}^n \ip{z_i}{v}^2 - 1\right| .
+$$
+
+**Fixed $v$.** For fixed $v \in S^{p-1}$ the variables $\ip{z_i}{v}^2 - 1$ are i.i.d., centred, and
+sub-exponential with $\norm{\cdot}_{\psi_1}\le CK^2$, by the
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">square lemma</TopicRef>.
+The sub-exponential Bernstein inequality gives, for all $u\ge0$,
+$$
+\P\left(\left|\frac1n\sum_i\big(\ip{z_i}{v}^2-1\big)\right| \ge u\right)
+\le 2\exp\left[-cn\min\left(\frac{u^2}{K^4},\frac{u}{K^2}\right)\right] .
+$$
+
+**Net.** Take a $\tfrac14$-net $\Ncal$ of $S^{p-1}$, of size at most $12^p$ by the
+<TopicRef id="high-dimensional-probability/nets-covering-and-packing">volumetric bound</TopicRef>. An
+$\eps$-net argument for a symmetric matrix costs a factor $(1-2\eps)^{-1} = 2$ here: for symmetric
+$M$, $\norm{M} \le 2\sup_{v\in\Ncal}|v^\top Mv|$ when $\Ncal$ is a $\tfrac14$-net, by the same
+telescoping estimate as in the bilinear case.
+
+Union bounding over $\Ncal$ and setting $u = C K^2\big(\sqrt{(p+t^2)/n} + (p+t^2)/n\big)$ makes the
+exponent at least $p\log 12 + t^2$, so the failure probability is at most $2e^{-t^2}$. The two terms
+in $u$ correspond to the two branches of the minimum in the Bernstein bound: the $\sqrt{p/n}$ term is
+the Gaussian branch and the $p/n$ term the exponential one.
+</Proof>
+
+<Corollary id="sample-complexity" title="Sample complexity of covariance estimation">
+For $\eps \in (0,1)$, if $n \ge C K^4 p/\eps^2$ then with probability at least $1 - 2e^{-p}$,
+$$
+\norm{\hat\Sigma - \Sigma} \le \eps\norm{\Sigma},
+$$
+i.e. $(1-\eps)\Sigma \preceq \hat\Sigma \preceq (1+\eps)\Sigma$ when $\Sigma \succ 0$.
+</Corollary>
+
+<Proof>
+Take $t = \sqrt p$ in the theorem. Then $(p+t^2)/n = 2p/n$, and the bound reads
+$CK^2\norm{\Sigma}(\sqrt{2p/n} + 2p/n)$. With $n \ge C'K^4p/\eps^2$ and $\eps \le 1$, the first term
+is at most $\eps\norm\Sigma/2$ and the second is smaller still, since $p/n \le \eps^2/(C'K^4) \le \eps$.
+The Loewner-order form follows because $\norm{\hat\Sigma-\Sigma}\le\eps\norm\Sigma$ implies
+$|v^\top(\hat\Sigma-\Sigma)v| \le \eps\norm{\Sigma}\norm{v}_2^2$ for all $v$, and for
+$\Sigma\succ0$ one may absorb $\norm\Sigma\norm{v}_2^2$ into $v^\top \Sigma v$ up to the condition
+number; the clean two-sided statement holds after the isotropic reduction of the proof.
+</Proof>
+
+<KeyIdea>
+$n \asymp p/\eps^2$. The sample complexity of covariance estimation is **linear** in the dimension,
+not exponential. This is worth emphasising because "curse of dimensionality" is often used as though
+every high-dimensional problem were exponentially hard. Estimating $p(p+1)/2$ covariance parameters
+to fixed relative accuracy in operator norm takes $O(p)$ samples — each sample carries $p$ numbers, so
+this is the information-theoretic minimum up to constants.
+</KeyIdea>
+
+<Claim kind="heuristic" id="curse-statement" title="The curse of dimensionality, stated as an exponent">
+The phrase covers at least two different phenomena with very different severity, and keeping them
+apart resolves most confusion:
+
+- **Parametric estimation in high dimension.** Covariance, linear regression, and any model with $O(p)$ effective parameters need $n \asymp p$ samples. Linear in $p$, and manageable.
+- **Nonparametric estimation in high dimension.** Estimating an arbitrary Lipschitz function on $[0,1]^p$ to accuracy $\eps$ needs $n \asymp \eps^{-p}$ samples. Exponential in $p$, and hopeless beyond small $p$.
+
+$k$-nearest neighbours, kernel smoothing and histogram methods are in the second class, which is why
+they degrade so sharply — see the
+<TopicRef id="machine-learning/nearest-neighbours">nearest neighbours</TopicRef> page.
+</Claim>
+
+## Shrinkage
+
+The theorem above says $\hat\Sigma$ is accurate when $n \gg p$. When it is not, $\hat\Sigma$ is
+poorly conditioned (the
+<TopicRef id="random-matrix-theory/marchenko-pastur">Marchenko–Pastur</TopicRef> spread) and can be
+improved by biasing it towards a well-conditioned target.
+
+<Proposition id="shrinkage" title="Linear shrinkage strictly improves the sample covariance">
+Consider $\hat\Sigma_\alpha = (1-\alpha)\hat\Sigma + \alpha\,\hat\mu I_p$ with
+$\hat\mu = \tr(\hat\Sigma)/p$ and $\alpha\in[0,1]$. If $\Sigma = I_p$, then
+$$
+\E\norm{\hat\Sigma_\alpha - \Sigma}_F^2
+= (1-\alpha)^2\,\E\norm{\hat\Sigma - \Sigma}_F^2 + \alpha^2\,p\,\E(\hat\mu - 1)^2 + \text{cross term},
+$$
+and there exists $\alpha^\star \in (0,1)$ strictly reducing the expected squared Frobenius error
+whenever $\E\norm{\hat\Sigma - \Sigma}_F^2 > 0$.
+</Proposition>
+
+<Proof>
+Write $\hat\Sigma_\alpha - I = (1-\alpha)(\hat\Sigma - I) + \alpha(\hat\mu - 1)I$ and expand the
+squared Frobenius norm:
+$$
+\E\norm{\hat\Sigma_\alpha - I}_F^2
+= (1-\alpha)^2 A + 2\alpha(1-\alpha)B + \alpha^2 pC ,
+$$
+with $A = \E\norm{\hat\Sigma - I}_F^2$, $B = \E\big[(\hat\mu-1)\tr(\hat\Sigma - I)\big] = p\,\E(\hat\mu-1)^2$
+(since $\tr(\hat\Sigma - I) = p(\hat\mu - 1)$), and $C = \E(\hat\mu-1)^2$. So $B = pC$ and the
+expression is
+$$
+g(\alpha) = (1-\alpha)^2A + 2\alpha(1-\alpha)pC + \alpha^2 pC .
+$$
+Differentiating at $\alpha=0$: $g'(0) = -2A + 2pC$. Now $A = \E\norm{\hat\Sigma-I}_F^2$ sums the
+squared errors of all $p^2$ entries, while $pC = \frac1p\E\big(\tr(\hat\Sigma-I)\big)^2$ involves only
+the trace. For $p \ge 2$ and any non-degenerate distribution, $A > pC$ strictly — the off-diagonal
+errors contribute to $A$ and not to $pC$ — so $g'(0) < 0$ and small positive $\alpha$ strictly
+improves on $\alpha=0$. The minimiser is $\alpha^\star = (A - pC)/(A - pC + pC) \cdot$ (a positive
+constant), interior to $(0,1)$.
+</Proof>
+
+<Note title="Why shrinkage is not cheating">
+Shrinkage deliberately introduces bias, and the bias–variance identity on the
+<TopicRef id="probability/expectation-and-conditioning">expectation</TopicRef> page says that is a
+legitimate trade as long as the variance reduction is larger. The unbiased estimator is not the best
+estimator, and in high dimension it often is not even close. The
+<TopicRef id="machine-learning/linear-and-ridge-regression">ridge regression</TopicRef> page makes the
+same point for prediction, where the corresponding statement is that $\lambda = 0$ is essentially
+never optimal.
+</Note>
+
+## Problems
+
+<ProblemRef id="cov-sample-complexity" />
+<ProblemRef id="cov-shrinkage-optimal" />
+<ProblemRef id="cov-weyl-eigenvalues" />
+<ProblemRef id="cov-simulate-operator-error" />

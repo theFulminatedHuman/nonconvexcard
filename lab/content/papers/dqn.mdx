@@ -1,0 +1,75 @@
+---
+title: Human-level control through deep reinforcement learning
+authors: Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A. Rusu, Joel Veness, Marc G. Bellemare, Alex Graves, Martin Riedmiller, Andreas K. Fidjeland, Georg Ostrovski and others
+year: 2015
+venue: Nature
+url: https://www.nature.com/articles/nature14236
+field: deep-learning
+tags: [dqn, reinforcement learning, q-learning, experience replay, target network]
+problem: Q-learning with a nonlinear function approximator was known to diverge, which prevented reinforcement learning from being combined with deep networks on high-dimensional inputs.
+contribution: Two stabilising mechanisms — experience replay and a periodically-frozen target network — that made deep Q-learning work, achieving human-level play on Atari games from raw pixels.
+prerequisites:
+  - stochastic-optimization/sgd-convergence
+  - deep-learning/convolution-recurrence-normalisation
+  - probability/expectation-and-conditioning
+descendants: [alphago]
+related: [alphago, alphazero]
+---
+
+## What problem does this paper solve?
+
+The combination of reinforcement learning with deep function approximation, which was known to be
+unstable: the "deadly triad" of bootstrapping, off-policy learning and function approximation.
+
+## What mathematical objects are introduced?
+
+The deep Q-network $Q_\theta(s,a)$ trained on the Bellman residual
+$$
+\mathcal{L}(\theta) = \E_{(s,a,r,s')\sim\mathcal{D}}\left[\Big(r + \gamma\max_{a'}Q_{\theta^-}(s',a') - Q_\theta(s,a)\Big)^2\right],
+$$
+where $\mathcal{D}$ is a replay buffer and $\theta^-$ is a periodically-copied frozen parameter set.
+
+## What assumptions are made?
+
+Markovian dynamics (approximated by stacking four frames), a fixed discount $\gamma$, and that the
+replay buffer's sample distribution is adequate for the expectation. The last is the weakest link:
+the buffer is off-policy and non-stationary.
+
+## What equations matter?
+
+The gradient
+$$
+\nabla_\theta\mathcal{L} = -2\,\E\Big[\big(r+\gamma\max_{a'}Q_{\theta^-}(s',a') - Q_\theta(s,a)\big)\nabla_\theta Q_\theta(s,a)\Big]
+$$
+is a **semi-gradient**: it deliberately does not differentiate the target. That is why it is not the
+gradient of any objective, and why standard
+<TopicRef id="stochastic-optimization/sgd-convergence">SGD convergence theory</TopicRef> does not
+apply. The frozen $\theta^-$ makes the target stationary within an update window, which is precisely
+what restores something resembling a supervised regression problem.
+
+## What theorem or result is important?
+
+No theorem — and this matters, because tabular Q-learning *does* have a convergence proof, and it is
+the function approximation that breaks it. Baird's counterexample shows linear-approximation
+Q-learning can diverge. The paper's contribution is empirical stabilisation, not a fix to the theory.
+
+## What proof techniques are used?
+
+None. Ablations establish that both replay and the target network are individually necessary.
+
+## What prior mathematics is required?
+
+Markov decision processes, the Bellman optimality operator and its contraction property in the
+tabular case, and why that contraction fails under projection onto a function class.
+
+## Limitations
+
+The max in the target produces overestimation bias (addressed by Double DQN); sample efficiency is
+very poor ($10^7$ frames); no convergence guarantee; performance is uneven across games and fails
+entirely on those needing long-horizon exploration.
+
+## Why it mattered
+
+It made deep reinforcement learning a field. The two tricks — replay and target networks — are still
+standard, and the paper is the template for "the theory says this diverges; here is an engineering
+intervention that makes it work", which describes a great deal of modern practice.

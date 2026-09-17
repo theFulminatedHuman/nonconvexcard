@@ -1,0 +1,266 @@
+---
+title: Linear, Ridge and Lasso Regression
+summary: The normal equations as orthogonal projection, the exact bias and variance of ridge, and why the unbiased estimator is rarely the best one.
+field: machine-learning
+level: 1
+order: 10
+prerequisites: [foundations/linear-algebra, probability/expectation-and-conditioning]
+tags: [least squares, normal equations, ridge, lasso, projection, gauss-markov]
+estimated_time: 3h
+claims:
+  - id: normal-equations
+    kind: theorem
+    title: Normal equations and the projection interpretation
+    summary: The least-squares fit is the orthogonal projection of y onto the column space of X.
+    proved: true
+    tags: [least squares, projection]
+  - id: gauss-markov
+    kind: theorem
+    title: Gauss–Markov theorem
+    summary: Among linear unbiased estimators, least squares has the smallest variance.
+    proved: true
+    tags: [gauss markov, blue, unbiased]
+  - id: ridge-closed-form
+    kind: proposition
+    title: Ridge regression in closed form and in the SVD basis
+    summary: Ridge shrinks each singular direction by a factor depending on its singular value.
+    proved: true
+    tags: [ridge, svd, shrinkage]
+  - id: ridge-beats-ols
+    kind: theorem
+    title: There is always a ridge parameter that beats least squares
+    summary: The derivative of the mean squared error with respect to the ridge parameter is strictly negative at zero.
+    proved: true
+    tags: [ridge, bias-variance, admissibility]
+  - id: lasso-vs-ridge
+    kind: proposition
+    title: Why lasso is sparse and ridge is not
+    summary: The geometry of the l1 and l2 balls, and the closed forms of the two proximal operators.
+    proved: true
+    tags: [lasso, sparsity, geometry]
+references:
+  - key: hastie-tibshirani-friedman
+    title: The Elements of Statistical Learning
+    authors: Trevor Hastie, Robert Tibshirani and Jerome Friedman
+    year: 2009
+    kind: book
+    url: https://hastie.su.domains/ElemStatLearn/
+  - key: hoerl-kennard
+    title: 'Ridge Regression: Biased Estimation for Nonorthogonal Problems'
+    authors: Arthur E. Hoerl and Robert W. Kennard
+    year: 1970
+    kind: paper
+  - key: tibshirani-lasso
+    title: Regression Shrinkage and Selection via the Lasso
+    authors: Robert Tibshirani
+    year: 1996
+    kind: paper
+---
+
+## Least squares
+
+Given $X\in\R^{n\times p}$ with $\rank X = p$ and $y\in\R^n$, minimise
+$L(\beta) = \tfrac12\norm{y - X\beta}_2^2$.
+
+<Theorem id="normal-equations" title="Normal equations and the projection interpretation">
+$L$ is minimised uniquely at
+$$
+\hat\beta = (X^\top X)^{-1}X^\top y,
+$$
+characterised by the **normal equations** $X^\top(y - X\hat\beta)=0$. The fitted values are
+$\hat y = X\hat\beta = Hy$ with $H = X(X^\top X)^{-1}X^\top$ the orthogonal projector onto
+$\operatorname{col}(X)$, and the residual $y-\hat y$ is orthogonal to every column of $X$.
+</Theorem>
+
+<Proof>
+$L$ is convex ($\nabla^2L = X^\top X\succeq0$) and differentiable, with
+$$
+\nabla L(\beta) = X^\top(X\beta - y).
+$$
+Setting this to zero gives the normal equations. Since $\rank X = p$, $X^\top X$ is invertible
+($v^\top X^\top Xv = \norm{Xv}_2^2 = 0$ forces $v=0$), so the stationary point is unique and, by
+convexity, is the global minimiser.
+
+For the projection claim, note $H^\top = H$ and
+$H^2 = X(X^\top X)^{-1}X^\top X(X^\top X)^{-1}X^\top = H$, so $H$ is an orthogonal projector by the
+characterisation in the <TopicRef id="foundations/linear-algebra">projection theorem</TopicRef>. Its
+range is $\operatorname{col}(X)$, and the normal equations say exactly that $y-\hat y \perp
+\operatorname{col}(X)$.
+</Proof>
+
+<KeyIdea>
+Least squares is projection; no calculus is needed. The normal equations are the statement
+"the residual is orthogonal to the model space", which is the
+<TopicRef id="foundations/linear-algebra">projection theorem</TopicRef>. Everything else — the
+Pythagorean decomposition of the sum of squares, the $R^2$ statistic, the geometry of ANOVA — follows
+from the same picture.
+</KeyIdea>
+
+<Theorem id="gauss-markov" title="Gauss–Markov theorem">
+Suppose $y = X\beta^\star+\varepsilon$ with $\E\varepsilon = 0$ and $\Cov(\varepsilon)=\sigma^2I_n$.
+Then $\hat\beta$ is unbiased, $\Cov(\hat\beta) = \sigma^2(X^\top X)^{-1}$, and for every other
+estimator of the form $\tilde\beta = Ay$ that is unbiased for all $\beta^\star$,
+$$
+\Cov(\tilde\beta) \succeq \Cov(\hat\beta) .
+$$
+</Theorem>
+
+<Proof>
+Unbiasedness: $\E\hat\beta = (X^\top X)^{-1}X^\top X\beta^\star = \beta^\star$. Covariance:
+$\hat\beta - \beta^\star = (X^\top X)^{-1}X^\top\varepsilon$, so
+$\Cov(\hat\beta) = (X^\top X)^{-1}X^\top(\sigma^2I)X(X^\top X)^{-1} = \sigma^2(X^\top X)^{-1}$.
+
+Let $\tilde\beta = Ay$ be unbiased for every $\beta^\star$: $\E Ay = AX\beta^\star = \beta^\star$ for
+all $\beta^\star$ forces $AX = I_p$. Write $A = (X^\top X)^{-1}X^\top + D$; then $AX = I_p$ requires
+$DX = 0$. Now
+$$
+\Cov(\tilde\beta) = \sigma^2AA^\top
+= \sigma^2\Big[(X^\top X)^{-1} + (X^\top X)^{-1}X^\top D^\top + DX(X^\top X)^{-1} + DD^\top\Big] .
+$$
+The two middle terms vanish because $DX = 0$ (and its transpose), leaving
+$\Cov(\tilde\beta) = \Cov(\hat\beta) + \sigma^2DD^\top \succeq \Cov(\hat\beta)$, since $DD^\top\succeq0$.
+</Proof>
+
+<Warning title="What Gauss–Markov does not say">
+It says least squares is best among **linear unbiased** estimators. Both restrictions are severe. Drop
+unbiasedness and ridge does better in mean squared error, always — the next theorem proves it. Drop
+linearity and, for non-Gaussian noise, nonlinear estimators can beat it. Quoting Gauss–Markov as a
+reason not to regularise is a misreading.
+</Warning>
+
+## Ridge regression
+
+$$
+\hat\beta_\lambda = \argmin_\beta\left\{\frac{1}{2}\norm{y-X\beta}_2^2 + \frac{\lambda}{2}\norm\beta_2^2\right\}.
+$$
+
+<Proposition id="ridge-closed-form" title="Ridge in closed form and in the SVD basis">
+$$
+\hat\beta_\lambda = (X^\top X+\lambda I)^{-1}X^\top y ,
+$$
+and if $X = U\Sigma V^\top$ is the SVD with singular values $\sigma_j$, then
+$$
+\hat\beta_\lambda = \sum_{j}\frac{\sigma_j}{\sigma_j^2+\lambda}\,\ip{u_j}{y}\,v_j,
+\qquad
+\hat y_\lambda = \sum_j \frac{\sigma_j^2}{\sigma_j^2+\lambda}\ip{u_j}{y}u_j .
+$$
+The solution exists and is unique for every $\lambda>0$, even when $\rank X<p$.
+</Proposition>
+
+<Proof>
+The objective is $\lambda$-strongly convex, so it has a unique minimiser, found by setting the
+gradient $X^\top(X\beta-y)+\lambda\beta$ to zero. Substituting $X = U\Sigma V^\top$ and using
+$V^\top V = I$,
+$$
+X^\top X + \lambda I = V(\Sigma^\top\Sigma+\lambda I)V^\top,
+\qquad
+(X^\top X+\lambda I)^{-1}X^\top = V(\Sigma^\top\Sigma+\lambda I)^{-1}\Sigma^\top U^\top,
+$$
+and reading off the $j$-th component gives the stated coefficients.
+</Proof>
+
+<KeyIdea>
+The shrinkage factor $\sigma_j^2/(\sigma_j^2+\lambda)$ is near $1$ for $\sigma_j^2\gg\lambda$ and near
+$0$ for $\sigma_j^2\ll\lambda$. Ridge leaves the well-determined directions alone and suppresses the
+poorly-determined ones — precisely the directions where, by
+<TopicRef id="random-matrix-theory/marchenko-pastur">Marchenko–Pastur</TopicRef>, the sample
+covariance is least trustworthy. The effective number of parameters is
+$\sum_j\sigma_j^2/(\sigma_j^2+\lambda)$, continuously interpolating between $p$ at $\lambda=0$ and $0$
+as $\lambda\to\infty$.
+</KeyIdea>
+
+<Theorem id="ridge-beats-ols" title="There is always a ridge parameter that beats least squares">
+Under the Gauss–Markov assumptions with $\rank X = p$, define
+$m(\lambda) = \E\norm{\hat\beta_\lambda - \beta^\star}_2^2$. Then $m$ is differentiable at $0$ with
+$$
+m'(0) = -2\sigma^2\tr\big((X^\top X)^{-2}\big) < 0 ,
+$$
+so $m(\lambda)<m(0)$ for all sufficiently small $\lambda>0$.
+</Theorem>
+
+<Proof>
+Work in the SVD basis, where the problem decouples. Write $z = U^\top y$, $\theta = V^\top\beta^\star$,
+so $z_j = \sigma_j\theta_j + \tilde\varepsilon_j$ with $\tilde\varepsilon = U^\top\varepsilon$ having
+$\E\tilde\varepsilon=0$, $\Cov(\tilde\varepsilon)=\sigma^2I$. The ridge estimator's $j$-th component is
+$\hat\theta_j = \frac{\sigma_j}{\sigma_j^2+\lambda}z_j$, with
+$$
+\E\hat\theta_j = \frac{\sigma_j^2}{\sigma_j^2+\lambda}\theta_j,
+\qquad
+\Var(\hat\theta_j) = \frac{\sigma_j^2\sigma^2}{(\sigma_j^2+\lambda)^2}.
+$$
+Hence, since $\norm{\cdot}_2$ is invariant under the orthogonal $V$,
+$$
+m(\lambda) = \sum_j\left[\underbrace{\frac{\lambda^2\theta_j^2}{(\sigma_j^2+\lambda)^2}}_{\text{bias}^2}
++ \underbrace{\frac{\sigma^2\sigma_j^2}{(\sigma_j^2+\lambda)^2}}_{\text{variance}}\right].
+$$
+Differentiate term by term at $\lambda=0$. The bias term is $O(\lambda^2)$, so its derivative
+vanishes. The variance term has derivative
+$$
+\frac{d}{d\lambda}\left.\frac{\sigma^2\sigma_j^2}{(\sigma_j^2+\lambda)^2}\right|_{\lambda=0}
+= -\frac{2\sigma^2\sigma_j^2}{\sigma_j^6} = -\frac{2\sigma^2}{\sigma_j^4}.
+$$
+Summing, $m'(0) = -2\sigma^2\sum_j\sigma_j^{-4} = -2\sigma^2\tr\big((X^\top X)^{-2}\big)<0$.
+</Proof>
+
+<KeyIdea>
+Read the two terms. Bias grows like $\lambda^2$ — *second* order — while variance falls like $\lambda$
+— *first* order. So at $\lambda = 0$ there is always a free lunch, and the unbiased estimator is
+inadmissible in mean squared error. The effect is largest when some $\sigma_j$ is small, since the
+derivative scales as $\sigma_j^{-4}$, which is exactly the ill-conditioned case. This computation is
+the regression counterpart of the shrinkage result on the
+<TopicRef id="high-dimensional-statistics/covariance-estimation">covariance estimation</TopicRef> page,
+and both are instances of the James–Stein phenomenon.
+</KeyIdea>
+
+## Ridge versus lasso
+
+<Proposition id="lasso-vs-ridge" title="Why lasso is sparse and ridge is not">
+Consider the orthogonal design $X^\top X = nI$, where both problems decouple across coordinates. With
+$z = X^\top y/n$,
+$$
+\hat\beta^{\text{ridge}}_j = \frac{z_j}{1+\lambda},
+\qquad
+\hat\beta^{\text{lasso}}_j = \sign(z_j)\max\big(|z_j|-\lambda,\ 0\big) .
+$$
+Ridge multiplies; lasso subtracts and truncates. Only the second can return exactly zero.
+</Proposition>
+
+<Proof>
+With $X^\top X = nI$ the objective separates. For ridge, minimise
+$\tfrac n2(\beta_j - z_j)^2 + \tfrac\lambda2\beta_j^2$ — a quadratic, minimised at
+$z_j/(1+\lambda/n)$; absorb $n$ into $\lambda$. For lasso, minimise
+$\tfrac n2(\beta_j-z_j)^2 + \lambda|\beta_j|$, whose solution is the
+<TopicRef id="advanced-optimization/proximal-and-projected-methods">soft-thresholding operator</TopicRef>
+computed there.
+</Proof>
+
+<Intuition>
+Geometrically: the constrained forms are "minimise $\norm{y-X\beta}_2^2$ subject to
+$\norm\beta_q \le t$". The $\ell^2$ ball is round, so the tangency point between the elliptical
+level sets of the loss and the ball is almost surely in the interior of a face — no coordinate is
+zero. The $\ell^1$ ball has vertices on the axes, and an elliptical level set expanding from a generic
+centre hits a vertex with positive probability. Sparsity is a consequence of the **non-smoothness** of
+$\norm{\cdot}_1$ at the axes, which is the same fact as the flat region in the soft-threshold formula.
+</Intuition>
+
+| | Ridge | Lasso |
+| --- | --- | --- |
+| Penalty | $\lambda\norm\beta_2^2$ | $\lambda\norm\beta_1$ |
+| Closed form | yes | only for orthogonal design |
+| Sparse | no | yes |
+| Strictly convex objective | yes | no (unique solution not guaranteed) |
+| Works when $p>n$ | yes | yes |
+| Rate under sparsity | $p/n$ | $s\log p/n$ |
+| Prox operator | scaling | soft threshold |
+
+The rate comparison is the content of the
+<TopicRef id="high-dimensional-statistics/sparse-recovery-and-the-lasso">lasso theorem</TopicRef>: when
+the truth is sparse, lasso's $s\log p/n$ beats ridge's $p/n$; when it is dense, ridge wins.
+
+## Problems
+
+<ProblemRef id="lr-normal-equations" />
+<ProblemRef id="lr-gauss-markov" />
+<ProblemRef id="lr-ridge-svd" />
+<ProblemRef id="lr-ridge-beats-ols" />
+<ProblemRef id="lr-implement-ridge" />

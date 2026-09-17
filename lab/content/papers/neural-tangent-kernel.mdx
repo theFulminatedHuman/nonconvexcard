@@ -1,0 +1,80 @@
+---
+title: 'Neural Tangent Kernel: Convergence and Generalization in Neural Networks'
+authors: Arthur Jacot, Franck Gabriel, Clément Hongler
+year: 2018
+venue: NeurIPS
+url: https://arxiv.org/abs/1806.07572
+arxiv: '1806.07572'
+field: deep-learning-theory
+tags: [ntk, infinite width, kernel, gradient flow, lazy training]
+problem: Gradient descent on a non-convex neural network loss has no general convergence theory, and there was no tractable limit in which the dynamics could be solved.
+contribution: In the infinite-width limit with a particular scaling, the tangent kernel becomes deterministic and constant in time, so gradient flow on the network is exactly kernel gradient flow — a linear, solvable system.
+prerequisites:
+  - deep-learning-theory/what-is-proven
+  - machine-learning/kernel-methods-and-rkhs
+  - optimization/gradient-descent-convergence
+descendants: [deep-double-descent]
+related: [lottery-ticket, deep-double-descent]
+---
+
+## What problem does this paper solve?
+
+It supplies a regime in which training dynamics can be computed exactly, turning a question about
+non-convex optimisation into a question about a linear system.
+
+## What mathematical objects are introduced?
+
+The **neural tangent kernel**
+$$
+\Theta^{(L)}(x,x') = \ip{\nabla_\theta f(x;\theta)}{\nabla_\theta f(x';\theta)} ,
+$$
+and its infinite-width limit, which the paper shows is deterministic (independent of the random
+initialisation) and computable by an explicit layerwise recursion.
+
+## What assumptions are made?
+
+The NTK parameterisation (each layer's output scaled by $1/\sqrt{\text{width}}$), widths tending to
+infinity in all layers, and gradient flow rather than discrete steps. The scaling is essential and is
+not the one used in practice.
+
+## What equations matter?
+
+Under gradient flow the network outputs on the training set evolve as
+$$
+\dot u_t = -\Theta\,(u_t - y),
+$$
+a linear ODE. Since $\Theta\succeq0$ this converges, and the rate is governed by
+$\lambda_{\min}(\Theta)$ — which is exactly a
+<TopicRef id="optimization/convex-sets-and-functions">PL inequality</TopicRef>, as the
+<TopicRef id="deep-learning-theory/what-is-proven">theory page</TopicRef> shows.
+
+## What theorem or result is important?
+
+As width $\to\infty$: (i) $\Theta$ converges in probability to a deterministic limit; (ii) $\Theta$
+stays constant during training; (iii) consequently the trained network equals kernel regression with
+kernel $\Theta$. Du et al. and others subsequently turned this into finite-width convergence theorems
+with explicit width requirements.
+
+## What proof techniques are used?
+
+Law-of-large-numbers arguments over the width for each layer, with a careful induction on depth to
+control the recursion; concentration of the Gram matrices of the intermediate representations.
+
+## What prior mathematics is required?
+
+Kernels and RKHS; concentration for sums of independent random vectors; gradient flow as an ODE.
+
+## Limitations
+
+The regime is **lazy**: parameters move by $O(1/\sqrt{\text{width}})$, so no features are learned and
+the "deep" structure is inert. The width requirements in the finite-width follow-ups are far beyond
+practical models. Empirically the NTK kernel machine underperforms the finite trained network, and the
+kernel is observed to drift substantially in real training. So the theory describes a regime that
+exists mathematically and is not the regime practitioners are in.
+
+## Why it mattered
+
+It is the first setting in which deep-network training dynamics were solved exactly, and it made
+precise what overparameterisation buys and what it does not. It also framed the central question
+sharply: the interesting behaviour of real networks is *outside* the lazy regime, and the mean-field
+and $\mu$P lines of work exist to reach it.

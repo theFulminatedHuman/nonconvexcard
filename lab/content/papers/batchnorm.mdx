@@ -1,0 +1,74 @@
+---
+title: 'Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift'
+authors: Sergey Ioffe, Christian Szegedy
+year: 2015
+venue: ICML
+url: https://arxiv.org/abs/1502.03167
+arxiv: '1502.03167'
+field: deep-learning
+tags: [batch normalisation, optimisation, training stability]
+problem: Deep networks were slow to train and highly sensitive to initialisation and learning rate, apparently because the distribution of each layer's inputs shifts as earlier layers update.
+contribution: Normalising each feature over the mini-batch inside the network, with learned scale and shift, which permits much larger learning rates and reduces sensitivity to initialisation.
+prerequisites:
+  - deep-learning/convolution-recurrence-normalisation
+  - stochastic-optimization/sgd-convergence
+descendants: [resnet]
+related: [resnet, alexnet, dropout]
+---
+
+## What problem does this paper solve?
+
+Training instability in deep networks. The paper's stated diagnosis is **internal covariate shift**:
+layer $\ell$'s input distribution changes whenever layers $<\ell$ update, so each layer is chasing a
+moving target.
+
+## What mathematical objects are introduced?
+
+For a feature $z$ with batch statistics $\mu_B,\sigma_B^2$,
+$$
+\hat z = \gamma\,\frac{z-\mu_B}{\sqrt{\sigma_B^2+\eps}}+\beta ,
+$$
+with $\gamma,\beta$ learned. At inference, $\mu_B,\sigma_B^2$ are replaced by running averages, so the
+train and test computations differ — a subtlety with real consequences.
+
+## What assumptions are made?
+
+That batches are large enough and i.i.d. enough for $\mu_B,\sigma_B$ to be stable estimates. Both
+fail for small batches, for sequences of varying length and for distributed training with small
+per-device batches, which is why <TopicRef id="deep-learning/transformers">transformers</TopicRef> use
+layer norm instead.
+
+## What equations matter?
+
+The normalisation above, and the gradient through it, which must account for the dependence of
+$\mu_B,\sigma_B$ on every element of the batch — so the gradient for example $i$ depends on all other
+examples in the batch. That coupling is what makes batch norm a genuinely different operation from a
+per-example rescaling.
+
+## What theorem or result is important?
+
+None. The paper reports a $14\times$ reduction in training steps to a given accuracy on ImageNet and
+demonstrated robustness to larger learning rates.
+
+## What proof techniques are used?
+
+None.
+
+## What prior mathematics is required?
+
+Backpropagation through a function of batch statistics; the
+<TopicRef id="deep-learning/convolution-recurrence-normalisation">scale-invariance</TopicRef>
+property of the normalised layer.
+
+## Limitations
+
+The stated mechanism is not supported. Santurkar et al. injected distribution shift after the batch
+norm layers and the benefit persisted, which contradicts the covariate-shift account. The train/test
+discrepancy causes real bugs, and the batch dependence complicates small-batch and distributed
+training.
+
+## Why it mattered
+
+It made much deeper networks trainable and is one of the highest-impact papers in the field. It is
+also the clearest case study in deep learning of a correct empirical finding with an incorrect
+explanation — worth remembering when reading any mechanism claim in this literature.

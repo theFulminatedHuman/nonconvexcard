@@ -1,0 +1,253 @@
+---
+title: Nets, Covering Numbers and Metric Entropy
+summary: How to reduce a supremum over an infinite set to a maximum over a finite one, and what that reduction costs.
+field: high-dimensional-probability
+level: 3
+order: 40
+prerequisites: [high-dimensional-probability/concentration-of-the-norm]
+tags: [epsilon net, covering number, packing number, metric entropy, volumetric argument, gaussian width]
+estimated_time: 3h
+claims:
+  - id: net-def
+    kind: definition
+    title: Nets, covering and packing numbers
+    summary: The three finite-approximation quantities and the notation used for them.
+    proved: false
+    tags: [net, covering, packing]
+  - id: packing-covering
+    kind: lemma
+    title: Packing and covering numbers are equivalent
+    summary: The two quantities sandwich each other at scales differing by a factor of two.
+    proved: true
+    tags: [packing, covering, equivalence]
+  - id: volumetric
+    kind: theorem
+    title: Volumetric bound on covering numbers
+    summary: The unit ball of R^d admits an epsilon-net of size at most (3/epsilon)^d, and needs at least (1/epsilon)^d points.
+    proved: true
+    tags: [volumetric, covering, exponential]
+  - id: net-operator-norm
+    kind: lemma
+    title: Operator norm from a net
+    summary: The spectral norm computed on a fine enough net is within a constant factor of the true spectral norm.
+    proved: true
+    tags: [operator norm, net, approximation]
+  - id: dudley
+    kind: theorem
+    title: Dudley's entropy integral
+    summary: The expected supremum of a sub-Gaussian process is bounded by an integral of the square root of the metric entropy.
+    proved: false
+    tags: [dudley, chaining, entropy integral]
+  - id: gaussian-width
+    kind: definition
+    title: Gaussian width
+    summary: A single scalar summary of a set's complexity that controls many high-dimensional estimates.
+    proved: false
+    tags: [gaussian width, complexity]
+references:
+  - key: vershynin-hdp-5
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+    note: Chapters 4 and 7–8 for nets, chaining and Gaussian width, in far more depth than here.
+  - key: talagrand-generic
+    title: 'Upper and Lower Bounds for Stochastic Processes: Decomposition Theorems'
+    authors: Michel Talagrand
+    year: 2021
+    kind: book
+    note: The definitive account of chaining and generic chaining, which supersedes Dudley's bound.
+  - key: wainwright-hds-2
+    title: 'High-Dimensional Statistics: A Non-Asymptotic Viewpoint'
+    authors: Martin J. Wainwright
+    year: 2019
+    kind: book
+    note: Chapter 5 connects metric entropy to statistical rates.
+---
+
+<Intuition>
+Concentration inequalities control one random variable at a time. Almost every question in this
+subject is really about a supremum: the operator norm is a supremum over the sphere, a generalisation
+bound is a supremum over a function class, the worst-case distortion of a random projection is a
+supremum over pairs. The union bound handles a *finite* supremum, at a cost of $\log(\text{number of
+terms})$. Nets are how an infinite supremum is turned into a finite one.
+</Intuition>
+
+## Definitions
+
+<Definition id="net-def" title="Nets, covering and packing numbers">
+Let $(T,\rho)$ be a metric space and $\eps>0$.
+
+- $\Ncal \subseteq T$ is an **$\eps$-net** of $T$ if every $x \in T$ has some $y \in \Ncal$ with $\rho(x,y)\le\eps$.
+- The **covering number** $N(T,\rho,\eps)$ is the smallest cardinality of an $\eps$-net.
+- $\mathcal{P}\subseteq T$ is **$\eps$-separated** if $\rho(x,y) > \eps$ for all distinct $x,y\in\mathcal{P}$; the **packing number** $P(T,\rho,\eps)$ is the largest cardinality of an $\eps$-separated set.
+- $\log N(T,\rho,\eps)$ is the **metric entropy** of $T$ at scale $\eps$.
+</Definition>
+
+<Lemma id="packing-covering" title="Packing and covering numbers are equivalent">
+For every $\eps>0$,
+$$
+P(T,\rho,2\eps) \le N(T,\rho,\eps) \le P(T,\rho,\eps).
+$$
+</Lemma>
+
+<Proof>
+**Right inequality.** Let $\mathcal{P}$ be a maximal $\eps$-separated set (maximal in the sense that
+no point can be added). Maximality means every $x \in T$ is within $\eps$ of some point of
+$\mathcal{P}$ — otherwise $x$ could be added — so $\mathcal{P}$ is an $\eps$-net, giving
+$N \le |\mathcal{P}| = P(T,\rho,\eps)$.
+
+**Left inequality.** Let $\Ncal$ be an $\eps$-net and $\mathcal{P}$ a $2\eps$-separated set. Map each
+$x\in\mathcal{P}$ to some $y(x)\in\Ncal$ with $\rho(x,y(x))\le\eps$. This map is injective: if
+$y(x_1)=y(x_2)$ for $x_1\ne x_2$ then $\rho(x_1,x_2) \le \rho(x_1,y)+\rho(y,x_2)\le 2\eps$,
+contradicting $2\eps$-separation. Hence $|\mathcal{P}| \le |\Ncal|$.
+</Proof>
+
+So the two notions are interchangeable up to a factor of $2$ in the scale, and since every bound we
+prove is stated up to constants and logarithms, they may be used interchangeably. The practical
+consequence: to *upper bound* a covering number, exhibit a net; to *lower bound* it, exhibit a
+separated set.
+
+## The volumetric argument
+
+<Theorem id="volumetric" title="Volumetric bound on covering numbers">
+Let $B^d$ be the unit Euclidean ball in $\R^d$ and $\eps \in (0,1)$. Then
+$$
+\left(\frac1\eps\right)^d \;\le\; N(B^d, \norm{\cdot}_2, \eps) \;\le\; \left(\frac{3}{\eps}\right)^d .
+$$
+The same bounds, with the same proof, hold for the sphere $S^{d-1}$.
+</Theorem>
+
+<Proof>
+**Lower bound.** Let $\Ncal$ be an $\eps$-net of $B^d$. The balls $\{y + \eps B^d : y \in \Ncal\}$
+cover $B^d$, so comparing volumes,
+$$
+\operatorname{vol}(B^d) \le |\Ncal|\cdot\operatorname{vol}(\eps B^d) = |\Ncal|\,\eps^d \operatorname{vol}(B^d),
+$$
+because volume in $\R^d$ scales as the $d$-th power of the dilation factor. Dividing gives
+$|\Ncal| \ge \eps^{-d}$.
+
+**Upper bound.** Let $\mathcal{P}$ be a maximal $\eps$-separated subset of $B^d$; by the previous
+lemma it is an $\eps$-net, so it suffices to bound $|\mathcal{P}|$. The balls
+$\{x + \tfrac\eps2 B^d : x \in \mathcal{P}\}$ are pairwise disjoint (their centres are more than
+$\eps$ apart) and all contained in $(1+\tfrac\eps2)B^d$. Comparing volumes,
+$$
+|\mathcal{P}|\left(\frac\eps2\right)^d \operatorname{vol}(B^d) \le \left(1+\frac\eps2\right)^d\operatorname{vol}(B^d),
+$$
+so
+$$
+|\mathcal{P}| \le \left(\frac{2 + \eps}{\eps}\right)^d \le \left(\frac3\eps\right)^d
+$$
+using $\eps \le 1$.
+</Proof>
+
+<KeyIdea>
+Both bounds are $\eps^{-d}$ up to the base of the exponent. So metric entropy of the ball is
+$$
+\log N(B^d,\norm{\cdot}_2,\eps) = d\log\frac1\eps + O(d),
+$$
+**linear in the dimension** and only logarithmic in the accuracy. This single fact is why net
+arguments are useful: the union bound costs $\log(\text{net size}) \approx d\log(1/\eps)$, which is
+paid against a concentration exponent that is typically of order $n$ or $t^2$ — so the argument
+succeeds precisely when the sample size beats the dimension.
+</KeyIdea>
+
+## Using a net: the operator norm
+
+<Lemma id="net-operator-norm" title="Operator norm from a net">
+Let $A \in \R^{m\times d}$, let $\eps \in [0,1/2)$ and let $\Ncal$ be an $\eps$-net of $S^{d-1}$.
+Then
+$$
+\sup_{x \in \Ncal}\norm{Ax}_2 \;\le\; \norm{A} \;\le\; \frac{1}{1-\eps}\,\sup_{x\in\Ncal}\norm{Ax}_2 .
+$$
+In particular a $\tfrac12$-net gives $\norm{A} \le 2\max_{x\in\Ncal}\norm{Ax}_2$.
+</Lemma>
+
+<Proof>
+The left inequality is immediate since $\Ncal \subseteq S^{d-1}$.
+
+For the right, let $x \in S^{d-1}$ attain $\norm{Ax}_2 = \norm{A}$ (the supremum is attained by
+compactness). Choose $y\in\Ncal$ with $\norm{x-y}_2\le\eps$. Then
+$$
+\norm{A} = \norm{Ax}_2 \le \norm{Ay}_2 + \norm{A(x-y)}_2
+\le \sup_{z\in\Ncal}\norm{Az}_2 + \norm{A}\norm{x-y}_2
+\le \sup_{z\in\Ncal}\norm{Az}_2 + \eps\norm{A},
+$$
+where the middle step used the definition of the operator norm on the vector $x - y$. Rearranging,
+$(1-\eps)\norm{A} \le \sup_{z\in\Ncal}\norm{Az}_2$.
+</Proof>
+
+<Note title="The recipe">
+This lemma plus the volumetric bound plus a concentration inequality is the entire proof of the
+spectral-norm bound for random matrices on the
+<TopicRef id="random-matrix-theory/spectral-norm-of-random-matrices">next section</TopicRef>:
+1. reduce $\norm{A}$ to a maximum over a $\tfrac12$-net of size $\le 6^d$;
+2. bound $\P(\norm{Ax}_2 \ge t)$ for each *fixed* $x$ by concentration;
+3. union bound over the net, paying $6^d = e^{d\log 6}$;
+4. choose $t$ so that the concentration exponent beats $d\log 6$.
+That is the whole argument, and it generalises to any set whose covering numbers you can bound.
+</Note>
+
+## Chaining and Dudley's integral
+
+The net argument above is lossy. It approximates every point of $S^{d-1}$ at a single scale $\eps$,
+paying the full union-bound price at that scale. **Chaining** approximates at a sequence of
+geometrically decreasing scales, paying a smaller price at each.
+
+<Definition id="subgaussian-process" title="Sub-Gaussian process">
+A stochastic process $(Z_t)_{t\in T}$ indexed by a metric space $(T,\rho)$ is **sub-Gaussian** if
+$$
+\norm{Z_t - Z_s}_{\psi_2} \le C\rho(t,s) \qquad\text{for all } s,t \in T.
+$$
+</Definition>
+
+<Theorem id="dudley" title="Dudley's entropy integral">
+For a mean-zero sub-Gaussian process $(Z_t)_{t\in T}$,
+$$
+\E\sup_{t\in T} Z_t \;\le\; C\int_0^\infty \sqrt{\log N(T,\rho,\eps)}\;d\eps .
+$$
+</Theorem>
+
+The proof is the chaining argument: write $Z_t - Z_{t_0}$ as a telescoping sum along a sequence of
+nets at scales $2^{-k}$, apply a union bound at each scale, and sum the resulting geometric series.
+It is a beautiful argument and it is given in full in the references; it is stated here because the
+*shape* of the conclusion is what gets used.
+
+<Definition id="gaussian-width" title="Gaussian width">
+For a bounded set $T \subseteq \R^d$ and $g \sim \Ncal(0,I_d)$, the **Gaussian width** is
+$$
+w(T) = \E\sup_{x\in T}\ip{g}{x}.
+$$
+</Definition>
+
+Gaussian width is the single scalar that governs a remarkable range of high-dimensional estimates:
+the operator norm of a random matrix restricted to $T$, the number of measurements needed for
+compressed sensing of signals in $T$, the error of an estimator constrained to $T$. Two reference
+values worth memorising:
+
+$$
+w(S^{d-1}) = \E\norm{g}_2 \approx \sqrt d, \qquad
+w\big(\{x : \norm{x}_2 \le 1, \norm{x}_0 \le s\}\big) \lesssim \sqrt{s\log(d/s)} .
+$$
+
+The second is the reason sparse recovery needs $O(s\log(d/s))$ measurements rather than $O(d)$: the
+complexity of the set of $s$-sparse unit vectors, measured by Gaussian width, is
+$\sqrt{s\log(d/s)}$, not $\sqrt d$. The <TopicRef id="high-dimensional-statistics/sparse-recovery-and-the-lasso">sparse recovery</TopicRef>
+page makes this quantitative.
+
+<NotSaid>
+Dudley's bound is not tight in general. There are sets for which
+$\E\sup_t Z_t \ll \int_0^\infty\sqrt{\log N(T,\rho,\eps)}\,d\eps$, and the gap can be a factor of
+$\sqrt{\log}$ or worse. Talagrand's generic chaining replaces the entropy integral with the
+$\gamma_2$ functional, which does characterise $\E\sup_t Z_t$ for Gaussian processes (the majorising
+measure theorem). For most applications on this site Dudley suffices; when it does not, the
+reference is the right place to go.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="net-volumetric-lower" />
+<ProblemRef id="net-operator-norm-net" />
+<ProblemRef id="net-sparse-covering" />
+<ProblemRef id="net-gaussian-width-sphere" />

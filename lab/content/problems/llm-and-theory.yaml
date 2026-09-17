@@ -1,0 +1,775 @@
+problems:
+  - id: dlt-ntk-pl
+    title: NTK convergence is a PL inequality
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [ntk, pl inequality, gradient flow, mechanism]
+    statement: |
+      Derive the gradient-flow dynamics $\dot u_t = -\Theta_t(u_t-y)$ for the network outputs on the
+      training set, show that $\lambda_{\min}(\Theta_t)\ge\lambda_0/2$ implies exponential convergence
+      of the squared loss, and identify the resulting statement as a Polyak–Łojasiewicz inequality.
+      State precisely what remains to be proved to turn this into a theorem.
+    solution: |
+      **Dynamics.** Let $u_t\in\R^n$ be the vector of network outputs on the training set,
+      $J_t = \partial u_t/\partial\theta$ and $\mathcal L = \tfrac12\|u_t-y\|_2^2$. Gradient flow gives
+      $$
+      \dot\theta_t = -\nabla_\theta\mathcal L = -J_t^\top(u_t-y),
+      $$
+      and by the chain rule
+      $$
+      \dot u_t = J_t\dot\theta_t = -J_tJ_t^\top(u_t-y) = -\Theta_t(u_t-y),
+      \qquad \Theta_t := J_tJ_t^\top .
+      $$
+      $\Theta_t$ is the tangent kernel matrix, PSD by construction.
+
+      **Loss decay.**
+      $$
+      \frac{d}{dt}\mathcal L = (u_t-y)^\top\dot u_t = -(u_t-y)^\top\Theta_t(u_t-y)
+      \le -\lambda_{\min}(\Theta_t)\|u_t-y\|_2^2 = -2\lambda_{\min}(\Theta_t)\mathcal L .
+      $$
+      If $\lambda_{\min}(\Theta_t)\ge\lambda_0/2$ along the trajectory, then
+      $\dot{\mathcal L}\le-\lambda_0\mathcal L$ and Grönwall gives
+      $$
+      \mathcal L(t) \le e^{-\lambda_0 t}\mathcal L(0).
+      $$
+
+      **It is a PL inequality.** The displayed condition is exactly
+      $$
+      \|\nabla_\theta\mathcal L\|_2^2 = \|J_t^\top(u_t-y)\|_2^2 = (u_t-y)^\top\Theta_t(u_t-y) \ \ge\ \lambda_0\,\mathcal L,
+      $$
+      which is the Polyak–Łojasiewicz condition with constant $\lambda_0/2$. So the non-convexity is not
+      overcome; it is **bypassed**, by establishing that the trajectory stays in a region where the
+      objective behaves like a strongly convex one.
+
+      **What remains to be proved.** Everything hard is in the hypothesis
+      $\lambda_{\min}(\Theta_t)\ge\lambda_0/2$ **for all $t$**. Establishing it requires:
+      1. $\lambda_{\min}(\Theta_0)\ge\lambda_0>0$ at initialisation, which holds with high probability provided no two inputs are parallel (a Gram-matrix non-degeneracy condition);
+      2. $\|\Theta_t-\Theta_0\|$ small along the trajectory, which requires the parameters to move little, which requires the width to be large.
+
+      Step 2 is what forces the enormous width requirement ($m = \Omega(n^6/\lambda_0^4)$ in Du et al.),
+      and it is also what makes the regime **lazy**: parameters that barely move do not learn features.
+      The mechanism that makes the proof work is precisely the mechanism that makes the regime
+      unrepresentative of real training.
+
+  - id: dlt-min-norm-implicit-bias
+    title: Implicit bias of gradient descent on underdetermined least squares
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [implicit bias, minimum norm, row space]
+    statement: |
+      Prove that gradient descent from $\beta_0$ on $\tfrac12\|y-X\beta\|_2^2$ converges to the
+      interpolator closest to $\beta_0$ in $\ell^2$. Explain why this makes initialisation part of the
+      inductive bias, and why the analogous deep-network statement is open.
+    solution: |
+      **Increments live in the row space.** $\beta_{t+1} = \beta_t - \eta X^\top(X\beta_t-y)$, so every
+      increment is in $\operatorname{range}(X^\top) = \operatorname{row}(X)$. Hence
+      $\beta_t - \beta_0\in\operatorname{row}(X)$ for all $t$, and so is any limit.
+
+      **The limit interpolates.** For $\eta$ small enough the iteration converges, and the limit
+      satisfies $X^\top(X\beta_\infty-y)=0$; with $\operatorname{rank}X = n$ (the underdetermined case
+      $p>n$) this gives $X\beta_\infty = y$.
+
+      **Characterisation.** Let $\beta'$ be any interpolator. Then $X(\beta'-\beta_\infty)=0$, so
+      $\beta'-\beta_\infty\in\ker X = \operatorname{row}(X)^\perp$, while
+      $\beta_\infty-\beta_0\in\operatorname{row}(X)$. These are orthogonal, so
+      $$
+      \|\beta'-\beta_0\|_2^2 = \|\beta_\infty-\beta_0\|_2^2 + \|\beta'-\beta_\infty\|_2^2 \ \ge\ \|\beta_\infty-\beta_0\|_2^2 .
+      $$
+      So $\beta_\infty = \arg\min\{\|\beta-\beta_0\|_2 : X\beta=y\}$.
+
+      **Initialisation is inductive bias.** The loss does not determine the solution — there are
+      infinitely many interpolators and the loss cannot distinguish them. What selects one is the
+      *algorithm*, and specifically the initialisation. This is why fine-tuning from a pretrained point
+      behaves differently from training from scratch even when both reach zero training loss: they
+      converge to different solutions, and which one they reach is determined by where they started.
+
+      **Why the deep case is open.** The proof rests on the increments lying in a **fixed** subspace,
+      which is a consequence of the gradient being $X^\top(\cdot)$ with a constant $X$. For a nonlinear
+      network the Jacobian changes with $\theta$, the increments do not live in a fixed subspace, and
+      no analogous characterisation is known. Partial results exist for diagonal linear networks
+      (implicit $\ell^1$ bias), deep matrix factorisation (nuclear norm) and separable classification
+      (max margin), each under specific architectures, losses and initialisation scales, and they do not
+      compose into a general statement.
+
+  - id: dlt-sharpness-reparameterisation
+    title: Sharpness is not a property of the function
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [flat minima, sharpness, reparameterisation, counterexample]
+    statement: |
+      For a two-layer ReLU network $f(x) = W_2\rho(W_1x)$, show that
+      $(W_1,W_2)\mapsto(\alpha W_1,\alpha^{-1}W_2)$ leaves $f$ unchanged, and determine how the Hessian
+      eigenvalues scale. Conclude that naive sharpness cannot causally explain generalisation.
+    solution: |
+      **Invariance.** ReLU is positively homogeneous: $\rho(\alpha z) = \alpha\rho(z)$ for $\alpha>0$.
+      Hence
+      $$
+      \alpha^{-1}W_2\,\rho(\alpha W_1x) = \alpha^{-1}W_2\,\alpha\rho(W_1x) = W_2\rho(W_1x) = f(x).
+      $$
+      The function — and therefore the training loss, the test loss, and every generalisation property
+      — is **exactly** unchanged.
+
+      **Hessian scaling.** Consider the loss as a function of the parameters. A perturbation
+      $\delta W_1$ at the rescaled point $\alpha W_1$ affects $f$ in the same way as a perturbation
+      $\alpha^{-1}\delta W_1$ would at $W_1$ — because the network's dependence on $W_1$ enters through
+      $\alpha W_1$. So second derivatives with respect to $W_1$ scale as $\alpha^{-2}$, and those with
+      respect to $W_2$ scale as $\alpha^{2}$. The Hessian spectrum is therefore stretched by
+      $\alpha^{\pm2}$ in the two blocks.
+
+      **Consequence.** Taking $\alpha$ large makes the $W_1$-block eigenvalues arbitrarily small and the
+      $W_2$-block ones arbitrarily large; in particular $\lambda_{\max}(\nabla^2\mathcal L)$ — the usual
+      "sharpness" — can be made **arbitrarily large or small** without changing the function at all.
+
+      So a measure that varies along an orbit on which the test error is constant cannot be causally
+      responsible for the test error. Dinh, Pascanu, Bengio and Bengio made exactly this point.
+
+      **What survives.** The empirical correlation between sharpness and generalisation, measured at the
+      solutions that training actually produces, is real and reproducible — the reparameterisation
+      freedom is not exercised by SGD. And reparameterisation-invariant notions (adaptive sharpness,
+      PAC-Bayes flatness, information-theoretic measures) avoid the objection and correlate more
+      robustly. What is absent is a theorem: no result shows that flatness in any such sense implies
+      generalisation for realistic networks. Treat "flat minima generalise" as a well-supported
+      heuristic with a known counterexample to its naive form.
+
+  - id: dlt-random-labels
+    title: What fitting random labels rules out
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [random labels, capacity, uniform convergence, vacuous bounds]
+    statement: |
+      Suppose a hypothesis class $\Hcal$ can fit arbitrary $\pm1$ labellings of a sample of size $n$.
+      Show that its empirical Rademacher complexity on that sample is $1$, and deduce that every
+      uniform-convergence bound over $\Hcal$ is vacuous. Explain what does and does not follow about
+      the network's generalisation.
+    solution: |
+      **Rademacher complexity is maximal.** If $\Hcal$ shatters the sample, then for any sign vector
+      $\eps$ there is $h\in\Hcal$ with $h(x_i) = \eps_i$ for all $i$. Hence
+      $$
+      \hat{\mathfrak R}_S(\Hcal) = \E_\eps\sup_{h\in\Hcal}\frac1n\sum_i\eps_ih(x_i)
+      \ \ge\ \E_\eps\frac1n\sum_i\eps_i^2 = 1 ,
+      $$
+      and it is at most $1$ since $|h|\le1$. So $\hat{\mathfrak R}_S(\Hcal) = 1$.
+
+      **Vacuity.** The Rademacher bound reads
+      $$
+      R(h) \le \hat R_n(h) + 2\hat{\mathfrak R}_S(\Hcal) + \sqrt{\tfrac{\log(1/\delta)}{2n}} \ \ge\ 2 ,
+      $$
+      which is a trivial statement for a loss in $[0,1]$. The same applies to the VC bound, since
+      shattering $n$ points means $\mathrm{VC}\ge n$ and $\sqrt{d\log n/n}\ge1$.
+
+      **What follows.** Zhang, Bengio, Hardt, Recht and Vinyals showed that standard architectures
+      *do* fit random labels on standard datasets to zero training error. Consequently:
+      - the hypothesis class is rich enough to memorise, so **capacity alone cannot explain why these networks generalise on real labels**;
+      - any bound obtained by uniform convergence over the architecture's function class is vacuous.
+
+      **What does not follow.** That the networks generalise badly — they do not. That uniform
+      convergence is *wrong* — it is a valid sufficient condition that simply gives no information
+      here. That the architecture is a bad inductive bias — the same architecture generalises well on
+      real labels, which means the explanation must involve the *data* and the *algorithm*, not the
+      class alone. This is precisely what redirected the field towards algorithm-dependent analyses:
+      stability, PAC-Bayes with data-dependent priors, and implicit bias.
+
+  - id: dlt-scaling-law-fit
+    title: Fit a scaling law and derive the compute-optimal allocation
+    field: deep-learning-theory
+    topic: deep-learning-theory/what-is-proven
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [scaling laws, fitting, compute optimal, extrapolation]
+    statement: |
+      Given synthetic loss data of the form $\mathcal L(N,D) = E + AN^{-\alpha}+BD^{-\beta}$ with noise,
+      fit the five parameters and derive the compute-optimal allocation.
+
+      1. Fit by nonlinear least squares in log space and report parameter uncertainties.
+      2. Derive $N^\star(C)$ and $D^\star(C)$ from the fit.
+      3. Show how sensitive the allocation exponents are to the fitted $\alpha,\beta$.
+      4. Demonstrate the extrapolation risk by fitting on a restricted range and predicting outside it.
+    solution: |
+      **1. Fitting.** Generate data on a grid of $(N,D)$, add multiplicative noise, and fit
+      $$
+      \min_{E,A,B,\alpha,\beta}\ \sum_{k}\Big(\log\hat{\mathcal L}_k - \log\big(E + AN_k^{-\alpha}+BD_k^{-\beta}\big)\Big)^2
+      $$
+      with `scipy.optimize.curve_fit` or a Huber loss for robustness. Fit in **log space**: the
+      residuals are then roughly homoscedastic, which is the right model for multiplicative noise.
+      Report the covariance matrix; $\alpha$ and $\beta$ are typically correlated with $E$, and the
+      uncertainty in $E$ is large when no run reaches the floor.
+
+      **2. Allocation.** Minimise $\mathcal L$ subject to $C = 6ND$. Substituting $D = C/(6N)$ and
+      differentiating,
+      $$
+      -\frac{\alpha A}{N^{\alpha+1}}+\frac{\beta B\,6^\beta N^{\beta-1}}{C^\beta}=0
+      \quad\Longrightarrow\quad
+      N^\star \propto C^{\frac{\beta}{\alpha+\beta}},\qquad D^\star\propto C^{\frac{\alpha}{\alpha+\beta}} .
+      $$
+
+      **3. Sensitivity.** The exponent is $\beta/(\alpha+\beta)$. Evaluate it for a few plausible fits:
+
+      | $\alpha$ | $\beta$ | $N^\star$ exponent |
+      | --- | --- | --- |
+      | $0.34$ | $0.28$ | $0.45$ |
+      | $0.34$ | $0.34$ | $0.50$ |
+      | $0.076$ | $0.095$ | $0.56$ |
+      | $0.34$ | $0.15$ | $0.31$ |
+
+      A $20\%$ change in $\beta$ moves the exponent by several percent, and the resulting $N^\star$ at
+      $C = 10^{24}$ differs by an order of magnitude. This is exactly the sensitivity that separated
+      the Kaplan and Chinchilla recommendations: same functional family, different fitting methodology,
+      different conclusion by more than an order of magnitude.
+
+      **4. Extrapolation risk.** Fit using only the smallest third of the $(N,D)$ grid and predict the
+      largest third. The predictions will be systematically biased, typically underestimating $E$
+      (because no small run approaches the floor) and therefore overestimating the gains from further
+      scaling. Plot predicted against actual and observe the divergence at the extrapolated end.
+
+      **The lesson.** The scaling-law framework is a **fit**, and its conclusions inherit the fit's
+      uncertainty and its dependence on the experimental design. The functional form has held up
+      remarkably well; the constants and exponents are estimates, and the allocation rule derived from
+      them is an engineering estimate, not a theorem.
+
+  - id: lm-mle-kl
+    title: Maximum likelihood is KL minimisation
+    field: llm
+    topic: llm/language-modelling-and-cross-entropy
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [mle, kl divergence, cross entropy]
+    statement: |
+      Prove $\mathcal L(\theta) = H(\hat p) + \mathrm{KL}(\hat p\|q_\theta)$ and deduce that minimising
+      cross entropy is minimising the forward KL. Explain the mode-covering consequence.
+    solution: |
+      **Identity.** With $\hat p$ the empirical distribution,
+      $$
+      \mathcal L(\theta) = -\sum_x\hat p(x)\log q_\theta(x)
+      = -\sum_x\hat p(x)\log\hat p(x) + \sum_x\hat p(x)\log\frac{\hat p(x)}{q_\theta(x)}
+      = H(\hat p) + \mathrm{KL}(\hat p\|q_\theta).
+      $$
+      $H(\hat p)$ does not depend on $\theta$, so the two minimisations coincide.
+
+      **Mode covering.** The objective is the **forward** KL $\mathrm{KL}(\hat p\|q_\theta)$, whose
+      integrand $\hat p\log(\hat p/q_\theta)$ is infinite wherever $\hat p>0$ and $q_\theta\to0$. So the
+      model is heavily penalised for assigning near-zero probability to anything in the data, and only
+      mildly penalised for assigning probability to things not in the data (those regions contribute
+      $\hat p = 0$ times a finite quantity, i.e. nothing).
+
+      Consequently maximum likelihood produces models that **hedge**: they spread probability mass to
+      cover the data's support, including over continuations that are individually implausible. The
+      reverse KL $\mathrm{KL}(q_\theta\|\hat p)$ would be mode-seeking and would penalise invention
+      harshly, at the cost of dropping modes.
+
+      **Relevance.** The tendency of language models to produce plausible-sounding but unsupported
+      continuations is consistent with the objective they were trained on. It is also why
+      preference-optimisation methods, whose KL-regularised objective has a reverse-KL flavour relative
+      to the reference policy, change the behaviour qualitatively rather than merely quantitatively.
+
+  - id: lm-entropy-floor
+    title: The irreducible loss is the conditional entropy
+    field: llm
+    topic: llm/language-modelling-and-cross-entropy
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [entropy, lower bound, scaling laws, irreducible loss]
+    statement: |
+      Prove that the expected cross-entropy of any model is at least the conditional entropy of the
+      true distribution, with equality iff the model is exact. Relate this to the $\mathcal L_\infty$
+      term in scaling-law fits and to the interpretation of a model's reported loss.
+    solution: |
+      **Lower bound.** Pointwise in the context $x_{<t}$, writing $p = p(\cdot\mid x_{<t})$ and
+      $q = q(\cdot\mid x_{<t})$,
+      $$
+      -\sum_vp(v)\log q(v) = H(p) + \mathrm{KL}(p\|q) \ \ge\ H(p),
+      $$
+      since $\mathrm{KL}\ge0$. Non-negativity of KL is Jensen applied to $-\log$:
+      $$
+      \mathrm{KL}(p\|q) = -\sum_vp(v)\log\frac{q(v)}{p(v)} \ \ge\ -\log\sum_vp(v)\frac{q(v)}{p(v)} = -\log1 = 0,
+      $$
+      with equality iff $q/p$ is constant, i.e. $q = p$. Taking expectations over the context preserves
+      the inequality.
+
+      **Scaling laws.** The fitted form $\mathcal L(N,D) = \mathcal L_\infty + AN^{-\alpha}+BD^{-\beta}$
+      has an irreducible term, and the bound identifies what it estimates: the expected conditional
+      entropy of the text distribution at the given tokenisation. Language is genuinely stochastic —
+      many continuations are legitimate — so no model reaches zero loss, and a fitted
+      $\mathcal L_\infty$ near zero would be a sign of a mis-specified fit or of contamination rather
+      than of an oracle model.
+
+      **Interpreting a reported loss.** A cross-entropy of $2.0$ nats per token does not mean the model
+      is "$2.0$ wrong": it means $H + \mathrm{KL} = 2.0$, and the decomposition into irreducible and
+      reducible parts is not observable from the number alone. Comparisons between models are
+      meaningful only at fixed tokenisation and data distribution, since both $H$ and the per-token
+      normalisation change with them.
+
+  - id: lm-perplexity-tokeniser
+    title: Perplexity is not comparable across tokenisers
+    field: llm
+    topic: llm/language-modelling-and-cross-entropy
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [perplexity, tokenisation, evaluation, bits per byte]
+    statement: |
+      Two models assign the same total probability to a corpus of $C = 10^6$ characters, but tokenise
+      it into $T_1 = 2.5\times10^5$ and $T_2 = 5\times10^5$ tokens. Given
+      $-\log q(\text{corpus}) = 1.6\times10^6$ nats, compute both perplexities and the bits-per-character
+      for each, and state which comparison is meaningful.
+    solution: |
+      **Per-token loss.**
+      - Model 1: $\bar{\mathcal L}_1 = 1.6\times10^6/2.5\times10^5 = 6.4$ nats/token.
+      - Model 2: $\bar{\mathcal L}_2 = 1.6\times10^6/5\times10^5 = 3.2$ nats/token.
+
+      **Perplexity.**
+      - Model 1: $e^{6.4}\approx601$.
+      - Model 2: $e^{3.2}\approx24.5$.
+
+      A factor of $24$ difference — between two models assigning **identical probability to the same
+      text**.
+
+      **Bits per character.** $\log_2e\approx1.4427$, so
+      $$
+      \mathrm{bpc} = \frac{1.6\times10^6\times1.4427}{10^6} = 2.31 \text{ bits/character}
+      $$
+      for **both** models, as it must be: the numerator depends only on the distribution over text and
+      the denominator only on the text.
+
+      **Which comparison is meaningful.** Only bits-per-character (or per-byte). Perplexity is a
+      per-token quantity and the token is a modelling choice, so comparing perplexities across
+      tokenisers compares the tokenisers as much as the models — and in the misleading direction, since
+      a coarser tokeniser (fewer, larger tokens) reports a *higher* perplexity for the same quality.
+
+      Note this also affects scaling-law exponents, which are fitted to per-token losses and therefore
+      inherit the tokenisation.
+
+  - id: lm-softmax-gradient
+    title: The cross-entropy gradient is the prediction error
+    field: llm
+    topic: llm/language-modelling-and-cross-entropy
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [softmax, cross entropy, gradient, fused kernel]
+    statement: |
+      Show $\partial\ell/\partial z = q - e_{v^\star}$ for $\ell = -\log q_{v^\star}$ with
+      $q = \operatorname{softmax}(z)$, and explain why softmax and cross-entropy are implemented as a
+      single fused operation.
+    solution: |
+      **Derivation.** $\ell = -z_{v^\star}+\log\sum_ve^{z_v}$, so
+      $$
+      \frac{\partial\ell}{\partial z_v} = -\one\{v=v^\star\} + \frac{e^{z_v}}{\sum_{v'}e^{z_{v'}}} = q_v - \one\{v=v^\star\} ,
+      $$
+      i.e. $\nabla_z\ell = q - e_{v^\star}$. Downstream,
+      $\nabla_{W_U}\ell = (q-e_{v^\star})h^\top$ and $\nabla_h\ell = W_U^\top(q-e_{v^\star})$.
+
+      **Why fuse the operations.** Computed separately, the backward pass would apply the softmax
+      Jacobian $\diag(q)-qq^\top$ to the gradient of $-\log q_{v^\star}$, which is
+      $-e_{v^\star}/q_{v^\star}$ — a vector with a $1/q_{v^\star}$ that **blows up** exactly when the
+      model is wrong and $q_{v^\star}$ is tiny. The Jacobian is simultaneously near-singular there.
+      The product of a blowing-up vector and a vanishing matrix is numerically hazardous, though
+      analytically it is the clean $q-e_{v^\star}$.
+
+      Fusing the two operations computes $q-e_{v^\star}$ directly, avoiding the intermediate entirely.
+      The same fusion also allows the forward pass to use the log-sum-exp trick (subtract the max before
+      exponentiating), so no overflow occurs even with logits of magnitude hundreds.
+
+      **A related design consequence.** If one replaced the cross-entropy by a squared loss on the
+      softmax output, the cancellation would not occur and the softmax saturation would reappear as a
+      vanishing gradient. The pairing of softmax with cross-entropy is not arbitrary — it is the
+      pairing for which the gradient is well conditioned.
+
+  - id: lm-temperature-entropy
+    title: Temperature monotonically controls entropy
+    field: llm
+    topic: llm/language-modelling-and-cross-entropy
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [temperature, entropy, exponential family, sampling]
+    statement: |
+      Prove that $H(\operatorname{softmax}(z/\tau))$ is non-decreasing in $\tau>0$, using the
+      exponential-family identity $H = \psi(\beta)-\beta\psi'(\beta)$ with $\beta = 1/\tau$. Explain why
+      truncated sampling is a different operation from lowering the temperature.
+    solution: |
+      **Setup.** Write $\beta = 1/\tau$ and $q^{(\beta)}_v \propto e^{\beta z_v}$, an exponential family
+      in $\beta$ with sufficient statistic $z$ and log-partition function
+      $\psi(\beta) = \log\sum_ve^{\beta z_v}$. Standard identities:
+      $$
+      \psi'(\beta) = \E_{q^{(\beta)}}[z],\qquad \psi''(\beta) = \Var_{q^{(\beta)}}(z)\ \ge 0 .
+      $$
+
+      **Entropy.**
+      $$
+      H(q^{(\beta)}) = -\sum_vq_v\big(\beta z_v - \psi(\beta)\big) = \psi(\beta) - \beta\psi'(\beta).
+      $$
+
+      **Monotonicity.** Differentiating,
+      $$
+      \frac{dH}{d\beta} = \psi'(\beta) - \psi'(\beta) - \beta\psi''(\beta) = -\beta\,\Var_{q^{(\beta)}}(z) \ \le\ 0 .
+      $$
+      So $H$ is non-increasing in $\beta$, hence **non-decreasing in $\tau = 1/\beta$**, strictly so
+      unless the logits are all equal. The limits are the uniform distribution as $\tau\to\infty$ and
+      the argmax one-hot as $\tau\to0^+$.
+
+      **Truncation is different.** Temperature is a **monotone reweighting** of all tokens: it changes
+      every probability but preserves the ordering and the support. Top-$k$ and nucleus sampling
+      **remove support**: they set a set of probabilities to exactly zero and renormalise. No
+      temperature reproduces that, because a positive $\tau$ never assigns zero probability to a token
+      with a finite logit.
+
+      This matters because the failure mode they address is different. A large vocabulary's long tail
+      can hold substantial total mass while every individual token is implausible; lowering $\tau$
+      sharpens the whole distribution including the head, whereas truncation removes the tail and leaves
+      the head's relative proportions intact. Neither changes the model's beliefs — both are
+      decoding-time interventions, and neither affects the reported perplexity.
+
+  - id: po-kl-optimum
+    title: Closed form of the KL-regularised RL optimum
+    field: llm
+    topic: llm/preference-optimisation
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [rlhf, kl regularisation, gibbs, variational]
+    statement: |
+      Prove that the maximiser of
+      $\E_{y\sim\pi}[r(x,y)] - \beta\,\mathrm{KL}(\pi\|\pi_{\mathrm{ref}})$ is
+      $\pi^\star(y\mid x)\propto\pi_{\mathrm{ref}}(y\mid x)e^{r(x,y)/\beta}$, and explain why RLHF uses
+      PPO rather than this formula.
+    solution: |
+      **Setup.** Fix $x$ and write $\pi = \pi(\cdot\mid x)$, $\mu = \pi_{\mathrm{ref}}(\cdot\mid x)$,
+      $$
+      J(\pi) = \sum_y\pi(y)r(y) - \beta\sum_y\pi(y)\log\frac{\pi(y)}{\mu(y)} .
+      $$
+
+      **Complete the KL.** Define the candidate
+      $$
+      \tilde\pi(y) = \frac{\mu(y)e^{r(y)/\beta}}{Z},\qquad Z = \sum_{y'}\mu(y')e^{r(y')/\beta},
+      $$
+      so that $r(y) = \beta\big(\log\frac{\tilde\pi(y)}{\mu(y)}+\log Z\big)$. Substituting into $J$:
+      $$
+      J(\pi) = \beta\sum_y\pi(y)\log\frac{\tilde\pi(y)}{\mu(y)} + \beta\log Z - \beta\sum_y\pi(y)\log\frac{\pi(y)}{\mu(y)}
+      = -\beta\,\mathrm{KL}(\pi\|\tilde\pi) + \beta\log Z .
+      $$
+
+      **Conclusion.** $\log Z$ does not depend on $\pi$, and $\mathrm{KL}(\pi\|\tilde\pi)\ge0$ with
+      equality iff $\pi=\tilde\pi$. So $J$ is maximised exactly at $\pi^\star = \tilde\pi$, with optimal
+      value $\beta\log Z$.
+
+      **Why PPO rather than the formula.** $Z(x) = \sum_y\mu(y\mid x)e^{r(x,y)/\beta}$ is a sum over
+      **all sequences** $y$ — exponentially many in the length. It cannot be computed, and neither can
+      one sample from $\pi^\star$ directly without it (rejection sampling needs a bound on
+      $e^{r/\beta}$, and importance sampling has astronomically high variance). So the closed form is a
+      characterisation, not an algorithm, and the optimisation is done by policy gradient with a trust
+      region.
+
+      **What the formula does buy.** It says exactly what RLHF is optimising: a Gibbs reweighting of the
+      reference policy by the exponentiated reward. It shows that the prompt-dependent
+      non-identifiability of $r$ is harmless (it changes $r$ and $\log Z$ by matching amounts). And
+      inverting it is the entire derivation of DPO.
+
+  - id: po-dpo-derivation
+    title: Derive the DPO objective
+    field: llm
+    topic: llm/preference-optimisation
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [dpo, reparameterisation, bradley-terry, derivation, flagship]
+    statement: |
+      Starting from the closed-form KL-regularised optimum and the Bradley–Terry model, derive
+      $$
+      \mathcal L_{\mathrm{DPO}} = -\E\log\sigma\Big(\beta\log\tfrac{\pi_\theta(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)} - \beta\log\tfrac{\pi_\theta(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)}\Big),
+      $$
+      showing explicitly where the intractable partition function cancels and why that cancellation is
+      not accidental.
+    solution: |
+      **Step 1: invert the optimum.** From
+      $\pi^\star(y\mid x) = \pi_{\mathrm{ref}}(y\mid x)e^{r(x,y)/\beta}/Z(x)$, take logarithms:
+      $$
+      \log\pi^\star(y\mid x) = \log\pi_{\mathrm{ref}}(y\mid x) + \frac{r(x,y)}{\beta} - \log Z(x),
+      $$
+      hence
+      $$
+      r(x,y) = \beta\log\frac{\pi^\star(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)} + \beta\log Z(x). \tag{$\ast$}
+      $$
+      Every reward is expressible in terms of its optimal policy, up to the prompt-dependent term
+      $\beta\log Z(x)$.
+
+      **Step 2: substitute into Bradley–Terry.** The preference likelihood depends on the reward only
+      through the **difference** at fixed $x$:
+      $$
+      \P(y_w\succ y_l\mid x) = \sigma\big(r(x,y_w)-r(x,y_l)\big).
+      $$
+      Substituting $(\ast)$,
+      $$
+      r(x,y_w)-r(x,y_l)
+      = \beta\log\frac{\pi^\star(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)} - \beta\log\frac{\pi^\star(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)}
+      + \underbrace{\beta\log Z(x)-\beta\log Z(x)}_{=0}.
+      $$
+
+      **Step 3: the objective.** Replacing $\pi^\star$ by the parameterised $\pi_\theta$ and writing the
+      negative log-likelihood of the observed preferences gives $\mathcal L_{\mathrm{DPO}}$.
+
+      **Why the cancellation is not accidental.** $Z(x)$ depends on $x$ but not on $y$. The
+      Bradley–Terry model is invariant to adding any function of $x$ alone to the reward — that is
+      exactly the identifiability statement proved separately. So the one quantity that is intractable
+      is also the one quantity the preference model cannot see. The cancellation is a consequence of
+      the structure, not a lucky algebraic coincidence, and it would fail for a preference model that
+      used absolute rewards rather than differences.
+
+      **What is and is not established.** The derivation shows the two objectives have the same
+      optimum, exactly, under the same assumptions (Bradley–Terry, the same $\beta$ and reference).
+      It does not show they behave the same with finite data or off the preference distribution, where
+      RLHF's on-policy reward queries supply information DPO never sees.
+
+  - id: po-reward-invariance
+    title: Rewards are identifiable only up to a prompt-dependent shift
+    field: llm
+    topic: llm/preference-optimisation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [identifiability, bradley-terry, invariance]
+    statement: |
+      Show that $r$ and $r+c(x)$ induce identical Bradley–Terry likelihoods, and that they induce
+      identical KL-regularised optimal policies. What does this imply about interpreting reward-model
+      scores?
+    solution: |
+      **Likelihood invariance.**
+      $$
+      \sigma\big((r(x,y_1)+c(x)) - (r(x,y_2)+c(x))\big) = \sigma\big(r(x,y_1)-r(x,y_2)\big),
+      $$
+      since the shift cancels in the difference. So no amount of preference data can distinguish $r$
+      from $r+c$.
+
+      **Policy invariance.** Under $r' = r+c(x)$,
+      $$
+      \pi'^\star(y\mid x) \propto \pi_{\mathrm{ref}}(y\mid x)e^{(r(x,y)+c(x))/\beta}
+      = e^{c(x)/\beta}\cdot\pi_{\mathrm{ref}}(y\mid x)e^{r(x,y)/\beta},
+      $$
+      and the factor $e^{c(x)/\beta}$ is constant in $y$, so it cancels in the normalisation:
+      $\pi'^\star = \pi^\star$. The unidentifiability is therefore **harmless** for the thing we
+      actually want.
+
+      **Consequences for interpretation.** The absolute value of a reward-model score is meaningless.
+      In particular:
+      - comparing $r_\phi(x_1,y_1)$ with $r_\phi(x_2,y_2)$ across different prompts compares an arbitrary gauge choice;
+      - thresholding scores ("accept if $r>0$") is not well defined;
+      - averaging scores over a dataset of prompts measures the fitted $c(x)$ as much as the quality;
+      - only **within-prompt differences** are identified, and those are what should be reported and monitored.
+
+      In practice reward models are often normalised per prompt (subtracting the mean over a set of
+      candidate responses) precisely to fix the gauge, and evaluations should be phrased as win rates
+      rather than score levels.
+
+  - id: po-dpo-gradient
+    title: The DPO gradient is a weighted contrastive step
+    field: llm
+    topic: llm/preference-optimisation
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [dpo, gradient, hard examples, contrastive]
+    statement: |
+      Compute $\nabla_\theta\mathcal L_{\mathrm{DPO}}$ and interpret the two factors. Explain why the
+      weighting gives automatic hard-example emphasis, and what happens as training progresses.
+    solution: |
+      **Gradient.** Write the implicit reward margin
+      $$
+      \Delta = \beta\log\frac{\pi_\theta(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)} - \beta\log\frac{\pi_\theta(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)} .
+      $$
+      Since $\frac{d}{du}\big(-\log\sigma(u)\big) = -\sigma(-u)$,
+      $$
+      \nabla_\theta\mathcal L_{\mathrm{DPO}}
+      = -\beta\,\E\Big[\underbrace{\sigma(-\Delta)}_{\text{weight}}\underbrace{\big(\nabla_\theta\log\pi_\theta(y_w|x) - \nabla_\theta\log\pi_\theta(y_l|x)\big)}_{\text{direction}}\Big].
+      $$
+
+      **The direction.** A descent step increases $\log\pi_\theta(y_w\mid x)$ and decreases
+      $\log\pi_\theta(y_l\mid x)$ — an ordinary contrastive (pairwise ranking) update. Nothing
+      reinforcement-learning-specific appears; it is supervised learning on pairs.
+
+      **The weight.** $\sigma(-\Delta)$ is close to $1$ when $\Delta\ll0$ — the model currently ranks
+      the pair **wrongly** — and close to $0$ when $\Delta\gg0$. So mis-ranked pairs dominate the
+      gradient and already-correct pairs contribute almost nothing. This is automatic hard-example
+      mining, with no curriculum, no scheduling and no extra hyperparameter.
+
+      **Over training.** As $\Delta$ grows on the training pairs, the weights decay and the effective
+      gradient shrinks — training self-limits on the data it has already fitted. Two consequences:
+      (i) convergence slows in a way that looks like a plateau but is the objective working as
+      designed; (ii) because the weight depends on $\pi_{\mathrm{ref}}$ through $\Delta$, the choice of
+      reference policy affects which pairs receive attention, which is one mechanism behind DPO's
+      observed sensitivity to the quality of $\pi_{\mathrm{ref}}$.
+
+  - id: sc-compute-optimal
+    title: Derive the compute-optimal allocation
+    field: llm
+    topic: llm/scaling-and-in-context-learning
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [scaling laws, chinchilla, lagrange, allocation]
+    statement: |
+      Given $\mathcal L(N,D) = E + AN^{-\alpha}+BD^{-\beta}$ and $C = 6ND$, derive $N^\star(C)$ and
+      $D^\star(C)$, and evaluate the tokens-per-parameter ratio for $\alpha=\beta$.
+    solution: |
+      **Substitute and minimise.** With $D = C/(6N)$,
+      $$
+      g(N) = \frac{A}{N^\alpha}+B\Big(\frac{6N}{C}\Big)^\beta .
+      $$
+      Differentiating,
+      $$
+      g'(N) = -\frac{\alpha A}{N^{\alpha+1}} + \frac{\beta B\,6^\beta N^{\beta-1}}{C^\beta} = 0
+      \quad\Longrightarrow\quad
+      N^{\alpha+\beta} = \frac{\alpha A}{\beta B\,6^\beta}\,C^\beta .
+      $$
+      Hence
+      $$
+      N^\star \propto C^{\frac{\beta}{\alpha+\beta}},
+      \qquad
+      D^\star = \frac{C}{6N^\star}\propto C^{\frac{\alpha}{\alpha+\beta}} .
+      $$
+      The function $g$ is a sum of a decreasing and an increasing power of $N$, so this stationary point
+      is the unique minimum.
+
+      **Equal exponents.** If $\alpha=\beta$ both exponents are $1/2$:
+      $N^\star\propto\sqrt C$ and $D^\star\propto\sqrt C$. Their **ratio** is then constant in $C$:
+      $$
+      \frac{D^\star}{N^\star} = \frac{C}{6(N^\star)^2} = \text{const},
+      $$
+      so the tokens-per-parameter ratio does not change with scale. With the Chinchilla fit
+      ($\alpha\approx0.34$, $\beta\approx0.28$) the ratio is approximately $20$ tokens per parameter,
+      and the exponents are $0.45$ and $0.55$ — close enough to $1/2$ that the "scale both together"
+      summary is accurate.
+
+      **Contrast.** The earlier Kaplan fit gave $N^\star\propto C^{0.73}$, implying that models should
+      grow much faster than data. Same functional family, different fitted exponents, order-of-magnitude
+      different recommendation — a reminder that the allocation rule is a consequence of a statistical
+      fit, not a law.
+
+  - id: sc-flops-estimate
+    title: The 6ND FLOP estimate
+    field: llm
+    topic: llm/scaling-and-in-context-learning
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [flops, compute accounting, training cost]
+    statement: |
+      Justify $C\approx6ND$ for training a dense transformer, then estimate the training compute for
+      $N = 7\times10^9$ parameters and $D = 2\times10^{12}$ tokens, and convert to GPU-days at
+      $4\times10^{14}$ effective FLOP/s per device.
+    solution: |
+      **Derivation.** Each parameter participates in one multiply–accumulate per token in the forward
+      pass, which is $2$ FLOPs, giving $\approx2ND$. The backward pass computes two gradients per weight
+      matrix — with respect to the input and with respect to the weights — each of the same cost as the
+      forward product, giving $\approx4ND$. Total $\approx6ND$.
+
+      The estimate ignores the attention term $O(n^2d)$ per layer, which is a relative correction of
+      order $n/(6d)$: negligible at $n\ll d$ and not negligible at long context.
+
+      **Estimate.**
+      $$
+      C = 6\times7\times10^9\times2\times10^{12} = 8.4\times10^{22}\ \text{FLOPs}.
+      $$
+
+      **GPU-days.**
+      $$
+      \frac{8.4\times10^{22}}{4\times10^{14}} = 2.1\times10^8\ \text{s} = 2.4\times10^3\ \text{GPU-days}.
+      $$
+      About $2400$ GPU-days, or roughly $1000$ GPUs for two and a half days at perfect scaling.
+
+      **Caveats.** The $4\times10^{14}$ figure is *effective* throughput; achieving even $40\%$ of peak
+      requires careful attention to memory bandwidth, and the wall-clock figure should be inflated
+      accordingly. The estimate also excludes data loading, evaluation, restarts and failed runs, which
+      in practice add a substantial multiple.
+
+  - id: sc-lora-count
+    title: LoRA parameter accounting
+    field: llm
+    topic: llm/scaling-and-in-context-learning
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [lora, parameter count, fine-tuning]
+    statement: |
+      For a transformer with $d = 4096$, $L = 32$ layers, adapting $W_Q$ and $W_V$ in each layer with
+      rank $r$:
+
+      1. Count the trainable parameters as a function of $r$.
+      2. Compare with full fine-tuning of those matrices, and with the full model at $7$B parameters.
+      3. Compute the checkpoint size for $100$ tasks at $r = 8$ in fp16.
+    solution: |
+      **1. Count.** Each adapted matrix is $d\times d$, and a rank-$r$ update costs $r(d+d) = 2rd$
+      parameters. With two matrices per layer and $L$ layers:
+      $$
+      P_{\mathrm{LoRA}} = L\times2\times2rd = 4Lrd = 4\times32\times r\times4096 = 524{,}288\,r .
+      $$
+      At $r=8$: $4.19\times10^6$ parameters.
+
+      **2. Comparison.**
+      - Full fine-tuning of the same matrices: $L\times2\times d^2 = 32\times2\times4096^2 = 1.07\times10^9$. LoRA at $r=8$ is $256\times$ smaller — exactly the predicted $d/(2r) = 4096/16$.
+      - Full model ($7\times10^9$): LoRA at $r=8$ trains $0.06\%$ of the parameters.
+
+      **3. Checkpoints.** $4.19\times10^6$ parameters $\times$ $2$ bytes $= 8.4$ MB per task. For $100$
+      tasks: $840$ MB. Full fine-tuning would require $100\times14$ GB $= 1.4$ TB.
+
+      **The practical consequence.** A single base model in memory plus a few megabytes per task makes
+      multi-tenant serving feasible: the adapters can be swapped, or even batched together with
+      different adapters per request. That serving property, more than the training saving, is why LoRA
+      is ubiquitous.
+
+  - id: sc-moe-sparsity
+    title: Mixture-of-experts sparsity accounting
+    field: llm
+    topic: llm/scaling-and-in-context-learning
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [mixture of experts, flops, memory, load balancing]
+    statement: |
+      A model routes each token to $k=2$ of $E=64$ experts, each expert having $P = 2\times10^8$
+      parameters, with $S = 10^9$ shared parameters.
+
+      1. Compute the total parameter count and the per-token active parameter count.
+      2. Compute the FLOPs per token and compare with a dense model of the same total size.
+      3. Compute the memory required and comment on the binding constraint.
+    solution: |
+      **1. Parameters.**
+      - Total: $S + EP = 10^9 + 64\times2\times10^8 = 1.38\times10^{10}$ ($13.8$B).
+      - Active per token: $S + kP = 10^9 + 2\times2\times10^8 = 1.4\times10^9$ ($1.4$B).
+      - Sparsity factor: $E/k = 32$.
+
+      **2. FLOPs.** Using $2$ FLOPs per active parameter per token (forward):
+      - MoE: $2\times1.4\times10^9 = 2.8\times10^9$ FLOPs/token.
+      - Dense model of the same total size: $2\times1.38\times10^{10} = 2.76\times10^{10}$ FLOPs/token.
+
+      The MoE uses $10\times$ fewer FLOPs for the same parameter count — or equivalently, at fixed
+      FLOPs it carries $10\times$ the parameters.
+
+      **3. Memory.** All $13.8$B parameters must be resident (or fetched): $27.6$ GB in fp16 against
+      $2.8$ GB for the active set. So memory scales with the **total** count while compute scales with
+      the **active** count.
+
+      **The binding constraint.** For inference, memory bandwidth rather than arithmetic becomes the
+      bottleneck: reading $27.6$ GB of weights per forward pass at $2$ TB/s takes $14$ ms, while the
+      $2.8$ GFLOP of arithmetic takes microseconds. This is why MoE inference requires expert
+      parallelism across devices and why the practical speed-up is far below the $10\times$ FLOP ratio.
+
+      **Additional costs.** Load balancing is a permanent auxiliary loss on the objective; routing is
+      discrete so unselected experts receive no gradient; and the dense scaling laws do not transfer —
+      a sparse model's loss depends on $E$, $k$ and $P$ separately and needs its own fit.

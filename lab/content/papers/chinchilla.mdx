@@ -1,0 +1,73 @@
+---
+title: Training Compute-Optimal Large Language Models
+authors: Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark and others
+year: 2022
+venue: NeurIPS
+url: https://arxiv.org/abs/2203.15556
+arxiv: '2203.15556'
+field: llm
+tags: [scaling laws, compute optimal, chinchilla, data]
+problem: Models trained under the prevailing scaling prescription were far larger than their token budgets warranted, wasting compute.
+contribution: A refitted scaling law with a corrected methodology, concluding that parameters and tokens should scale in roughly equal proportion — about twenty tokens per parameter — and a demonstration that a four-times-smaller model trained on four-times-more data beats the larger one.
+prerequisites:
+  - llm/scaling-and-in-context-learning
+  - llm/language-modelling-and-cross-entropy
+descendants: []
+related: [scaling-laws, attention-is-all-you-need]
+---
+
+## What problem does this paper solve?
+
+Whether the previous compute-optimal prescription was right. It was not, and the error was costing
+substantial compute across the field.
+
+## What mathematical objects are introduced?
+
+The parametric fit
+$$
+\hat{\mathcal{L}}(N,D) = E + \frac{A}{N^\alpha} + \frac{B}{D^\beta},
+$$
+fitted jointly by three independent methods (fixed model sizes with varying tokens; IsoFLOP profiles;
+direct parametric fitting), all agreeing.
+
+## What assumptions are made?
+
+That the learning-rate schedule is matched to each run's token budget — precisely the methodological
+correction. Under a cosine schedule truncated early, a run's loss is not representative of a properly
+scheduled run of that length, which biased the earlier fit.
+
+## What equations matter?
+
+The fitted exponents $\alpha\approx0.34$, $\beta\approx0.28$, giving via the
+<TopicRef id="llm/scaling-and-in-context-learning">Lagrange computation</TopicRef>
+$$
+N^\star\propto C^{0.50},\qquad D^\star\propto C^{0.50},
+$$
+so $D^\star/N^\star$ is approximately constant at $\approx20$ tokens per parameter.
+
+## What theorem or result is important?
+
+The empirical validation: Chinchilla ($70$B parameters, $1.4$T tokens) outperforms Gopher ($280$B,
+$300$B tokens) on essentially every benchmark at the same training compute.
+
+## What proof techniques are used?
+
+Three independent fitting methodologies as a consistency check — good empirical practice, and the
+reason the result was believed immediately.
+
+## What prior mathematics is required?
+
+Constrained optimisation of a two-term power law; regression and model-selection basics.
+
+## Limitations
+
+The fit is for a specific architecture family, tokeniser and data distribution. It optimises training
+compute only, ignoring inference — for a widely-served model, training well past the Chinchilla point
+is rational and is now common practice. And the refitting itself has been questioned on
+reproducibility grounds, which is a reminder that the exponents are estimates with uncertainty.
+
+## Why it mattered
+
+It changed how frontier models are built within months of publication, and it is the clearest
+demonstration that a scaling-law fit is a piece of *statistics* whose conclusions depend on
+methodological care, not a law of nature.

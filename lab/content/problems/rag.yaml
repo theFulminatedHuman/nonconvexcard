@@ -1,0 +1,707 @@
+defaults:
+  field: rag
+problems:
+  - id: eg-similarity-equivalence
+    title: Three similarities agree on the unit sphere
+    topic: rag/embedding-geometry-and-similarity
+    difficulty: foundation
+    type: proof
+    estimated_time: 15m
+    tags: [cosine, dot product, euclidean, normalisation]
+    statement: |
+      Prove $\|u-v\|_2^2 = 2-2\langle u,v\rangle$ for unit vectors, deduce that ranking by cosine, dot
+      product and negative Euclidean distance coincide on the sphere, and give an explicit example off
+      the sphere where dot-product and Euclidean rankings disagree.
+    solution: |
+      **Identity.** $\|u-v\|_2^2 = \|u\|^2 - 2\langle u,v\rangle + \|v\|^2 = 2-2\langle u,v\rangle$ for
+      $\|u\|=\|v\|=1$. Since $\cos(u,v) = \langle u,v\rangle$ on the sphere, the squared distance is a
+      strictly decreasing function of the cosine, so the three orderings coincide.
+
+      **Disagreement off the sphere.** Query $q = (1,0)$, documents
+      $$
+      a = (1,0), \qquad b = (1.5, 1.2).
+      $$
+      - Dot products: $\langle q,a\rangle = 1$, $\langle q,b\rangle = 1.5$. **$b$ wins.**
+      - Cosines: $\cos(q,a) = 1$, $\cos(q,b) = 1.5/\sqrt{1.5^2+1.2^2} = 1.5/1.92 = 0.78$. **$a$ wins.**
+      - Euclidean: $\|q-a\| = 0$, $\|q-b\| = \sqrt{0.25+1.44} = 1.3$. **$a$ wins.**
+
+      The dot product prefers $b$ purely because $\|b\|$ is larger; its direction is worse.
+
+      **Practical consequence.** A dot-product index on un-normalised embeddings systematically
+      surfaces high-norm documents. Since embedding norm often correlates with length or with verbose
+      register rather than with relevance, this is a real and common failure mode. Either normalise at
+      index time — after which all three metrics agree and the choice is immaterial — or make the norm's
+      role a deliberate modelling decision and justify it.
+
+  - id: eg-cosine-density
+    title: The density of the cosine between random directions
+    topic: rag/embedding-geometry-and-similarity
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [cosine, density, sphere, near-orthogonality]
+    statement: |
+      Derive the density $\varrho_d(t)\propto(1-t^2)^{(d-3)/2}$ of $\langle u,v\rangle$ for independent
+      uniform directions in $\R^d$, compute its variance, and evaluate the standard deviation at
+      $d = 128, 768, 4096$.
+    solution: |
+      **Derivation.** By rotational invariance, condition on $v = e_1$; then $t = u_1$ for $u$ uniform
+      on $S^{d-1}$. The set $\{u\in S^{d-1}: u_1\in[t,t+dt]\}$ is a band whose cross-section is a sphere
+      $S^{d-2}$ of radius $\sqrt{1-t^2}$, contributing surface measure proportional to
+      $(1-t^2)^{(d-2)/2}$; the arc-length element along the band contributes a further factor
+      $(1-t^2)^{-1/2}$ (the band is inclined). Multiplying,
+      $$
+      \varrho_d(t) \ \propto\ (1-t^2)^{(d-3)/2},\qquad t\in[-1,1],
+      $$
+      with normalising constant $\Gamma(d/2)/\big(\sqrt\pi\,\Gamma((d-1)/2)\big)$, from
+      $\int_{-1}^1(1-t^2)^{(d-3)/2}dt = \sqrt\pi\,\Gamma(\tfrac{d-1}2)/\Gamma(\tfrac d2)$.
+
+      **Moments.** $\E t = 0$ by the symmetry $u\mapsto-u$. For the variance, realise $u = g/\|g\|_2$
+      with $g\sim\Ncal(0,I_d)$: all coordinates are exchangeable and
+      $\sum_i\E u_i^2 = \E\|u\|_2^2 = 1$, so
+      $$
+      \Var(t) = \E u_1^2 = \frac1d .
+      $$
+
+      **Numerically.** Standard deviation $1/\sqrt d$:
+
+      | $d$ | $1/\sqrt d$ |
+      | --- | --- |
+      | $128$ | $0.088$ |
+      | $768$ | $0.036$ |
+      | $4096$ | $0.0156$ |
+
+      **Reading these numbers.** At $d = 768$ a random pair of directions has cosine within about
+      $0.04$ of zero. So a background similarity around $0.04$ is *noise*, and a genuine match at $0.3$
+      stands out by nearly an order of magnitude. This is the quantitative statement that makes dense
+      retrieval possible — and it is also why an observed average similarity of $0.4$ between unrelated
+      real sentences (as anisotropy measurements report) is a signal that the isotropic model does not
+      describe the embedding space.
+
+  - id: eg-max-of-n
+    title: The maximum of N distractor similarities
+    topic: rag/embedding-geometry-and-similarity
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [maximum, sub-gaussian, union bound, retrieval]
+    statement: |
+      Prove $\E\max_{j\le N}\langle q,z_j\rangle\le\sqrt{2\log N/d}$ for independent uniform directions
+      $z_j$, and derive the high-probability version. Then compute the required query–document
+      alignment for top-1 retrieval at $d = 768$ and $N = 10^3,10^6,10^9$.
+    solution: |
+      **Maximal inequality.** Each $\langle q,z_j\rangle$ is sub-Gaussian with parameter $O(1/\sqrt d)$
+      by the cosine tail bound. For $\lambda>0$, by Jensen and the union over $j$,
+      $$
+      \exp\Big(\lambda\E\max_j\langle q,z_j\rangle\Big) \le \E\max_je^{\lambda\langle q,z_j\rangle}
+      \le \sum_{j=1}^N\E e^{\lambda\langle q,z_j\rangle} \le Ne^{\lambda^2/(2d)} .
+      $$
+      Taking logarithms and dividing,
+      $$
+      \E\max_j\langle q,z_j\rangle \le \frac{\log N}{\lambda}+\frac{\lambda}{2d},
+      $$
+      minimised at $\lambda = \sqrt{2d\log N}$ with value $\sqrt{2\log N/d}$.
+
+      **High probability.** From $\P(\langle q,z_j\rangle\ge s)\le e^{-ds^2/2}$ and a union bound over
+      $N$ distractors, with probability at least $1-\delta$,
+      $$
+      \max_j\langle q,z_j\rangle \le \sqrt{\frac{2\log(N/\delta)}{d}} .
+      $$
+
+      **Required alignment at $d = 768$, $\delta = 0.05$.**
+
+      | $N$ | $\log(N/\delta)$ | required $\alpha$ |
+      | --- | --- | --- |
+      | $10^3$ | $9.9$ | $0.16$ |
+      | $10^6$ | $16.8$ | $0.21$ |
+      | $10^9$ | $23.7$ | $0.25$ |
+
+      **Reading.** The bar rises like $\sqrt{\log N}$ — slowly, but without limit. A million-fold
+      increase in corpus size raises the required alignment by about $50\%$. Since $\alpha$ is a
+      property of the embedding model and not of the index, there is no corpus size at which scaling
+      the index alone suffices: a larger corpus eventually requires a better encoder or a reranking
+      stage.
+
+  - id: eg-retrieval-threshold
+    title: A sufficient condition for correct retrieval
+    topic: rag/embedding-geometry-and-similarity
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [retrieval, threshold, corpus size, dimension]
+    statement: |
+      Derive the sufficient condition $\alpha>\sqrt{2\log(N/\delta)/d}$ for top-1 retrieval, and
+      determine the embedding dimension needed to retrieve correctly from $N = 10^9$ documents at
+      $\alpha = 0.2$ with $95\%$ confidence. Comment on the honesty of this estimate.
+    solution: |
+      **Condition.** On the high-probability event that all $N$ distractor similarities are below
+      $\sqrt{2\log(N/\delta)/d}$, the relevant document with similarity $\alpha$ ranks first provided
+      $$
+      \alpha > \sqrt{\frac{2\log(N/\delta)}{d}} .
+      $$
+
+      **Required dimension.** Solving for $d$ at $\alpha = 0.2$, $N = 10^9$, $\delta = 0.05$:
+      $$
+      d > \frac{2\log(N/\delta)}{\alpha^2} = \frac{2\times23.7}{0.04} = 1185 .
+      $$
+      So roughly $1200$ dimensions — comfortably within the range of production embedding models
+      ($768$–$3072$), and a useful sanity check on the design.
+
+      **Why this is a best case, not a guarantee.** Every step assumed the distractors are
+      **independent uniform directions**. Real corpora violate this badly:
+      - **Anisotropy.** Learned embeddings occupy a narrow cone; measured average similarities between unrelated texts can be $0.3$–$0.6$ rather than $0.04$. The noise floor is far higher than the model predicts, so the contrast is far lower.
+      - **Correlation.** Distractors are not independent, so the effective number of independent draws is smaller in some directions and larger in others; the maximum-of-$N$ calculation does not transfer.
+      - **Near-duplicates.** Real corpora contain documents genuinely similar to the target. These are the hardest distractors and the isotropic model contains nothing resembling them.
+
+      **How to use the estimate.** As a lower bound on the dimension required, and as a diagnostic: if
+      the measured average similarity between unrelated documents in your corpus is far above
+      $1/\sqrt d$, the geometry is anisotropic and this calculation understates the difficulty by an
+      amount you should measure rather than assume.
+
+  - id: eg-simulate-anisotropy
+    title: Measure anisotropy in an embedding space
+    topic: rag/embedding-geometry-and-similarity
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [anisotropy, whitening, simulation, diagnostics]
+    statement: |
+      Write a diagnostic for embedding anisotropy.
+
+      1. Measure the mean and standard deviation of the cosine between random *unrelated* pairs and
+         compare with the isotropic predictions $0$ and $1/\sqrt d$.
+      2. Compute the spectrum of the embedding covariance and the stable rank
+         $\|\Sigma\|_F^2/\|\Sigma\|^2$.
+      3. Apply mean-centring and whitening and re-measure.
+      4. Report what each step does to the *contrast* between matched and unmatched pairs.
+    solution: |
+      ```python
+      import numpy as np
+
+      def diagnostics(E):                      # E: (n, d) embeddings
+          En = E / np.linalg.norm(E, axis=1, keepdims=True)
+          G = En @ En.T
+          iu = np.triu_indices(len(E), 1)
+          cos = G[iu]
+          S = np.cov(E, rowvar=False)
+          ev = np.linalg.eigvalsh(S)[::-1]
+          stable_rank = float(ev.sum()**2 / (ev**2).sum())   # = ||S||_*^2/||S||_F^2 proxy
+          return cos.mean(), cos.std(), ev, stable_rank
+
+      def whiten(E, eps=1e-6):
+          Ec = E - E.mean(0)
+          S = np.cov(Ec, rowvar=False)
+          w, V = np.linalg.eigh(S)
+          W = V @ np.diag(1.0 / np.sqrt(w + eps)) @ V.T
+          return Ec @ W
+      ```
+
+      **1. The headline number.** For an isotropic space the mean cosine should be $\approx0$ and the
+      standard deviation $\approx1/\sqrt d$. Raw contextual embeddings typically show a mean of $0.2$–
+      $0.6$ — the cone. Contrastively trained sentence encoders (Sentence-BERT, DPR-style) show much
+      smaller means, which is the mechanism by which contrastive training helps.
+
+      **2. Spectrum.** Plot the eigenvalues on a log axis. A near-flat spectrum means isotropy; a steep
+      decay means a few directions dominate. The **stable rank** is the right one-number summary: for
+      $d = 768$ it may be $20$–$100$ in practice, meaning the space is effectively far lower
+      dimensional than its nominal size — with the consequences for retrieval that the maximum-of-$N$
+      analysis describes.
+
+      **3. After whitening.** Mean-centring removes the dominant shared direction and typically drops
+      the mean cosine substantially. Full whitening flattens the spectrum and brings the standard
+      deviation close to $1/\sqrt d$.
+
+      **4. What matters — contrast, not isotropy.** Report
+      $$
+      \text{contrast} = \frac{\E[\cos \mid \text{matched}] - \E[\cos\mid\text{unmatched}]}{\mathrm{sd}[\cos\mid\text{unmatched}]},
+      $$
+      an effect size. Whitening usually improves it, but not always: it also amplifies low-variance
+      directions that may be noise, and on some corpora it *reduces* retrieval quality. Always measure
+      the end-to-end recall, not just the geometry — the geometry is a diagnostic, not the objective.
+
+  - id: ann-tree-pruning
+    title: Why space-partitioning trees fail in high dimension
+    topic: rag/vector-search-and-ann
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [kd-tree, pruning, concentration, curse]
+    statement: |
+      Show that under distance concentration, the pruning rule of a $k$-d tree eliminates no cells, and
+      determine the dimension at which the method degenerates to brute force as a function of $N$.
+    solution: |
+      **The pruning rule.** A branch-and-bound search maintains the best distance $r$ found so far and
+      prunes a cell whose bounding box is entirely farther than $r$ from the query.
+
+      **Concentration.** For i.i.d. data with independent coordinates, with probability $1-\delta$ all
+      $N$ distances to the query lie in
+      $$
+      \big[\sqrt{2d}-s_\delta,\ \sqrt{2d}+s_\delta\big],
+      \qquad s_\delta \asymp \sqrt{\log(N/\delta)} .
+      $$
+
+      **No pruning.** The current best distance satisfies $r\ge\sqrt{2d}-s_\delta$, while every data
+      point is at distance at most $\sqrt{2d}+s_\delta$. A cell containing any data point therefore
+      contains a point at distance below $r + 2s_\delta$, so it can be pruned only if its entire
+      bounding box lies beyond $r$ — which fails for every cell containing data as soon as the
+      concentration window is narrow relative to the typical distance.
+
+      **Degeneration threshold.** The window is narrow relative to the distance when
+      $$
+      s_\delta \ll \sqrt{2d} \quad\Longleftrightarrow\quad \sqrt{\log N}\ \ll\ \sqrt d
+      \quad\Longleftrightarrow\quad d \gg \log N .
+      $$
+      So for $d \gtrsim \log N$ the tree prunes essentially nothing and the search visits all cells:
+      brute force with overhead. At $N = 10^6$, $\log N\approx14$, so $k$-d trees are already useless
+      above about $20$ dimensions — which matches the empirical folklore precisely.
+
+      **Consequence.** Exact search in high dimension has no good data structure. The only way forward
+      is to relax the problem: return an *approximate* nearest neighbour, or return the true one only
+      with probability less than one. Every practical method — LSH, IVF, PQ, HNSW — does one or both.
+
+  - id: ann-simhash-probability
+    title: The random-hyperplane collision probability
+    topic: rag/vector-search-and-ann
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [lsh, simhash, angle, rotational invariance]
+    statement: |
+      Prove $\P(\sign\langle w,u\rangle\ne\sign\langle w,v\rangle) = \theta(u,v)/\pi$ for
+      $w\sim\Ncal(0,I_d)$, and deduce the variance of a $b$-bit SimHash estimate of the angle.
+    solution: |
+      **The probability.** The event is that the hyperplane $w^\perp$ separates $u$ and $v$. Only the
+      component of $w$ in the two-dimensional plane $P = \operatorname{span}(u,v)$ matters, since the
+      signs depend on $w$ only through $\langle w,u\rangle$ and $\langle w,v\rangle$. By rotational
+      invariance of the standard Gaussian, the projection of $w$ onto $P$ is a two-dimensional Gaussian,
+      hence uniform in direction.
+
+      Within $P$, place $u$ and $v$ at angle $\theta$. A direction $w$ separates them exactly when it
+      lies strictly between $u^\perp$ and $v^\perp$ — two arcs, each of angular width $\theta$. The
+      total separating measure is $2\theta$ out of $2\pi$, so the probability is $\theta/\pi$.
+
+      **Estimator variance.** With $b$ independent hyperplanes, let $\hat\theta = \pi\hat p$ where
+      $\hat p$ is the fraction of disagreeing bits — i.e. the normalised Hamming distance between the
+      two $b$-bit sketches. Then $b\hat p\sim\mathrm{Bin}(b,\theta/\pi)$, so
+      $$
+      \E\hat\theta = \theta,\qquad
+      \Var(\hat\theta) = \pi^2\cdot\frac{(\theta/\pi)(1-\theta/\pi)}{b} = \frac{\theta(\pi-\theta)}{b}.
+      $$
+      The standard error is $O(1/\sqrt b)$ — so $64$ bits give an angular accuracy of roughly
+      $\pi/(2\sqrt{64})\approx0.2$ radians in the worst case, and better near the extremes.
+
+      **Why SimHash suits cosine retrieval.** The hash depends on $u$ only through its direction, which
+      is exactly what cosine similarity measures. A single bit costs one inner product, the sketch is
+      $b$ bits, and Hamming distance between sketches is a single XOR and popcount — which is why
+      bit-sketch retrieval is so fast in practice.
+
+  - id: ann-lsh-exponent
+    title: The LSH amplification exponent
+    topic: rag/vector-search-and-ann
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [lsh, amplification, sublinear, exponent]
+    statement: |
+      Given an $(r,cr,p_1,p_2)$-sensitive family, derive the AND/OR amplification with $k$ concatenated
+      hashes and $L$ tables, show that $k = \log_{1/p_2}N$ and $L = N^\varrho$ with
+      $\varrho = \log(1/p_1)/\log(1/p_2)$ give query time $\tilde O(N^\varrho)$, and verify
+      $\varrho<1$.
+    solution: |
+      **Amplification.** Let $g = (h_1,\dots,h_k)$ with independent $h_j$ from the family. Then a pair
+      collides under $g$ iff it collides under all $k$ hashes, so:
+      - **near** pairs ($\rho\le r$) collide with probability $\ge p_1^k$;
+      - **far** pairs ($\rho\ge cr$) collide with probability $\le p_2^k$.
+
+      With $L$ independent tables (an OR), a near pair is found with probability
+      $1-(1-p_1^k)^L$, and the expected number of far candidates examined is $LNp_2^k$.
+
+      **Choosing $k$.** Set $p_2^k = 1/N$, i.e.
+      $$
+      k = \frac{\log N}{\log(1/p_2)} = \log_{1/p_2}N .
+      $$
+      Then the expected far candidates per table is $Np_2^k = 1$, so $L$ tables give $O(L)$ candidates
+      to check.
+
+      **Choosing $L$.** With this $k$,
+      $$
+      p_1^k = p_1^{\log N/\log(1/p_2)} = \exp\left(-\frac{\log N\,\log(1/p_1)}{\log(1/p_2)}\right) = N^{-\varrho},
+      \qquad \varrho = \frac{\log(1/p_1)}{\log(1/p_2)} .
+      $$
+      Taking $L = N^\varrho$ gives near-pair success probability
+      $1-(1-N^{-\varrho})^{N^\varrho}\ \to\ 1-e^{-1}$, a constant. Repeating $O(\log(1/\delta))$ times
+      boosts this to $1-\delta$.
+
+      **Query time.** $L = N^\varrho$ hash computations plus $O(L)$ candidate distance evaluations:
+      $\tilde O(N^\varrho)$. Space is $L$ tables of $N$ pointers: $\tilde O(N^{1+\varrho})$.
+
+      **$\varrho<1$.** Since $p_1>p_2$ and both are in $(0,1)$, we have $\log(1/p_1)<\log(1/p_2)$, both
+      positive, so $\varrho\in(0,1)$. The query time is genuinely sublinear.
+
+      **Context.** For SimHash at approximation factor $c$, $\varrho\approx1/c$, so a $2$-approximation
+      costs $\tilde O(\sqrt N)$. Data-dependent hashing achieves the optimal
+      $\varrho = 1/(2c^2-1)$ for Euclidean distance, with matching lower bounds — so unlike the exact
+      problem, the complexity of approximate nearest-neighbour search is essentially settled.
+
+  - id: ann-pq-budget
+    title: Product quantisation budget arithmetic
+    topic: rag/vector-search-and-ann
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [product quantisation, compression, memory, codebook]
+    statement: |
+      For $d = 768$ float32 vectors, $N = 10^8$ documents:
+
+      1. Compute the raw storage.
+      2. Compute the storage with product quantisation at $m = 16$ subvectors and $b = 8$ bits each,
+         and the compression ratio.
+      3. Compute the number of representable points and the codebook size.
+      4. Estimate the cost of one asymmetric distance computation.
+    solution: |
+      **1. Raw.** $768\times4$ bytes $= 3072$ B/vector; $\times10^8 = 3.07\times10^{11}$ B $= 307$ GB.
+
+      **2. With PQ.** $mb = 16\times8 = 128$ bits $= 16$ B/vector; $\times10^8 = 1.6$ GB. Compression
+      ratio $3072/16 = 192\times$. The index now fits in the memory of a single machine — which is the
+      entire point.
+
+      **3. Representable points and codebook.** Each subvector has $2^8 = 256$ centroids, and the
+      choices are independent across the $m = 16$ blocks, giving
+      $$
+      (2^8)^{16} = 2^{128} \approx 3.4\times10^{38}
+      $$
+      representable points. The stored codebook is $m\times2^b$ centroids of dimension $d/m = 48$:
+      $16\times256\times48\times4$ B $= 786$ KB — negligible.
+
+      This combinatorial gap ($2^{128}$ representable points from $4096$ stored centroids) is what makes
+      PQ work: the quantiser is exponentially expressive in $m$ while its storage is linear.
+
+      **4. Distance computation.** With **asymmetric** distance computation the query stays exact and
+      only the database is quantised. Precompute, for the query, a lookup table of
+      $m\times2^b = 4096$ partial distances — cost $4096\times48$ multiply–adds, done once per query.
+      Then each database distance is $m = 16$ table lookups and additions: about $16$ operations
+      instead of $768$ multiply–adds, a $48\times$ saving, and the operations are cache-friendly
+      integer indexing rather than floating-point arithmetic.
+
+      **Caveat.** PQ introduces quantisation error, so recall is below exact search. Production systems
+      use PQ for a fast first pass and re-rank the top candidates with exact distances on the original
+      vectors, which requires keeping those vectors on slower storage.
+
+  - id: ann-recall-pipeline
+    title: Recall composes multiplicatively
+    topic: rag/vector-search-and-ann
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [recall, pipeline, ceiling, system design]
+    statement: |
+      A RAG pipeline has chunking recall $0.95$, ANN index recall $0.90$, top-$k$ truncation recall
+      $0.95$, and a reranker with recall $0.98$ within the candidate set.
+
+      1. Compute the end-to-end recall.
+      2. Compute the effect of improving the reranker to $1.0$.
+      3. Compute the effect of improving the index to $0.98$.
+      4. State the design principle.
+    solution: |
+      **1. End-to-end.**
+      $$
+      \gamma = 0.95\times0.90\times0.95\times0.98 = 0.796 .
+      $$
+      About $20\%$ of relevant documents never reach the generator.
+
+      **2. Perfect reranker.** $0.95\times0.90\times0.95\times1.0 = 0.812$. A gain of $1.6$ points, and
+      that is the **maximum possible** from any reranker improvement.
+
+      **3. Better index.** $0.95\times0.98\times0.95\times0.98 = 0.867$. A gain of $7.1$ points — more
+      than four times the ceiling available from the reranker.
+
+      **4. Design principle.** Recall multiplies, so the end-to-end value is at most the minimum stage
+      recall, and effort is best spent on the **weakest** stage. A reranker cannot recover a document
+      the index did not return: if the index has recall $0.90$, the system's ceiling is $0.90$ however
+      good the reranker is.
+
+      The corollary for architecture is the two-stage design: retrieve **broadly** (large candidate set,
+      maximise $\gamma_{\text{index}}$) and rerank **aggressively** (maximise precision within it).
+      Tuning the reranker while the index silently drops a tenth of the relevant documents is effort
+      spent on the wrong stage — and it is the most common misallocation in RAG systems, because the
+      reranker is the component whose quality is easiest to measure in isolation.
+
+  - id: ann-implement-lsh
+    title: Implement SimHash LSH and measure recall
+    topic: rag/vector-search-and-ann
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [lsh, implementation, recall, tradeoff]
+    statement: |
+      Implement SimHash with AND/OR amplification and measure the recall–speed trade-off.
+
+      1. Verify empirically that the bit-disagreement rate estimates $\theta/\pi$.
+      2. Sweep $(k,L)$ and plot recall against candidates examined.
+      3. Compare with brute force and with a simple IVF baseline.
+      4. Demonstrate the effect of anisotropic data on the achieved recall.
+    solution: |
+      ```python
+      import numpy as np
+
+      def simhash(X, k, L, seed=0):
+          rng = np.random.default_rng(seed)
+          d = X.shape[1]
+          planes = rng.standard_normal((L, k, d))
+          bits = (np.einsum('lkd,nd->nlk', planes, X) > 0)
+          # pack each table's k bits into an integer key
+          weights = (1 << np.arange(k))
+          keys = (bits * weights).sum(-1)              # (n, L)
+          tables = [{} for _ in range(L)]
+          for l in range(L):
+              for i, key in enumerate(keys[:, l]):
+                  tables[l].setdefault(int(key), []).append(i)
+          return planes, tables
+
+      def query(q, planes, tables):
+          L, k, _ = planes.shape
+          bits = (planes @ q > 0)
+          weights = (1 << np.arange(k))
+          cand = set()
+          for l in range(L):
+              cand |= set(tables[l].get(int((bits[l] * weights).sum()), []))
+          return cand
+      ```
+
+      **1. Collision probability.** For pairs at known angle $\theta$, the fraction of disagreeing bits
+      should be $\theta/\pi$ with standard error $\sqrt{\theta(\pi-\theta)/b}/\pi$. Plotting measured
+      against predicted gives a straight line through the origin with slope $1$; deviation usually means
+      the vectors were not normalised (SimHash depends only on direction, so it is insensitive to norm —
+      but the *reference* angle must be computed from normalised vectors).
+
+      **2. The trade-off.** Sweeping $k$ (more bits per table $\Rightarrow$ fewer candidates, lower
+      recall) and $L$ (more tables $\Rightarrow$ more candidates, higher recall), plot recall against
+      the mean number of candidates examined. The Pareto frontier is what matters; individual $(k,L)$
+      settings are points on it. The theory predicts $L = N^\varrho$ at $k = \log_{1/p_2}N$ sits near
+      the knee.
+
+      **3. Comparison.** Brute force is exact at cost $N$ per query. IVF with
+      $n_{\text{list}} = \sqrt N$ and $n_{\text{probe}} = 8$ typically achieves higher recall at the
+      same candidate count than SimHash on clustered data, because it adapts to the data distribution
+      whereas SimHash does not. That is the standard empirical finding: data-*independent* hashing has
+      guarantees and loses on benchmarks; data-*dependent* methods win and have none.
+
+      **4. Anisotropic data.** Generate embeddings with a power-law covariance spectrum. Recall at fixed
+      $(k,L)$ drops substantially, because the hyperplanes waste bits on low-variance directions where
+      all points agree. Whitening before hashing recovers much of the loss — a concrete demonstration
+      that the geometry diagnostics of the embedding-geometry problems are not academic.
+
+  - id: rg-sequence-vs-token
+    title: RAG-sequence and RAG-token are different models
+    topic: rag/retrieval-as-latent-variable-model
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [rag, marginalisation, mixture, attribution]
+    statement: |
+      Show that a mixture of products differs from a product of mixtures by an explicit example, and
+      explain the consequence for multi-hop questions and for attribution.
+    solution: |
+      **The two models.**
+      $$
+      p_{\text{seq}}(y\mid x) = \sum_zp_\eta(z\mid x)\prod_tp_\theta(y_t\mid x,z,y_{<t}),
+      \qquad
+      p_{\text{tok}}(y\mid x) = \prod_t\sum_zp_\eta(z\mid x)p_\theta(y_t\mid x,z,y_{<t}).
+      $$
+
+      **Explicit example.** Two documents with equal retriever weight $\tfrac12$, output length $2$, and
+      deterministic generators:
+      $$
+      p_\theta(\cdot\mid z_1) = \delta_{(a,a)},\qquad p_\theta(\cdot\mid z_2) = \delta_{(b,b)} .
+      $$
+      Then
+      - $p_{\text{seq}}((a,b)) = \tfrac12\cdot0 + \tfrac12\cdot0 = 0$;
+      - $p_{\text{tok}}((a,b)) = \big(\tfrac12\cdot1+\tfrac12\cdot0\big)\big(\tfrac12\cdot0+\tfrac12\cdot1\big) = \tfrac14$.
+
+      The token-level model assigns positive probability to a response that **no single document
+      supports**.
+
+      **Consequences.**
+      - *Multi-hop.* Answering a question requiring facts from two documents needs the model to combine them, which $p_{\text{seq}}$ structurally cannot do: it commits to one document for the whole response. $p_{\text{tok}}$ can, which is the argument for it.
+      - *Attribution.* Under $p_{\text{seq}}$ every generated response is attributable to exactly one retrieved document — precisely what a citation-bearing system needs. Under $p_{\text{tok}}$ there is no such attribution, and the example above shows the failure is not hypothetical: a fluent, well-formed response can be inconsistent with every individual source.
+
+      **Third option.** Fusion-in-Decoder encodes documents separately and lets the decoder attend over
+      all of them jointly, so the mixing happens inside attention rather than in an explicit
+      marginalisation. It combines across documents like $p_{\text{tok}}$ but with the combination
+      learned rather than imposed.
+
+  - id: rg-elbo
+    title: The RAG evidence lower bound
+    topic: rag/retrieval-as-latent-variable-model
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [elbo, variational, retriever training, posterior]
+    statement: |
+      Derive the evidence lower bound for the RAG marginal likelihood and identify the distribution
+      that closes the gap. Explain what this says about what a retriever should be trained to
+      approximate.
+    solution: |
+      **Derivation.** For any distribution $q(z)$ over documents,
+      $$
+      \log p(y\mid x) = \log\sum_zp_\eta(z\mid x)p_\theta(y\mid x,z)
+      = \log\E_{z\sim q}\left[\frac{p_\eta(z\mid x)p_\theta(y\mid x,z)}{q(z)}\right] .
+      $$
+      By Jensen (concavity of $\log$),
+      $$
+      \ge \E_{z\sim q}\left[\log\frac{p_\eta(z\mid x)p_\theta(y\mid x,z)}{q(z)}\right]
+      = \E_{z\sim q}\big[\log p_\theta(y\mid x,z)\big] - \mathrm{KL}\big(q(z)\,\|\,p_\eta(z\mid x)\big).
+      $$
+
+      **The gap.** Writing $p(z\mid x,y)\propto p_\eta(z\mid x)p_\theta(y\mid x,z)$ for the true
+      posterior, a short computation shows the Jensen gap is exactly
+      $\mathrm{KL}\big(q(z)\|p(z\mid x,y)\big)$, which vanishes iff $q = p(\cdot\mid x,y)$.
+
+      **What a retriever should approximate.** The bound is tight at the posterior **given both the
+      query and the answer**, $p(z\mid x,y)$ — not at $p(z\mid x)$, the documents relevant to the
+      query alone. Those differ: a document can be topically relevant yet useless for producing the
+      answer, and conversely.
+
+      **Consequences.**
+      - Training the retriever on query–document relevance labels optimises the wrong posterior. The gap is real, not a technicality.
+      - Methods that distil the generator's likelihood back into the retriever — REALM's end-to-end training, and the perplexity-distillation schemes that followed — are closing exactly this gap, and the bound says why they should help.
+      - It also explains why hard negatives mined with the *generator* in the loop outperform those mined by the retriever alone.
+
+  - id: rg-error-propagation
+    title: Retrieval error propagates into generation
+    topic: rag/retrieval-as-latent-variable-model
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [error propagation, total variation, tightness, rag]
+    statement: |
+      Prove that the total variation distance between the RAG output distribution and the oracle
+      distribution is at most $1-\gamma$, where $\gamma$ is the probability that a sufficient document
+      is retrieved, and show the bound is attained. Then compute the end-to-end $\gamma$ for a realistic
+      pipeline and interpret.
+    solution: |
+      **Decomposition.** Let $A = Z^\star$ be the set of sufficient documents and
+      $\gamma = p_\eta(A\mid x)$. Conditioning on whether the retrieved document is in $A$,
+      $$
+      p_{\mathrm{RAG}}(y) = \gamma\,\tilde p_A(y) + (1-\gamma)\,\tilde p_{A^c}(y),
+      $$
+      where $\tilde p_A$ and $\tilde p_{A^c}$ are the generator's outputs averaged under the retriever
+      conditioned on $A$ and on $A^c$. The oracle is $p_{\mathrm{oracle}} = \tilde p_A$.
+
+      **Bound.** Subtracting,
+      $$
+      p_{\mathrm{RAG}} - p_{\mathrm{oracle}} = (1-\gamma)\big(\tilde p_{A^c}-\tilde p_A\big),
+      $$
+      so
+      $$
+      \big\|p_{\mathrm{RAG}}-p_{\mathrm{oracle}}\big\|_{\mathrm{TV}}
+      = (1-\gamma)\big\|\tilde p_{A^c}-\tilde p_A\big\|_{\mathrm{TV}} \ \le\ 1-\gamma ,
+      $$
+      since total variation between probability measures is at most $1$.
+
+      **Tightness.** Take a binary answer space $\{y_0,y_1\}$ and a generator that outputs $y_1$ with
+      probability $1$ given any $z\in A$ and $y_0$ with probability $1$ given any $z\notin A$. Then
+      $\|\tilde p_{A^c}-\tilde p_A\|_{\mathrm{TV}} = 1$ and the bound holds with equality. So no
+      improvement is possible without assumptions on the generator's behaviour under irrelevant
+      context.
+
+      **Realistic pipeline.** Chunking $0.95$, ANN index $0.90$, top-$k$ truncation $0.95$:
+      $$
+      \gamma = 0.95\times0.90\times0.95 = 0.81,\qquad 1-\gamma = 0.19 .
+      $$
+      Nearly a fifth of the output distribution is unconstrained by the evidence, **before the generator
+      makes any error of its own**.
+
+      **Interpretation.** Retrieval failure is a hard ceiling, not a soft degradation. One might hope
+      the irrelevant documents act as neutral noise the model ignores; the evidence is against that —
+      irrelevant context measurably degrades reasoning accuracy (Shi et al.), and relevant context
+      placed mid-prompt is under-used (Liu et al.). The failure modes compound rather than cancel.
+
+  - id: rg-recall-arithmetic
+    title: End-to-end recall arithmetic for a RAG system
+    topic: rag/retrieval-as-latent-variable-model
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [recall, pipeline, budget, diagnosis]
+    statement: |
+      A team reports $70\%$ answer accuracy and proposes to fine-tune the generator. The pipeline has
+      chunk recall $0.93$, index recall $0.88$, top-$5$ truncation recall $0.92$. Compute the retrieval
+      ceiling, and advise.
+    solution: |
+      **Ceiling.**
+      $$
+      \gamma = 0.93\times0.88\times0.92 = 0.753 .
+      $$
+      So at most $75.3\%$ of queries have a sufficient document in the generator's context. The observed
+      $70\%$ accuracy is within $5$ points of that ceiling.
+
+      **Diagnosis.** The generator is converting roughly $93\%$ of the cases where it *has* the evidence
+      into correct answers ($0.70/0.753$). That is already good. Fine-tuning it can recover at most
+      $5.3$ points, and only if it becomes perfect given correct evidence.
+
+      **Where the headroom is.** Improving each retrieval stage to $0.97$ would give
+      $\gamma = 0.97^3 = 0.913$, raising the ceiling by $16$ points — three times the maximum available
+      from the generator.
+
+      **Advice.** Before touching the generator, measure each stage's recall separately with a labelled
+      set of (query, sufficient-document) pairs. Then:
+      - **Chunking** ($0.93$): are answers being split across chunk boundaries? Try overlapping windows or semantic chunking.
+      - **Index** ($0.88$): is this an ANN approximation loss or an embedding-model loss? Compare against brute-force search on a sample — if brute force is much better, tune $n_{\text{probe}}$ or $\mathrm{efSearch}$; if not, the encoder is the problem.
+      - **Truncation** ($0.92$): increase $k$ and add a reranker to keep precision.
+
+      **General principle.** Always compute the retrieval ceiling before attributing errors to
+      generation. It is a five-minute calculation that frequently redirects months of work.
+
+  - id: rg-implement-rag
+    title: Build and instrument a minimal RAG pipeline
+    topic: rag/retrieval-as-latent-variable-model
+    difficulty: advanced
+    type: coding
+    estimated_time: 1d
+    tags: [rag, implementation, instrumentation, evaluation]
+    statement: |
+      Implement a minimal retrieval pipeline end to end and instrument it so that each stage's recall is
+      measurable.
+
+      1. Chunk a corpus, embed, index, retrieve top-$k$, and construct a context.
+      2. Measure chunk recall, index recall (against brute force) and truncation recall separately.
+      3. Show the effect of normalisation on ranking, and of chunk size on chunk recall.
+      4. Demonstrate the recall ceiling by computing end-to-end accuracy against the product of stage
+         recalls.
+    solution: |
+      ```python
+      import numpy as np
+
+      def chunk(text, size, overlap):
+          step = size - overlap
+          return [text[i:i + size] for i in range(0, max(1, len(text) - overlap), step)]
+
+      def build_index(embs, normalise=True):
+          E = embs / np.linalg.norm(embs, axis=1, keepdims=True) if normalise else embs
+          return E
+
+      def retrieve(E, q, k, normalise=True):
+          qq = q / np.linalg.norm(q) if normalise else q
+          scores = E @ qq
+          return np.argsort(-scores)[:k], scores
+      ```
+
+      **2. Stage-wise instrumentation.** This is the part that matters and the part usually skipped.
+      Maintain, for each evaluation query, the identity of the *gold* passage.
+      - **Chunk recall:** does any chunk fully contain the gold answer span? Failures here are invisible downstream and are pure loss.
+      - **Index recall:** compare the ANN top-$k$ with the brute-force top-$k$ on a sample. The gap isolates approximation loss from embedding loss.
+      - **Truncation recall:** is the gold chunk within the top-$k$ of the *brute-force* ranking? This isolates the encoder's ranking quality from the index.
+
+      Report all three, plus their product, alongside end-to-end accuracy.
+
+      **3. Normalisation and chunk size.**
+      - With `normalise=False`, long chunks with large embedding norms dominate the ranking regardless of content. Plot retrieved-chunk length against rank to see it.
+      - Sweep chunk size: small chunks fragment answers (chunk recall falls); large chunks dilute the embedding and retrieve less precisely (truncation recall falls). The optimum is usually a few hundred tokens with $10$–$20\%$ overlap, but it depends on the answer length distribution — measure it rather than copying a default.
+
+      **4. The ceiling.** Plot end-to-end accuracy against $\prod_i\gamma_i$ across configurations. The
+      points should lie on or below the diagonal, and the vertical gap is the generator's contribution.
+      A configuration well below the diagonal has a generation problem; one on the diagonal has a
+      retrieval problem, and no amount of prompt engineering will help.

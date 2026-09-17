@@ -1,0 +1,286 @@
+---
+title: Language Modelling, Cross Entropy and Perplexity
+summary: The autoregressive factorisation, maximum likelihood as KL minimisation, what perplexity measures, and where the entropy floor comes from.
+field: llm
+level: 3
+order: 10
+prerequisites: [deep-learning/transformers, probability/expectation-and-conditioning]
+tags: [language model, cross entropy, perplexity, kl divergence, tokenisation, softmax, autoregressive]
+estimated_time: 3h
+papers: [attention-is-all-you-need, scaling-laws]
+claims:
+  - id: chain-rule-prob
+    kind: proposition
+    title: The autoregressive factorisation is exact
+    summary: Any joint distribution over sequences factorises as a product of conditionals, so the modelling choice is the parameterisation and the ordering, not the factorisation.
+    proved: true
+    tags: [chain rule, factorisation]
+  - id: mle-is-kl
+    kind: theorem
+    title: Maximum likelihood is empirical KL minimisation
+    summary: Minimising cross entropy is minimising the KL divergence from the data distribution up to a constant equal to the data entropy.
+    proved: true
+    tags: [mle, kl divergence, cross entropy]
+  - id: entropy-floor
+    kind: proposition
+    title: The loss cannot go below the conditional entropy
+    summary: Cross entropy is bounded below by the entropy of the true conditional, with equality only for a perfect model.
+    proved: true
+    tags: [entropy, lower bound, irreducible loss]
+  - id: perplexity-def
+    kind: definition
+    title: Perplexity
+    summary: The exponential of the average cross entropy, interpretable as an effective branching factor.
+    proved: false
+    tags: [perplexity, evaluation]
+  - id: tokenisation-perplexity
+    kind: proposition
+    title: Perplexity is not comparable across tokenisers
+    summary: Changing the tokenisation changes the per-token loss even when the per-character loss is identical.
+    proved: true
+    tags: [tokenisation, evaluation, caveat]
+  - id: softmax-gradient
+    kind: proposition
+    title: The cross-entropy gradient is the prediction error
+    summary: The gradient with respect to the logits is the predicted distribution minus the one-hot target.
+    proved: true
+    tags: [gradient, softmax, backprop]
+  - id: temperature-entropy
+    kind: proposition
+    title: Temperature monotonically controls entropy
+    summary: Raising the sampling temperature increases the entropy of the sampled distribution.
+    proved: true
+    tags: [temperature, sampling, entropy]
+references:
+  - key: shannon-1948
+    title: A Mathematical Theory of Communication
+    authors: Claude E. Shannon
+    year: 1948
+    kind: paper
+  - key: cover-thomas
+    title: Elements of Information Theory
+    authors: Thomas M. Cover and Joy A. Thomas
+    year: 2006
+    kind: book
+  - key: bengio-et-al-lm
+    title: A Neural Probabilistic Language Model
+    authors: Yoshua Bengio, Réjean Ducharme, Pascal Vincent and Christian Jauvin
+    year: 2003
+    kind: paper
+  - key: sennrich-bpe
+    title: Neural Machine Translation of Rare Words with Subword Units
+    authors: Rico Sennrich, Barry Haddow and Alexandra Birch
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1508.07909
+  - key: holtzman-nucleus
+    title: The Curious Case of Neural Text Degeneration
+    authors: Ari Holtzman, Jan Buys, Li Du, Maxwell Forbes and Yejin Choi
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/1904.09751
+---
+
+## The factorisation
+
+<Proposition id="chain-rule-prob" title="The autoregressive factorisation is exact">
+For any distribution $p$ on sequences $x = (x_1,\dots,x_T)$ over a finite vocabulary,
+$$
+p(x_1,\dots,x_T) = \prod_{t=1}^T p\big(x_t \mid x_{<t}\big),
+$$
+where $x_{<t} = (x_1,\dots,x_{t-1})$ and the $t=1$ factor is the marginal $p(x_1)$.
+</Proposition>
+
+<Proof>
+Induction on $T$ using the definition of conditional probability:
+$p(x_{\le T}) = p(x_{<T})\,p(x_T\mid x_{<T})$, and expand $p(x_{<T})$ by the inductive hypothesis.
+The identity holds whenever the conditioning events have positive probability, which is automatic on
+a finite vocabulary with full support.
+</Proof>
+
+<KeyIdea>
+The factorisation is an identity, not a modelling assumption. So an autoregressive language model
+loses **no generality** — it can represent any distribution over sequences. What *is* a modelling
+choice is (i) the parameterisation of each conditional, (ii) the left-to-right ordering, and
+(iii) the tokenisation. Only (i) limits expressivity in the usual sense; (ii) matters for what is
+easy to learn and for what inference is cheap; (iii) changes the object being modelled entirely.
+</KeyIdea>
+
+## Maximum likelihood and cross entropy
+
+Let $q_\theta(\cdot\mid x_{<t})$ be the model's conditional, produced by a softmax over logits
+$z_t = W_U h_t$ where $h_t$ is the final-layer representation at position $t$ and
+$W_U\in\R^{|\Vcal|\times d}$ is the unembedding.
+
+<Definition id="ce-def" title="Cross-entropy loss">
+$$
+\mathcal{L}(\theta) = -\frac{1}{|\Dcal|}\sum_{x\in\Dcal}\sum_{t=1}^{T}\log q_\theta\big(x_t\mid x_{<t}\big) .
+$$
+</Definition>
+
+<Theorem id="mle-is-kl" title="Maximum likelihood is empirical KL minimisation">
+Let $\hat p$ be the empirical distribution of the data. Then
+$$
+\mathcal{L}(\theta) = H(\hat p) + \mathrm{KL}\big(\hat p \,\|\, q_\theta\big),
+$$
+where $H(\hat p) = -\sum_x\hat p(x)\log\hat p(x)$ does not depend on $\theta$. Hence minimising
+cross entropy is exactly minimising $\mathrm{KL}(\hat p\|q_\theta)$.
+</Theorem>
+
+<Proof>
+$$
+\mathcal{L}(\theta) = -\sum_x\hat p(x)\log q_\theta(x)
+= -\sum_x\hat p(x)\log\hat p(x) + \sum_x\hat p(x)\log\frac{\hat p(x)}{q_\theta(x)}
+= H(\hat p) + \mathrm{KL}(\hat p\|q_\theta),
+$$
+where the first equality uses that the sum of per-token log-probabilities is the log-probability of
+the sequence, by the factorisation.
+</Proof>
+
+<Note title="The direction of the KL matters">
+The objective is $\mathrm{KL}(\hat p\|q_\theta)$, the **forward** KL, which is
+mode-covering: it assigns infinite penalty to any sequence the data contains and the model gives
+probability near zero, but only finite penalty to sequences the model invents. Reverse KL
+$\mathrm{KL}(q_\theta\|\hat p)$ would be mode-seeking and would penalise invention harshly. Maximum
+likelihood training therefore has a structural bias towards *hedging* — spreading probability mass
+broadly — and the fact that language models sometimes produce plausible-looking fabrications is
+consistent with the objective they were trained on. This is also why
+<TopicRef id="llm/preference-optimisation">RLHF and DPO</TopicRef>, which use reverse-KL-flavoured
+objectives, change the behaviour qualitatively and not just quantitatively.
+</Note>
+
+<Proposition id="entropy-floor" title="The loss cannot go below the conditional entropy">
+Suppose the data is drawn from a true distribution $p$. Then for any model $q$,
+$$
+\E_{x_{<t}\sim p}\Big[-\sum_{v}p(v\mid x_{<t})\log q(v\mid x_{<t})\Big]
+\;\ge\; \E_{x_{<t}\sim p}\big[H\big(p(\cdot\mid x_{<t})\big)\big],
+$$
+with equality if and only if $q = p$ almost everywhere.
+</Proposition>
+
+<Proof>
+Pointwise in $x_{<t}$, the difference between the two sides is
+$\mathrm{KL}(p(\cdot\mid x_{<t})\|q(\cdot\mid x_{<t}))\ge0$, with equality iff the distributions
+agree. Non-negativity of KL is Jensen applied to $-\log$:
+$$
+\mathrm{KL}(p\|q) = -\sum_vp(v)\log\frac{q(v)}{p(v)} \ge -\log\sum_vp(v)\frac{q(v)}{p(v)} = -\log 1 = 0 ,
+$$
+with equality iff $q/p$ is constant, i.e. $q=p$. Taking expectations over $x_{<t}$ preserves the
+inequality.
+</Proof>
+
+<KeyIdea>
+This is the origin of the $\mathcal{L}_\infty$ term in the
+<TopicRef id="deep-learning-theory/what-is-proven">scaling laws</TopicRef>: a fitted loss curve
+$\mathcal{L}(N,D) = \mathcal{L}_\infty + AN^{-\alpha}+BD^{-\beta}$ has an irreducible floor, and the
+floor has an interpretation — it is (an upper bound on) the conditional entropy of the true text
+distribution at the given tokenisation. Language is genuinely stochastic; no model, however large,
+reaches zero loss.
+</KeyIdea>
+
+## Perplexity, and why it is not portable
+
+<Definition id="perplexity-def" title="Perplexity">
+$$
+\mathrm{PPL} = \exp\left(\frac{1}{T}\sum_{t=1}^T -\log q_\theta(x_t\mid x_{<t})\right) = e^{\bar{\mathcal{L}}} .
+$$
+If the model were uniform over $k$ equally likely options at each step, the perplexity would be
+exactly $k$ — hence the reading as an **effective branching factor**.
+</Definition>
+
+<Proposition id="tokenisation-perplexity" title="Perplexity is not comparable across tokenisers">
+Let a corpus have $C$ characters and be tokenised two ways, into $T_1$ and $T_2$ tokens. Two models
+assigning the *same probability* to the corpus have per-token losses
+$$
+\bar{\mathcal{L}}_i = \frac{-\log q(\text{corpus})}{T_i},
+$$
+so their perplexities differ by the factor $\exp\big(-\log q\cdot(1/T_1-1/T_2)\big)$. Only the
+**per-character** (or per-byte) loss $-\log q(\text{corpus})/C$ is tokeniser-independent.
+</Proposition>
+
+<Proof>
+Immediate from the definitions: the numerator $-\log q(\text{corpus})$ is a property of the
+distribution over the text, while the denominator is a property of the tokenisation.
+</Proof>
+
+<Warning title="Common mistake">
+Comparing perplexities of models with different vocabularies or tokenisers is meaningless. A model
+with a larger vocabulary uses fewer tokens per character and will report a *higher* per-token
+perplexity for the same quality of text prediction. Always convert to bits-per-byte or
+bits-per-character before comparing across tokenisers — and note that the
+<TopicRef id="deep-learning-theory/what-is-proven">scaling law</TopicRef> exponents are also
+tokeniser-dependent for the same reason.
+</Warning>
+
+## Gradients
+
+<Proposition id="softmax-gradient" title="The cross-entropy gradient is the prediction error">
+Let $z\in\R^{|\Vcal|}$ be the logits, $q = \operatorname{softmax}(z)$, and the loss
+$\ell = -\log q_{v^\star}$ for the true token $v^\star$. Then
+$$
+\frac{\partial\ell}{\partial z} = q - e_{v^\star},
+$$
+and consequently $\dfrac{\partial\ell}{\partial W_U} = (q-e_{v^\star})h^\top$ and
+$\dfrac{\partial\ell}{\partial h} = W_U^\top(q-e_{v^\star})$.
+</Proposition>
+
+<Proof>
+$\ell = -z_{v^\star} + \log\sum_ve^{z_v}$, so
+$$
+\frac{\partial\ell}{\partial z_v} = -\one\{v=v^\star\} + \frac{e^{z_v}}{\sum_{v'}e^{z_{v'}}} = q_v - \one\{v=v^\star\}.
+$$
+The parameter gradients follow from $z = W_Uh$ by the chain rule.
+</Proof>
+
+<KeyIdea>
+The gradient is the *prediction minus the target* — exactly as in
+<TopicRef id="machine-learning/logistic-regression">logistic regression</TopicRef> and
+<TopicRef id="machine-learning/linear-and-ridge-regression">linear regression</TopicRef>. The
+composition of softmax and cross entropy is what makes this clean: the softmax Jacobian
+$\diag(q)-qq^\top$, which
+<TopicRef id="deep-learning/transformers">saturates and kills gradients</TopicRef> on its own,
+combines with the $1/q_{v^\star}$ from the logarithm to cancel exactly. This is why the two are
+always implemented as a single fused operation, and why using a softmax with a squared loss instead
+reintroduces the saturation problem.
+</KeyIdea>
+
+## Sampling
+
+<Proposition id="temperature-entropy" title="Temperature monotonically controls entropy">
+Let $q^{(\tau)} = \operatorname{softmax}(z/\tau)$. Then $H(q^{(\tau)})$ is non-decreasing in
+$\tau>0$, with $q^{(\tau)}\to$ uniform as $\tau\to\infty$ and $q^{(\tau)}\to$ the argmax one-hot as
+$\tau\to0^+$ (assuming a unique maximum).
+</Proposition>
+
+<Proof>
+Write $\beta = 1/\tau$ and $q^{(\beta)}_v \propto e^{\beta z_v}$, an exponential family in $\beta$
+with sufficient statistic $z$. Its log-partition function $\psi(\beta) = \log\sum_ve^{\beta z_v}$
+satisfies $\psi''(\beta) = \Var_{q^{(\beta)}}(z) \ge 0$, so $\psi$ is convex. The entropy is
+$$
+H(q^{(\beta)}) = \psi(\beta) - \beta\psi'(\beta),
+$$
+since $\E_{q^{(\beta)}}[z] = \psi'(\beta)$. Differentiating,
+$$
+\frac{dH}{d\beta} = \psi'(\beta) - \psi'(\beta) - \beta\psi''(\beta) = -\beta\,\Var_{q^{(\beta)}}(z) \le 0 .
+$$
+So $H$ decreases in $\beta = 1/\tau$, i.e. increases in $\tau$. The limits are direct: as
+$\beta\to0$ all logits are equal after scaling; as $\beta\to\infty$ the largest logit dominates.
+</Proof>
+
+<Note title="Why truncated sampling exists">
+Temperature reshapes the whole distribution, including the long tail of very low-probability tokens.
+Over a $10^5$-token vocabulary, the tail can hold substantial total mass even when every individual
+token is implausible, and sampling from it produces the degeneration Holtzman et al. document.
+Top-$k$ and top-$p$ (nucleus) sampling truncate the tail before renormalising, which is a different
+operation from lowering the temperature: temperature is a monotone reweighting of *all* tokens,
+truncation removes support. Neither corresponds to a change in the model's beliefs — both are
+decoding-time interventions, and a model's perplexity is unaffected by them.
+</Note>
+
+## Problems
+
+<ProblemRef id="lm-mle-kl" />
+<ProblemRef id="lm-entropy-floor" />
+<ProblemRef id="lm-perplexity-tokeniser" />
+<ProblemRef id="lm-softmax-gradient" />
+<ProblemRef id="lm-temperature-entropy" />

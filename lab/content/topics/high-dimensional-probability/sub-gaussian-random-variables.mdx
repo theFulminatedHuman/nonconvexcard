@@ -1,0 +1,342 @@
+---
+title: Sub-Gaussian and Sub-Exponential Random Variables
+summary: Orlicz norms, moment generating functions and the equivalent characterisations that make "has a Gaussian-like tail" a usable hypothesis.
+field: high-dimensional-probability
+level: 2
+order: 10
+prerequisites: [probability/modes-of-convergence, foundations/analysis-prerequisites]
+tags: [sub-gaussian, sub-exponential, orlicz norm, mgf, tails, psi-2]
+estimated_time: 3h
+claims:
+  - id: subgaussian-equivalence
+    kind: theorem
+    title: Equivalent characterisations of sub-Gaussianity
+    summary: Gaussian tails, moment growth, MGF bounds and finiteness of the psi-2 Orlicz norm are equivalent up to absolute constants.
+    proved: true
+    tags: [sub-gaussian, equivalence, orlicz]
+  - id: psi2-norm
+    kind: definition
+    title: The psi-2 and psi-1 Orlicz norms
+    summary: Norms whose finiteness encodes Gaussian and exponential tail decay respectively.
+    proved: false
+    tags: [orlicz, norm]
+  - id: gaussian-mgf
+    kind: lemma
+    title: Moment generating function of a centred Gaussian
+    summary: A centred Gaussian has MGF exactly exp(lambda^2 sigma^2 / 2).
+    proved: true
+    tags: [gaussian, mgf]
+  - id: hoeffding-lemma
+    kind: lemma
+    title: Hoeffding's lemma
+    summary: A centred random variable supported on an interval of length b-a is sub-Gaussian with parameter (b-a)/2.
+    proved: true
+    tags: [bounded, sub-gaussian, hoeffding]
+  - id: sum-of-subgaussians
+    kind: proposition
+    title: Sums of independent sub-Gaussians are sub-Gaussian
+    summary: Sub-Gaussian parameters add in square, exactly as variances do.
+    proved: true
+    tags: [sums, rotation invariance]
+  - id: subexp-equivalence
+    kind: theorem
+    title: Equivalent characterisations of sub-exponentiality
+    summary: Exponential tails, linear moment growth and a one-sided MGF bound near zero are equivalent up to constants.
+    proved: true
+    tags: [sub-exponential, psi-1]
+  - id: square-of-subgaussian
+    kind: lemma
+    title: The square of a sub-Gaussian variable is sub-exponential
+    summary: X sub-Gaussian implies X^2 sub-exponential, with the psi-1 norm the square of the psi-2 norm.
+    proved: true
+    tags: [sub-exponential, squares, chi-squared]
+references:
+  - key: vershynin-hdp-2
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+    note: Chapter 2 is the canonical modern treatment of this material. The exposition below is written independently; the reader who wants the fully general statements, with all constants tracked, should go there.
+  - key: boucheron-lugosi-massart
+    title: 'Concentration Inequalities: A Nonasymptotic Theory of Independence'
+    authors: Stéphane Boucheron, Gábor Lugosi and Pascal Massart
+    year: 2013
+    kind: book
+    note: Chapter 2 develops the same material through the entropy method.
+  - key: wainwright-hds
+    title: 'High-Dimensional Statistics: A Non-Asymptotic Viewpoint'
+    authors: Martin J. Wainwright
+    year: 2019
+    kind: book
+    note: Chapter 2, with an emphasis on the statistical consequences.
+---
+
+<Intuition>
+The central limit theorem says that averages look Gaussian. It does not say how *fast*, and on the
+<TopicRef id="probability/modes-of-convergence">previous page</TopicRef> we saw that its error is far
+too large to be useful in the tail. The fix is to stop asking "does this converge to a Gaussian?" and
+start asking "does this *already have* a Gaussian-shaped tail, for every $n$?". The class of random
+variables for which the answer is yes is the sub-Gaussian class, and it is the right hypothesis class
+for almost all of high-dimensional probability.
+</Intuition>
+
+## Definition through four equivalent lenses
+
+<Theorem id="subgaussian-equivalence" title="Equivalent characterisations of sub-Gaussianity">
+Let $X$ be a random variable. The following are equivalent, in the sense that if one holds with
+parameter $K_i$ then the others hold with parameters $K_j \le C K_i$ for an absolute constant $C$:
+
+1. **Tails.** $\P(|X| \ge t) \le 2\exp(-t^2/K_1^2)$ for all $t \ge 0$.
+2. **Moments.** $\norm{X}_{L^p} = (\E|X|^p)^{1/p} \le K_2\sqrt p$ for all $p \ge 1$.
+3. **MGF of the square.** $\E\exp(X^2/K_3^2) \le 2$.
+4. **MGF (centred case).** If in addition $\E X = 0$, then $\E\exp(\lambda X) \le \exp(\lambda^2 K_4^2)$ for all $\lambda \in \R$.
+</Theorem>
+
+<Proof>
+We prove $1 \Rightarrow 2 \Rightarrow 3 \Rightarrow 1$, then $3 \Rightarrow 4 \Rightarrow 1$ in the
+centred case. Throughout, $C, c$ denote absolute constants whose value may change from line to line —
+this is standard practice in this subject and is the reason the statement says "up to absolute
+constants".
+
+**$1 \Rightarrow 2$.** By the <TopicRef id="probability/expectation-and-conditioning">tail
+formula</TopicRef>,
+$$
+\E|X|^p = \int_0^\infty p t^{p-1}\P(|X| \ge t)\,dt
+\le 2p\int_0^\infty t^{p-1}e^{-t^2/K_1^2}\,dt .
+$$
+Substituting $u = t^2/K_1^2$, so $t = K_1\sqrt u$ and $dt = K_1 du/(2\sqrt u)$,
+$$
+\E|X|^p \le p K_1^p \int_0^\infty u^{p/2 - 1}e^{-u}\,du = pK_1^p\,\Gamma(p/2) .
+$$
+Hence $\norm{X}_{L^p} \le K_1\big(p\,\Gamma(p/2)\big)^{1/p}$. Stirling gives
+$\Gamma(p/2)^{1/p} \le C\sqrt p$ and $p^{1/p} \le e^{1/e}$, so $\norm{X}_{L^p} \le CK_1\sqrt p$.
+
+**$2 \Rightarrow 3$.** Expand the exponential and use the moment bound with $p = 2k$:
+$$
+\E\exp\!\left(\frac{X^2}{K^2}\right) = \sum_{k=0}^\infty \frac{\E X^{2k}}{k!\,K^{2k}}
+\le 1 + \sum_{k=1}^\infty \frac{(K_2\sqrt{2k})^{2k}}{k!\,K^{2k}}
+= 1 + \sum_{k=1}^\infty \frac{(2k)^k}{k!}\left(\frac{K_2}{K}\right)^{2k} .
+$$
+Since $k! \ge (k/e)^k$ we have $(2k)^k/k! \le (2e)^k$, so the series is dominated by the geometric
+series $\sum_k \big(2e K_2^2/K^2\big)^k$, which sums to at most $1$ once $K^2 \ge 4eK_2^2$. Taking
+$K_3 = 2\sqrt e\,K_2$ gives $\E\exp(X^2/K_3^2) \le 2$.
+
+**$3 \Rightarrow 1$.** Markov's inequality applied to the non-negative variable $\exp(X^2/K_3^2)$:
+$$
+\P(|X| \ge t) = \P\!\left(e^{X^2/K_3^2} \ge e^{t^2/K_3^2}\right)
+\le \frac{\E e^{X^2/K_3^2}}{e^{t^2/K_3^2}} \le 2e^{-t^2/K_3^2}.
+$$
+
+**$3 \Rightarrow 4$ (centred case).** Split on the size of $\lambda$.
+
+*Small $\lambda$.* Using $\E X = 0$ and the moment bound (2), which we have already derived from (3),
+$$
+\E e^{\lambda X} = 1 + \lambda\underbrace{\E X}_{=0} + \sum_{k=2}^\infty \frac{\lambda^k \E X^k}{k!}
+\le 1 + \sum_{k=2}^\infty \frac{|\lambda|^k (K_2\sqrt k)^k}{k!} .
+$$
+Since $k! \ge (k/e)^k$, the $k$-th term is at most $\big(e|\lambda|K_2/\sqrt k\big)^k \le \big(e|\lambda|K_2\big)^k$
+for $k \ge 1$. For $|\lambda| \le 1/(2eK_2)$ the tail of the geometric series is bounded by
+$2(e\lambda K_2)^2 = 2e^2\lambda^2K_2^2$, so $1 + u \le e^u$ gives
+$\E e^{\lambda X}\le \exp(2e^2\lambda^2K_2^2)$.
+
+*Large $\lambda$.* For any $K>0$ the inequality $\lambda x \le \lambda^2K^2 + x^2/(4K^2)$ holds,
+being $\big(\lambda K - x/(2K)\big)^2 \ge 0$ rearranged. With $K = K_3$ and Jensen applied to the
+concave map $u \mapsto u^{1/4}$,
+$$
+\E e^{\lambda X} \le e^{\lambda^2K_3^2}\,\E e^{X^2/(4K_3^2)}
+= e^{\lambda^2K_3^2}\,\E\big(e^{X^2/K_3^2}\big)^{1/4}
+\le e^{\lambda^2K_3^2}\big(\E e^{X^2/K_3^2}\big)^{1/4} \le 2^{1/4}e^{\lambda^2K_3^2}.
+$$
+On the range $|\lambda| > 1/(2eK_2)$ the quantity $\lambda^2K_3^2$ is bounded below by a positive
+absolute constant times $1$, so the stray factor $2^{1/4}$ can be absorbed into the exponent at the
+cost of enlarging the constant.
+
+Taking $K_4$ to be the larger of the two constants produced covers all $\lambda$.
+
+**$4 \Rightarrow 1$.** This is the Chernoff argument, done in full on the
+<TopicRef id="high-dimensional-probability/concentration-inequalities">next page</TopicRef>:
+optimise $\P(X \ge t) \le e^{-\lambda t}\E e^{\lambda X} \le e^{-\lambda t + \lambda^2K_4^2}$ over
+$\lambda > 0$, giving $\lambda = t/(2K_4^2)$ and the bound $e^{-t^2/(4K_4^2)}$; repeat for $-X$ and add.
+</Proof>
+
+<Warning title="Centring is not free">
+Characterisations (1)–(3) say nothing about $\E X$, while (4) assumes $\E X = 0$. A constant random
+variable $X \equiv c$ satisfies (1)–(3) but has $\E e^{\lambda X} = e^{\lambda c}$, which is not
+bounded by $e^{\lambda^2K^2}$ for small $\lambda$. Centring costs at most a constant factor —
+$\norm{X - \E X}_{\psi_2} \le C\norm{X}_{\psi_2}$ — but the step must be taken explicitly.
+</Warning>
+
+## The Orlicz norms
+
+<Definition id="psi2-norm" title="The psi-2 and psi-1 Orlicz norms">
+$$
+\norm{X}_{\psi_2} = \inf\left\{ t > 0 : \E\exp\!\left(\frac{X^2}{t^2}\right) \le 2 \right\},
+\qquad
+\norm{X}_{\psi_1} = \inf\left\{ t>0 : \E\exp\!\left(\frac{|X|}{t}\right) \le 2\right\}.
+$$
+$X$ is **sub-Gaussian** if $\norm{X}_{\psi_2} < \infty$ and **sub-exponential** if
+$\norm{X}_{\psi_1} < \infty$.
+</Definition>
+
+These are genuine norms — positivity, homogeneity and the triangle inequality all hold — which is
+what makes them so convenient: one can manipulate $\norm{\cdot}_{\psi_2}$ with the same reflexes as
+$\norm{\cdot}_{L^2}$. The choice of the constant $2$ on the right-hand side is a convention; any
+constant $>1$ gives an equivalent norm.
+
+<Note title="Reference values">
+$\norm{\Ncal(0,\sigma^2)}_{\psi_2} = \sigma\sqrt{8/3} \approx 1.633\sigma$ (solve
+$\E e^{X^2/t^2} = (1 - 2\sigma^2/t^2)^{-1/2} = 2$). A Rademacher sign has
+$\norm{\eps}_{\psi_2} = 1/\sqrt{\log 2} \approx 1.201$. A variable bounded by $M$ has
+$\norm{X}_{\psi_2} \le M/\sqrt{\log 2}$.
+</Note>
+
+<Lemma id="gaussian-mgf" title="Moment generating function of a centred Gaussian">
+If $X \sim \Ncal(0,\sigma^2)$ then $\E e^{\lambda X} = e^{\lambda^2\sigma^2/2}$ for every $\lambda\in\R$.
+</Lemma>
+
+<Proof>
+Compute directly, completing the square in the exponent:
+$$
+\E e^{\lambda X} = \frac{1}{\sigma\sqrt{2\pi}}\int_\R e^{\lambda x}e^{-x^2/2\sigma^2}\,dx
+= \frac{e^{\lambda^2\sigma^2/2}}{\sigma\sqrt{2\pi}}\int_\R e^{-(x-\lambda\sigma^2)^2/2\sigma^2}\,dx
+= e^{\lambda^2\sigma^2/2},
+$$
+since the remaining integral is that of a $\Ncal(\lambda\sigma^2,\sigma^2)$ density.
+</Proof>
+
+This identity is the template: a centred variable is called sub-Gaussian **with parameter $\sigma$**
+when $\E e^{\lambda X} \le e^{\lambda^2\sigma^2/2}$ for all $\lambda$, i.e. when its MGF is dominated
+by that of a Gaussian of that variance. Note that a sub-Gaussian variable with parameter $\sigma$
+automatically has $\Var(X) \le \sigma^2$, by comparing second-order Taylor coefficients at
+$\lambda = 0$ — but the converse fails badly, and "sub-Gaussian with parameter $\sigma$" is a strictly
+stronger statement than "variance $\sigma^2$".
+
+## Bounded variables are sub-Gaussian
+
+<Lemma id="hoeffding-lemma" title="Hoeffding's lemma">
+Let $X$ satisfy $\E X = 0$ and $X \in [a,b]$ almost surely. Then for all $\lambda \in \R$,
+$$
+\E e^{\lambda X} \le \exp\!\left(\frac{\lambda^2(b-a)^2}{8}\right),
+$$
+i.e. $X$ is sub-Gaussian with parameter $(b-a)/2$.
+</Lemma>
+
+<Proof>
+Fix $\lambda$ and set $\psi(\lambda) = \log \E e^{\lambda X}$, the cumulant generating function. It is
+finite for all $\lambda$ because $X$ is bounded, and differentiating under the expectation (justified
+by dominated convergence, again using boundedness) gives
+$$
+\psi'(\lambda) = \frac{\E[Xe^{\lambda X}]}{\E e^{\lambda X}} = \E_{\lambda}[X],
+\qquad
+\psi''(\lambda) = \E_\lambda[X^2] - \big(\E_\lambda[X]\big)^2 = \Var_\lambda(X),
+$$
+where $\E_\lambda$ denotes expectation under the **tilted** measure
+$d\P_\lambda = e^{\lambda X}\,d\P/\E e^{\lambda X}$.
+
+Under $\P_\lambda$ the variable $X$ still takes values in $[a,b]$, because tilting by a positive
+density cannot move the support. A random variable supported on an interval of length $b-a$ has
+variance at most $(b-a)^2/4$: indeed for any $c$,
+$\Var(X) \le \E(X - c)^2$, and choosing $c = (a+b)/2$ gives
+$\E(X-c)^2 \le \big((b-a)/2\big)^2$ since $|X - c| \le (b-a)/2$ pointwise. Hence
+$\psi''(\lambda) \le (b-a)^2/4$ for every $\lambda$.
+
+Finally $\psi(0) = 0$ and $\psi'(0) = \E X = 0$, so Taylor's theorem with the second-order remainder
+gives, for some $\xi$ between $0$ and $\lambda$,
+$$
+\psi(\lambda) = \psi(0) + \lambda\psi'(0) + \frac{\lambda^2}{2}\psi''(\xi)
+\le \frac{\lambda^2 (b-a)^2}{8}.
+$$
+Exponentiating completes the proof.
+</Proof>
+
+<KeyIdea>
+The variance-of-the-tilted-measure computation is the whole proof. It is worth internalising because
+the same three steps — cumulant generating function, tilted measure, bound the variance uniformly —
+prove Bernstein's inequality, the Azuma–Hoeffding inequality and the log-Sobolev route to Gaussian
+concentration. The tilting is not a trick; it is the natural coordinate system for exponential tail
+bounds.
+</KeyIdea>
+
+## Sums, and why parameters add in square
+
+<Proposition id="sum-of-subgaussians" title="Sums of independent sub-Gaussians">
+Let $X_1,\dots,X_n$ be independent, centred, with $X_i$ sub-Gaussian of parameter $\sigma_i$. Then
+$S = \sum_i X_i$ is sub-Gaussian with parameter $\big(\sum_i \sigma_i^2\big)^{1/2}$. Equivalently, in
+Orlicz form,
+$$
+\norm{\sum_i X_i}_{\psi_2}^2 \le C\sum_i \norm{X_i}_{\psi_2}^2 .
+$$
+</Proposition>
+
+<Proof>
+By independence the MGF factorises:
+$$
+\E e^{\lambda S} = \prod_{i=1}^n \E e^{\lambda X_i}
+\le \prod_{i=1}^n \exp\!\left(\frac{\lambda^2\sigma_i^2}{2}\right)
+= \exp\!\left(\frac{\lambda^2}{2}\sum_i \sigma_i^2\right),
+$$
+which is the definition of sub-Gaussian with parameter $(\sum_i\sigma_i^2)^{1/2}$. The Orlicz form
+follows by translating between characterisations (4) and (3) of the equivalence theorem, which costs
+the absolute constant $C$.
+</Proof>
+
+<Note title="This is the source of every square-root-n">
+Applied to $\bar X_n = \frac1n\sum_i X_i$ with all $\sigma_i = \sigma$: the parameter of the sum is
+$\sigma\sqrt n$, so the parameter of the average is $\sigma/\sqrt n$, and the tail bound reads
+$\P(|\bar X_n| \ge t) \le 2e^{-nt^2/2\sigma^2}$. Every $\sqrt{\log(1/\delta)/n}$ in this laboratory is
+this computation inverted for $t$.
+</Note>
+
+## Sub-exponential variables
+
+Sub-Gaussianity is sometimes too much to ask. The square of a Gaussian, the product of two
+Gaussians, and an exponential random variable all have tails that decay like $e^{-ct}$ rather than
+$e^{-ct^2}$ — and that is the next class down.
+
+<Theorem id="subexp-equivalence" title="Equivalent characterisations of sub-exponentiality">
+The following are equivalent up to absolute constants:
+
+1. $\P(|X| \ge t) \le 2e^{-t/K_1}$ for all $t \ge 0$;
+2. $\norm{X}_{L^p} \le K_2\,p$ for all $p \ge 1$;
+3. $\E e^{|X|/K_3} \le 2$;
+4. if $\E X = 0$: $\E e^{\lambda X} \le e^{\lambda^2K_4^2}$ for all $|\lambda| \le 1/K_4$.
+</Theorem>
+
+<Proof sketch>
+The implications mirror the sub-Gaussian case with $\sqrt p$ replaced by $p$ throughout: the tail
+integral $\int_0^\infty pt^{p-1}e^{-t/K}dt = p!\,K^p$ gives (1) $\Rightarrow$ (2) via
+$(p!)^{1/p}\le p$; the series expansion of $\E e^{|X|/K}$ with $\norm{X}_{L^p} \le K_2p$ is dominated
+by a geometric series once $K \ge CK_2$; Markov's inequality gives (3) $\Rightarrow$ (1). The one
+genuinely different feature is the **restricted range** of $\lambda$ in (4): unlike the sub-Gaussian
+case, the MGF of a sub-exponential variable is typically infinite for large $|\lambda|$ — an
+Exponential$(1)$ variable has $\E e^{\lambda X} = (1-\lambda)^{-1}$, finite only for $\lambda < 1$.
+The omitted details are the routine constant-tracking in each implication.
+</Proof>
+
+<Lemma id="square-of-subgaussian" title="The square of a sub-Gaussian variable is sub-exponential">
+$\norm{X^2}_{\psi_1} = \norm{X}_{\psi_2}^2$.
+</Lemma>
+
+<Proof>
+Directly from the definitions: $\E\exp(|X^2|/t) \le 2$ is the same condition as
+$\E\exp(X^2/(\sqrt t)^2) \le 2$. So the infimum over $t$ defining $\norm{X^2}_{\psi_1}$ is the square
+of the infimum over $\sqrt t$ defining $\norm{X}_{\psi_2}$.
+</Proof>
+
+<KeyIdea>
+This identity is why sub-exponential variables cannot be avoided even in a purely Gaussian world. The
+squared norm $\norm{X}_2^2 = \sum_i X_i^2$ of a Gaussian vector is a sum of *sub-exponential* terms,
+not sub-Gaussian ones, so the concentration of the norm on the
+<TopicRef id="high-dimensional-probability/concentration-of-the-norm">next page</TopicRef> must be
+proved with Bernstein's inequality rather than Hoeffding's. The same is true of every covariance
+estimate, since covariance entries are products of coordinates.
+</KeyIdea>
+
+## Problems
+
+<ProblemRef id="sg-psi2-gaussian" />
+<ProblemRef id="sg-rademacher-psi2" />
+<ProblemRef id="sg-moment-characterisation" />
+<ProblemRef id="sg-not-subgaussian" />
+<ProblemRef id="sg-product-subexponential" />

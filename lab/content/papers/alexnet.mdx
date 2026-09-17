@@ -1,0 +1,76 @@
+---
+title: ImageNet Classification with Deep Convolutional Neural Networks
+authors: Alex Krizhevsky, Ilya Sutskever, Geoffrey E. Hinton
+year: 2012
+venue: NeurIPS
+url: https://papers.nips.cc/paper/2012/hash/c399862d3b9d6b76c8436e924a68c45b-Abstract.html
+field: deep-learning
+tags: [cnn, imagenet, relu, dropout, gpu]
+problem: Object recognition at scale had plateaued with hand-designed features; no learned model had come close on a large, realistic image benchmark.
+contribution: A deep convolutional network trained on GPUs with ReLU activations, dropout and data augmentation, halving the ImageNet error rate and starting the deep-learning era in vision.
+prerequisites:
+  - deep-learning/convolution-recurrence-normalisation
+  - deep-learning/approximation-and-backpropagation
+  - stochastic-optimization/sgd-convergence
+descendants: [resnet, batchnorm, dropout]
+related: [resnet, dropout]
+---
+
+## What problem does this paper solve?
+
+ImageNet classification with $1000$ classes and $1.2$M training images. Prior systems used
+hand-engineered descriptors with shallow classifiers and had stalled around $26\%$ top-5 error.
+
+## What mathematical objects are introduced?
+
+Nothing new mathematically. The paper's contribution is a *combination*: eight learned layers of
+<TopicRef id="deep-learning/convolution-recurrence-normalisation">convolution</TopicRef> and pooling,
+the ReLU nonlinearity $\rho(t) = \max(0,t)$, dropout as a stochastic regulariser, and
+label-preserving data augmentation.
+
+## What assumptions are made?
+
+Translation equivariance of the relevant features, which is what makes convolution the right linear
+map — and, by the characterisation theorem, the *only* translation-equivariant linear map. Locality:
+that features are built from small spatial neighbourhoods.
+
+## What equations matter?
+
+$\rho(t) = \max(0,t)$, with derivative $\one\{t>0\}$: unlike the sigmoid, the derivative does not
+decay for large positive input, so the
+<TopicRef id="deep-learning/approximation-and-backpropagation">Jacobian product</TopicRef> across
+layers does not shrink from saturation. The paper measured a six-fold training speed-up from this
+change alone.
+
+Dropout, at rate $p$: multiply activations by independent Bernoulli$(1-p)$ masks at training time.
+The expected activation is preserved by rescaling, and the procedure can be read as training an
+implicit ensemble of $2^{\#\text{units}}$ subnetworks with shared weights.
+
+## What theorem or result is important?
+
+Top-5 error of $15.3\%$ against $26.2\%$ for the next best entry — a margin large enough to end the
+argument about whether learned features could beat designed ones.
+
+## What proof techniques are used?
+
+None. The paper is entirely empirical, with careful ablations showing that removing any single layer
+degrades performance.
+
+## What prior mathematics is required?
+
+Convolution and its equivariance property; backpropagation on a computational graph; SGD with
+momentum and weight decay.
+
+## Limitations
+
+No theory for any of the choices. The architecture was found by search and intuition. The local
+response normalisation layer was later shown to be unnecessary and was replaced by
+<TopicRef id="deep-learning/convolution-recurrence-normalisation">batch normalisation</TopicRef>.
+Depth was limited to eight layers by optimisation difficulty, a barrier that
+<TopicRef id="deep-learning/approximation-and-backpropagation">residual connections</TopicRef> removed.
+
+## Why it mattered
+
+It converted a research position into an engineering fact and redirected the field. The specific
+technical lessons — ReLU for gradient flow, aggressive augmentation, GPU training — became standard
+within two years.

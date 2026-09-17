@@ -1,0 +1,661 @@
+defaults:
+  field: machine-learning
+problems:
+  - id: kr-gaussian-pd
+    title: The Gaussian kernel is positive definite
+    topic: machine-learning/kernel-methods-and-rkhs
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [kernel, positive definite, schur, construction]
+    statement: |
+      Prove that $K(x,x') = \exp(-\|x-x'\|_2^2/2\sigma^2)$ is a positive definite kernel, using only the
+      closure properties (sums, products, rank-one, limits) and the fact that $\langle x,x'\rangle$ is
+      positive definite.
+    solution: |
+      **Factor the exponent.** Expand $\|x-x'\|_2^2 = \|x\|^2 - 2\langle x,x'\rangle + \|x'\|^2$:
+      $$
+      K(x,x') = \underbrace{e^{-\|x\|^2/2\sigma^2}}_{f(x)}\cdot e^{\langle x,x'\rangle/\sigma^2}\cdot\underbrace{e^{-\|x'\|^2/2\sigma^2}}_{f(x')} .
+      $$
+
+      **Each factor is PD.**
+      - The linear kernel $\langle x,x'\rangle/\sigma^2$ is PD (it is an inner product of the features $x/\sigma$).
+      - The exponential of a PD kernel is PD: $e^{K_1} = \sum_{m\ge0}K_1^m/m!$, a limit of non-negative combinations of products of PD kernels. Products are PD by the Schur product theorem, sums and non-negative scalings preserve PD, and pointwise limits of PD kernels are PD (positive semidefiniteness of Gram matrices is preserved under limits, the quadratic form being continuous).
+      - The rank-one kernel $f(x)f(x')$ is PD, with Gram matrix $vv^\top$, $v_i = f(x_i)$.
+
+      **Product.** $K$ is the product of the PD kernels $f(x)f(x')$ and $e^{\langle x,x'\rangle/\sigma^2}$,
+      hence PD by the Schur product theorem.
+
+      **Schur product theorem, in one line.** If $A = \sum_k\lambda_ku_ku_k^\top\succeq0$ and
+      $B\succeq0$, then the Hadamard product satisfies
+      $A\circ B = \sum_k\lambda_k\operatorname{diag}(u_k)B\operatorname{diag}(u_k)$, a non-negative
+      combination of PSD matrices.
+
+      **Remark.** The same argument shows the Laplace kernel and every kernel of the form
+      $e^{K_1}$ with $K_1$ PD is positive definite, and shows how to build new kernels from old without
+      ever exhibiting a feature map.
+
+  - id: kr-reproducing-property
+    title: The reproducing property and its consequences
+    topic: machine-learning/kernel-methods-and-rkhs
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [rkhs, reproducing property, evaluation functional]
+    statement: |
+      In the RKHS $\Hcal_K$, prove that
+      $$
+      |f(x)| \le \|f\|_{\Hcal_K}\sqrt{K(x,x)} \quad\text{for all } f,x,
+      $$
+      and deduce that norm convergence in $\Hcal_K$ implies pointwise convergence. Explain why this
+      fails in $L^2$.
+    solution: |
+      **Bound.** By the reproducing property $f(x) = \langle f, K(x,\cdot)\rangle_{\Hcal_K}$ and
+      Cauchy–Schwarz,
+      $$
+      |f(x)| \le \|f\|_{\Hcal_K}\,\|K(x,\cdot)\|_{\Hcal_K} = \|f\|_{\Hcal_K}\sqrt{\langle K(x,\cdot),K(x,\cdot)\rangle} = \|f\|_{\Hcal_K}\sqrt{K(x,x)} ,
+      $$
+      the last equality again by the reproducing property applied to $f = K(x,\cdot)$.
+
+      **Norm implies pointwise.** If $\|f_n - f\|_{\Hcal_K}\to0$ then for every $x$,
+      $$
+      |f_n(x)-f(x)| \le \|f_n-f\|_{\Hcal_K}\sqrt{K(x,x)} \to 0 ,
+      $$
+      and the convergence is uniform on any set where $K(x,x)$ is bounded — for the Gaussian kernel,
+      $K(x,x)=1$, so uniformly on all of $\Xcal$.
+
+      **Why $L^2$ is different.** In $L^2$, elements are equivalence classes modulo null sets, so
+      "$f(x)$" is not even well defined for a fixed $x$. There is no bounded evaluation functional:
+      one can find $f_n$ with $\|f_n\|_{L^2}\to0$ but $f_n(x_0) = 1$ for a fixed $x_0$ (a tall narrow
+      spike). The defining feature of an RKHS is precisely that evaluation is a **bounded** linear
+      functional, and the Riesz representation theorem then supplies the representer $K(x,\cdot)$.
+
+      **Why it matters for learning.** Learning from a finite sample constrains a function at finitely
+      many points. In a space where pointwise evaluation is unbounded, that constrains nothing about
+      the function as an element of the space. The RKHS structure is what makes finite-sample
+      constraints meaningful, and it is why the representer theorem is available.
+
+  - id: kr-representer-proof
+    title: Prove the representer theorem
+    topic: machine-learning/kernel-methods-and-rkhs
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [representer theorem, orthogonal decomposition, rkhs, flagship]
+    statement: |
+      Prove that any minimiser of $J(f) = c\big(f(x_1),\dots,f(x_n)\big) + \Omega(\|f\|_{\Hcal_K})$ over
+      $\Hcal_K$, with $\Omega$ strictly increasing, lies in
+      $\operatorname{span}\{K(x_i,\cdot)\}_{i=1}^n$. State where each hypothesis is used and give a
+      counterexample showing that strict monotonicity of $\Omega$ cannot be dropped to mere
+      monotonicity if uniqueness of the representation is wanted.
+    solution: |
+      **Decomposition.** Let $V = \operatorname{span}\{K(x_1,\cdot),\dots,K(x_n,\cdot)\}$, a subspace of
+      dimension at most $n$, hence closed. Any $f\in\Hcal_K$ decomposes orthogonally as
+      $f = f_V + f_\perp$ with $f_V\in V$, $f_\perp\perp V$.
+
+      **The data term is blind to $f_\perp$.** By the reproducing property, for each $j$,
+      $$
+      f(x_j) = \langle f, K(x_j,\cdot)\rangle = \langle f_V,K(x_j,\cdot)\rangle + \underbrace{\langle f_\perp, K(x_j,\cdot)\rangle}_{=0} = f_V(x_j),
+      $$
+      the last term vanishing because $K(x_j,\cdot)\in V$ and $f_\perp\perp V$. Hence
+      $$
+      c\big(f(x_1),\dots,f(x_n)\big) = c\big(f_V(x_1),\dots,f_V(x_n)\big).
+      $$
+      **This is where the reproducing property is used**, and it is the only place.
+
+      **The penalty strictly prefers $f_\perp = 0$.** By Pythagoras,
+      $\|f\|^2 = \|f_V\|^2+\|f_\perp\|^2 \ge \|f_V\|^2$, with equality iff $f_\perp=0$. Since $\Omega$
+      is **strictly increasing**,
+      $$
+      \Omega(\|f\|) \ge \Omega(\|f_V\|),
+      $$
+      strictly unless $f_\perp = 0$.
+
+      **Conclusion.** $J(f)\ge J(f_V)$, strictly unless $f_\perp = 0$. So every minimiser has
+      $f_\perp=0$, i.e. lies in $V$: $f^\star = \sum_i\alpha_iK(x_i,\cdot)$.
+
+      **Where each hypothesis is used.**
+      - *Loss depends on $f$ only through its values at the $x_i$*: needed for the first display. A penalty or loss involving $f$ at unseen points, or a derivative of $f$, breaks it.
+      - *$\Omega$ strictly increasing in the norm*: needed for the strictness. Note the loss $c$ need not be convex, continuous, or anything else — the theorem is purely geometric.
+
+      **Counterexample for mere monotonicity.** Take $\Omega\equiv0$ (non-decreasing but not strictly
+      increasing). Then for any minimiser $f$ and any $f_\perp\perp V$, $f+f_\perp$ is also a minimiser,
+      since the loss is unchanged. The conclusion "every minimiser lies in $V$" fails; the weaker
+      statement "some minimiser lies in $V$" survives.
+
+  - id: kr-krr-solution
+    title: Kernel ridge regression in closed form
+    topic: machine-learning/kernel-methods-and-rkhs
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [kernel ridge, closed form, representer]
+    statement: |
+      Derive $\alpha = (\mathbf K+n\lambda I)^{-1}y$ for kernel ridge regression from the representer
+      theorem, and show the resulting predictor is $\hat f(x) = k(x)^\top(\mathbf K+n\lambda I)^{-1}y$
+      with $k(x)_i = K(x_i,x)$.
+    solution: |
+      **Substitute the representer form.** Write $f = \sum_i\alpha_iK(x_i,\cdot)$. Then
+      $$
+      f(x_j) = \sum_i\alpha_iK(x_i,x_j) = (\mathbf K\alpha)_j,
+      \qquad
+      \|f\|_{\Hcal_K}^2 = \sum_{i,j}\alpha_i\alpha_jK(x_i,x_j) = \alpha^\top\mathbf K\alpha ,
+      $$
+      the second by bilinearity and the reproducing property. The objective becomes
+      $$
+      J(\alpha) = \frac1n\|y-\mathbf K\alpha\|_2^2 + \lambda\,\alpha^\top\mathbf K\alpha .
+      $$
+
+      **Stationarity.**
+      $$
+      \nabla_\alpha J = -\frac2n\mathbf K(y-\mathbf K\alpha) + 2\lambda\mathbf K\alpha
+      = \frac2n\mathbf K\Big[(\mathbf K+n\lambda I)\alpha - y\Big] = 0 .
+      $$
+      Any $\alpha$ solving $(\mathbf K+n\lambda I)\alpha = y$ satisfies this, and the matrix is
+      invertible for $\lambda>0$ since $\mathbf K\succeq0$. Hence
+      $$
+      \alpha = (\mathbf K+n\lambda I)^{-1}y .
+      $$
+      (Solutions differing by an element of $\ker\mathbf K$ give the same function, so $\hat f$ is
+      unique even if $\alpha$ is not.)
+
+      **Predictor.** $\hat f(x) = \sum_i\alpha_iK(x_i,x) = k(x)^\top\alpha = k(x)^\top(\mathbf K+n\lambda I)^{-1}y$.
+
+      **Cost.** Forming $\mathbf K$ is $O(n^2)$ kernel evaluations; the solve is $O(n^3)$ by Cholesky;
+      prediction is $O(n)$ kernel evaluations per point. The $n^3$ and the $n^2$ memory are what limit
+      kernel methods at scale, and motivate Nyström and random-feature approximations.
+
+  - id: kr-schur-product
+    title: The Schur product theorem
+    topic: machine-learning/kernel-methods-and-rkhs
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [schur product, hadamard, psd, kernels]
+    statement: |
+      Prove that if $A,B\succeq0$ then the Hadamard (entrywise) product $A\circ B\succeq0$. Deduce that
+      the product of two positive definite kernels is positive definite, and that
+      $K_1^m$ and $e^{K_1}$ are positive definite for PD $K_1$.
+    solution: |
+      **Proof.** Write the spectral decomposition $A = \sum_k\lambda_ku_ku_k^\top$ with $\lambda_k\ge0$.
+      Then entrywise,
+      $$
+      (A\circ B)_{ij} = A_{ij}B_{ij} = \sum_k\lambda_k u_{ki}u_{kj}B_{ij},
+      $$
+      so
+      $$
+      A\circ B = \sum_k\lambda_k\,D_kBD_k, \qquad D_k = \operatorname{diag}(u_k).
+      $$
+      Each $D_kBD_k$ is PSD (congruence preserves PSD: $v^\top D_kBD_kv = (D_kv)^\top B(D_kv)\ge0$), and
+      a non-negative combination of PSD matrices is PSD.
+
+      **Kernels.** The Gram matrix of $K_1K_2$ on any finite point set is the Hadamard product of the
+      two Gram matrices, hence PSD. So $K_1K_2$ is a PD kernel.
+
+      **Powers and exponentials.** By induction, $K_1^m$ is PD for every $m\ge1$ (and $K_1^0\equiv1$ is
+      PD, being the rank-one kernel with $f\equiv1$). Then
+      $$
+      e^{K_1} = \sum_{m=0}^\infty\frac{K_1^m}{m!}
+      $$
+      is a pointwise limit of non-negative combinations of PD kernels. Non-negative combinations are PD,
+      and pointwise limits preserve positive semidefiniteness because the quadratic form
+      $c^\top\mathbf Kc$ is continuous in the entries of $\mathbf K$.
+
+      **Consequence.** Any power series with non-negative coefficients applied to a PD kernel is PD.
+      This single fact generates the Gaussian kernel, the polynomial kernel $(1+\langle x,x'\rangle)^m$,
+      the sigmoid-like kernels that work, and rules out those that do not (the $\tanh$ kernel is
+      famously *not* PD for most parameter choices, which is why SVMs with it can fail to have a convex
+      dual).
+
+  - id: kr-implement-krr
+    title: Implement kernel ridge regression
+    topic: machine-learning/kernel-methods-and-rkhs
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [kernel ridge, implementation, bandwidth, effective dof]
+    statement: |
+      Implement kernel ridge regression with a Gaussian kernel.
+
+      1. Fit a one-dimensional function and visualise the effect of $\sigma$ and $\lambda$.
+      2. Plot the representer expansion term by term and check the terms sum to the fit.
+      3. Compute the effective degrees of freedom $\operatorname{tr}(\mathbf K(\mathbf K+n\lambda I)^{-1})$
+         and relate it to the visual smoothness.
+      4. Select $(\sigma,\lambda)$ by cross-validation and compare with the visually best fit.
+    solution: |
+      ```python
+      import numpy as np
+
+      def rbf(A, B, sigma):
+          d2 = ((A[:, None, :] - B[None, :, :]) ** 2).sum(-1)
+          return np.exp(-d2 / (2 * sigma ** 2))
+
+      def krr_fit(X, y, sigma, lam):
+          K = rbf(X, X, sigma)
+          n = len(y)
+          return np.linalg.solve(K + n * lam * np.eye(n), y)
+
+      def krr_predict(alpha, Xtr, Xte, sigma):
+          return rbf(Xte, Xtr, sigma) @ alpha
+      ```
+
+      **1. Effect of the two knobs.** Small $\sigma$ gives narrow bumps and an interpolating, wiggly
+      fit; large $\sigma$ gives a nearly constant fit. Small $\lambda$ interpolates the noise; large
+      $\lambda$ shrinks towards zero. The two act along the same axis from opposite ends, which is why
+      they must be tuned jointly — a grid over $(\sigma,\lambda)$, not two separate line searches.
+
+      **2. The expansion.** Plot $\alpha_ik(x_i,\cdot)$ for each $i$ and their sum. The sum must equal
+      the fit exactly (to machine precision); if it does not, the representer coefficients are being
+      mis-indexed. Note the coefficients alternate in sign when $\sigma$ is small — the fit is a
+      delicate cancellation of large bumps, which is why the small-$\sigma$ solution is numerically
+      fragile.
+
+      **3. Effective degrees of freedom.**
+      $\mathrm{df} = \operatorname{tr}\big(\mathbf K(\mathbf K+n\lambda I)^{-1}\big) = \sum_j\frac{\mu_j}{\mu_j+n\lambda}$
+      with $\mu_j$ the eigenvalues of $\mathbf K$. It runs from $n$ (interpolation) to $0$, and the
+      visual smoothness tracks it closely — far better than either $\sigma$ or $\lambda$ alone. Report
+      $\mathrm{df}$ rather than $\lambda$ when comparing across bandwidths.
+
+      **4. Cross-validation.** Use the closed-form LOOCV for linear smoothers,
+      $\mathrm{LOOCV} = \frac1n\sum_i\big(\frac{y_i-\hat y_i}{1-H_{ii}}\big)^2$ with
+      $H = \mathbf K(\mathbf K+n\lambda I)^{-1}$, which costs one fit per $(\sigma,\lambda)$ rather than
+      $n$. The selected pair typically has $\mathrm{df}$ in the range $5$–$15$ for a smooth
+      one-dimensional target, and matches the visually best fit well.
+
+      **Numerical note.** For small $\lambda$ the matrix $\mathbf K+n\lambda I$ is badly conditioned;
+      use `scipy.linalg.cho_solve` with a Cholesky factor and add jitter if it fails, rather than
+      forming the inverse.
+
+  - id: svm-margin-distance
+    title: The geometric margin
+    topic: machine-learning/support-vector-machines
+    difficulty: foundation
+    type: proof
+    estimated_time: 15m
+    tags: [svm, margin, geometry, distance]
+    statement: |
+      Derive the distance from a point $x_0$ to the hyperplane $\{x:\langle w,x\rangle+b=0\}$, and
+      explain why the objective $\min_i y_i(\langle w,x_i\rangle+b)/\|w\|_2$ is invariant under
+      $(w,b)\mapsto(cw,cb)$ while the numerator alone is not.
+    solution: |
+      **Distance.** Minimise $\|x_0 - x\|_2$ over $x$ with $\langle w,x\rangle+b=0$. Writing $x = x_0+v$,
+      the constraint is $\langle w,v\rangle = -(\langle w,x_0\rangle+b)$. By Cauchy–Schwarz,
+      $$
+      |\langle w,x_0\rangle+b| = |\langle w,v\rangle| \le \|w\|_2\|v\|_2
+      \ \Longrightarrow\ \|v\|_2 \ge \frac{|\langle w,x_0\rangle+b|}{\|w\|_2},
+      $$
+      with equality attained by $v$ parallel to $w$. So the distance is
+      $|\langle w,x_0\rangle+b|/\|w\|_2$.
+
+      **Scale invariance.** Under $(w,b)\mapsto(cw,cb)$ for $c>0$:
+      - the **functional margin** $y_i(\langle w,x_i\rangle+b)$ is multiplied by $c$;
+      - the norm $\|w\|_2$ is multiplied by $c$;
+      - the **geometric margin**, being their ratio, is unchanged.
+
+      The decision function $\sign(\langle w,x\rangle+b)$ is also unchanged, so the rescaling is a pure
+      reparameterisation. Any objective that depends on $(w,b)$ must therefore be invariant under it to
+      be meaningful — which the functional margin is not.
+
+      **The canonical normalisation.** The SVM fixes the scale by imposing
+      $\min_iy_i(\langle w,x_i\rangle+b) = 1$. Under that convention the geometric margin is exactly
+      $1/\|w\|_2$, so maximising the margin is minimising $\|w\|_2$, and the problem becomes the clean
+      quadratic program $\min\frac12\|w\|_2^2$ subject to $y_i(\langle w,x_i\rangle+b)\ge1$.
+
+  - id: svm-derive-hard-dual
+    title: Derive the hard-margin SVM dual
+    topic: machine-learning/support-vector-machines
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [svm, dual, lagrangian, derivation, flagship]
+    statement: |
+      Starting from $\min\frac12\|w\|_2^2$ subject to $y_i(\langle w,x_i\rangle+b)\ge1$, derive the dual
+      $$
+      \max_{\alpha\ge0,\ \alpha^\top y=0}\ \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\langle x_i,x_j\rangle .
+      $$
+      Explain where the equality constraint comes from, verify strong duality, and give the recovery
+      formulas for $w^\star$ and $b^\star$.
+    solution: |
+      **Step 1: Lagrangian.** Write the constraints as $1-y_i(\langle w,x_i\rangle+b)\le0$ with
+      multipliers $\alpha_i\ge0$:
+      $$
+      \mathcal L(w,b,\alpha) = \frac12\|w\|_2^2 + \sum_i\alpha_i\Big(1-y_i\big(\langle w,x_i\rangle+b\big)\Big).
+      $$
+
+      **Step 2: minimise over $w$.** $\mathcal L$ is strictly convex in $w$, so set the gradient to zero:
+      $$
+      \nabla_w\mathcal L = w - \sum_i\alpha_iy_ix_i = 0
+      \quad\Longrightarrow\quad
+      w = \sum_i\alpha_iy_ix_i . \tag{S1}
+      $$
+      This already gives the structural fact that $w$ is a combination of the training inputs.
+
+      **Step 3: minimise over $b$.** $\mathcal L$ is **affine** in $b$ with coefficient
+      $-\sum_i\alpha_iy_i$. An affine function is unbounded below unless its coefficient vanishes, so
+      the dual function is $-\infty$ unless
+      $$
+      \sum_i\alpha_iy_i = 0 . \tag{S2}
+      $$
+      **This is where the equality constraint comes from** — it is not imposed, it is the condition for
+      the dual objective to be finite.
+
+      **Step 4: substitute.** On the set where (S2) holds, substituting (S1):
+      $$
+      \frac12\|w\|_2^2 = \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\langle x_i,x_j\rangle,
+      \qquad
+      \sum_i\alpha_iy_i\langle w,x_i\rangle = \sum_{i,j}\alpha_i\alpha_jy_iy_j\langle x_i,x_j\rangle,
+      $$
+      and the $b$-term vanishes by (S2). Therefore
+      $$
+      g(\alpha) = \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\langle x_i,x_j\rangle .
+      $$
+
+      **Step 5: strong duality.** The primal objective is convex and the constraints affine. For
+      separable data a strictly feasible point exists — scale any separating $(w_0,b_0)$ so that all
+      margins exceed $1$ strictly. Slater's condition therefore holds and $d^\star = p^\star$, with the
+      dual optimum attained.
+
+      **Step 6: recovery.** $w^\star = \sum_i\alpha_i^\star y_ix_i$ from (S1). For $b^\star$, pick any
+      $k$ with $\alpha_k^\star>0$; complementary slackness forces the constraint active,
+      $y_k(\langle w^\star,x_k\rangle+b^\star)=1$, so
+      $$
+      b^\star = y_k - \langle w^\star,x_k\rangle
+      $$
+      using $y_k^{-1}=y_k$ for $y_k\in\{\pm1\}$. In practice average over all such $k$.
+
+      **Three consequences.**
+      1. The dual involves the data only through $\langle x_i,x_j\rangle$ — substitute $K(x_i,x_j)$ and everything goes through. That is the kernel trick, and it is *derived*, not added.
+      2. The dual has $n$ variables against the primal's $d+1$, so the dual is preferable when $d\gg n$ (and essential when $d=\infty$).
+      3. The equality constraint is an artefact of the unpenalised bias; formulations without $b$, or with $b$ inside the penalty, do not have it.
+
+  - id: svm-derive-soft-dual
+    title: Derive the soft-margin SVM dual
+    topic: machine-learning/support-vector-machines
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [svm, soft margin, box constraint, dual, flagship]
+    statement: |
+      Derive the soft-margin dual from
+      $\min\frac12\|w\|_2^2+C\sum_i\xi_i$ subject to $y_i(\langle w,x_i\rangle+b)\ge1-\xi_i$,
+      $\xi_i\ge0$. Show that the box constraint $0\le\alpha_i\le C$ is **derived** rather than imposed,
+      and that the slack variables disappear identically.
+    solution: |
+      **Step 1: Lagrangian with two multiplier families.** $\alpha_i\ge0$ for the margin constraints and
+      $\mu_i\ge0$ for $\xi_i\ge0$:
+      $$
+      \mathcal L = \frac12\|w\|_2^2 + C\sum_i\xi_i + \sum_i\alpha_i\Big(1-\xi_i-y_i(\langle w,x_i\rangle+b)\Big) - \sum_i\mu_i\xi_i .
+      $$
+
+      **Step 2: stationarity in $w$ and $b$.** Exactly as in the hard-margin case,
+      $$
+      \nabla_w\mathcal L = 0 \Rightarrow w = \sum_i\alpha_iy_ix_i,
+      \qquad
+      \partial_b\mathcal L = 0 \Rightarrow \sum_i\alpha_iy_i = 0 .
+      $$
+
+      **Step 3: stationarity in $\xi$ — where the box comes from.** $\mathcal L$ is affine in each
+      $\xi_i$ with coefficient
+      $$
+      \frac{\partial\mathcal L}{\partial\xi_i} = C - \alpha_i - \mu_i .
+      $$
+      An affine function is unbounded below unless its coefficient is zero, so the dual function is
+      $-\infty$ unless
+      $$
+      \mu_i = C-\alpha_i \quad\text{for every } i .
+      $$
+      Combined with the dual feasibility $\mu_i\ge0$, this gives
+      $$
+      \alpha_i \le C .
+      $$
+      The upper bound is thus **forced by the requirement that the dual be finite**, exactly as the
+      equality constraint was in the hard-margin case. It is not an extra modelling choice.
+
+      **Step 4: the slacks cancel.** Substituting $\mu_i = C-\alpha_i$, the $\xi$-dependent terms are
+      $$
+      C\xi_i - \alpha_i\xi_i - \mu_i\xi_i = \xi_i\big(C-\alpha_i-\mu_i\big) = 0 .
+      $$
+      Every slack variable disappears identically from the dual — so the soft-margin dual has the same
+      number of variables as the hard-margin one.
+
+      **Step 5: the objective.** What remains is the hard-margin computation of Step 4 there, so
+      $$
+      g(\alpha) = \sum_i\alpha_i - \frac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\langle x_i,x_j\rangle
+      $$
+      on the domain $\{0\le\alpha_i\le C,\ \sum_i\alpha_iy_i=0\}$.
+
+      **Step 6: strong duality.** The problem is convex with affine constraints and is **always**
+      strictly feasible — take any $(w,b)$ and $\xi_i$ large enough — so Slater applies with no
+      separability assumption. Note this is a strict improvement over the hard-margin case, where
+      feasibility required the data to be separable.
+
+      **Reading $C$.** $C$ is the cap on any single point's influence. Small $C$: no point can pull the
+      boundary far, giving a wide soft margin. Large $C$: the box constraint is inactive and the
+      problem approaches the hard-margin one.
+
+  - id: svm-kkt-regimes
+    title: The three regimes of a training point
+    topic: machine-learning/support-vector-machines
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [svm, kkt, support vectors, classification of points]
+    statement: |
+      From the soft-margin KKT conditions, derive the complete classification of training points by
+      their multiplier: $\alpha_i = 0$, $0<\alpha_i<C$, $\alpha_i = C$. Give the margin value and slack
+      in each case.
+    solution: |
+      The relevant KKT conditions are
+      $$
+      \alpha_i\big(1-\xi_i-y_if(x_i)\big)=0,\qquad \mu_i\xi_i=0,\qquad \mu_i = C-\alpha_i,
+      $$
+      where $f(x_i) = \langle w^\star,x_i\rangle+b^\star$.
+
+      **Case $\alpha_i = 0$.** Then $\mu_i = C>0$, so $\xi_i = 0$ by $\mu_i\xi_i=0$. The margin
+      constraint $y_if(x_i)\ge1-\xi_i$ gives $y_if(x_i)\ge1$: the point is correctly classified with at
+      least the full margin. It contributes nothing to $w^\star$ and can be deleted.
+
+      **Case $0<\alpha_i<C$.** Then $\mu_i = C-\alpha_i>0$, so $\xi_i=0$; and $\alpha_i>0$ forces the
+      margin constraint active, $y_if(x_i) = 1-\xi_i = 1$. The point lies **exactly on the margin** — a
+      *margin support vector*. These are the points used to recover $b^\star$.
+
+      **Case $\alpha_i = C$.** Then $\mu_i = 0$, so $\xi_i$ is unconstrained by complementary slackness
+      and may be positive; $\alpha_i>0$ activates the margin constraint, giving
+      $y_if(x_i) = 1-\xi_i \le 1$. The point is **inside the margin** ($0<\xi_i\le1$) or
+      **misclassified** ($\xi_i>1$) — a *bound support vector*.
+
+      | $\alpha_i$ | $\xi_i$ | $y_if(x_i)$ | Name |
+      | --- | --- | --- | --- |
+      | $0$ | $0$ | $\ge1$ | non-support vector |
+      | $(0,C)$ | $0$ | $=1$ | margin support vector |
+      | $C$ | $\ge0$ | $\le1$ | bound support vector |
+
+      **Practical use.** SMO and other solvers maintain this classification and use it both to select
+      the working set (pick pairs violating the KKT conditions most) and to detect convergence (all
+      points satisfy their case's condition to tolerance). The number of bound support vectors is also
+      an upper bound on the training error count, which gives a free leave-one-out-style estimate.
+
+  - id: svm-hinge-equivalence
+    title: The soft-margin SVM is regularised hinge-loss minimisation
+    topic: machine-learning/support-vector-machines
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [svm, hinge loss, equivalence, regularisation]
+    statement: |
+      Prove that eliminating the slack variables turns the soft-margin primal into
+      $$
+      \min_{w,b}\ \frac12\|w\|_2^2 + C\sum_i\big[1-y_i(\langle w,x_i\rangle+b)\big]_+ ,
+      $$
+      and compare the hinge loss with the logistic and squared losses as surrogates for the zero-one
+      loss.
+    solution: |
+      **Elimination.** For fixed $(w,b)$, the constraints on $\xi_i$ are
+      $\xi_i\ge1-y_if(x_i)$ and $\xi_i\ge0$, i.e.
+      $$
+      \xi_i \ \ge\ \big[1-y_if(x_i)\big]_+ .
+      $$
+      The objective is increasing in each $\xi_i$, so the optimum takes the smallest admissible value,
+      $\xi_i^\star = [1-y_if(x_i)]_+$. Substituting gives the stated unconstrained problem.
+
+      **Comparison of surrogates.** Write $u = yf(x)$ (the margin).
+
+      | Loss | Formula | Convex | Smooth | Zero for large $u$ | Induces sparsity |
+      | --- | --- | --- | --- | --- | --- |
+      | zero-one | $\one\{u\le0\}$ | no | no | yes | — |
+      | hinge | $[1-u]_+$ | yes | no | **yes**, for $u\ge1$ | yes |
+      | logistic | $\log(1+e^{-u})$ | yes | yes | no, decays like $e^{-u}$ | no |
+      | squared | $(1-u)^2$ | yes | yes | no, grows for $u>1$ | no |
+
+      **Reading the table.**
+      - All three surrogates upper-bound the zero-one loss up to a constant and are convex, so they are computationally tractable substitutes.
+      - The hinge is **exactly zero** past the margin, which by the KKT analysis makes the corresponding $\alpha_i = 0$: sparsity in the dual comes from that flat region. The logistic loss is never exactly zero, so every point has a non-zero coefficient and there are no support vectors.
+      - The squared loss **penalises being too correct** ($u>1$ increases the loss), which is why least-squares classification behaves poorly with outliers on the correct side.
+      - The hinge is non-smooth at $u=1$, so first-order methods on it need subgradients, while the logistic loss admits Newton's method.
+
+      This places the SVM in a family: same $\frac12\|w\|^2$ regulariser, different loss, different
+      computational and statistical properties.
+
+  - id: svm-two-point-dual
+    title: Solve a two-point SVM by hand
+    topic: machine-learning/support-vector-machines
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [svm, worked example, dual, margin]
+    statement: |
+      Let $x_1 = (0,0)$ with $y_1=-1$ and $x_2 = (2,0)$ with $y_2=+1$. Solve the hard-margin SVM
+      completely: find $\alpha^\star$, $w^\star$, $b^\star$, the margin, and verify the KKT conditions.
+    solution: |
+      **Dual.** With $K_{ij} = \langle x_i,x_j\rangle$: $K_{11}=0$, $K_{12}=K_{21}=0$, $K_{22}=4$. The
+      dual objective is
+      $$
+      g(\alpha) = \alpha_1+\alpha_2 - \tfrac12\big(\alpha_1^2y_1^2K_{11} + 2\alpha_1\alpha_2y_1y_2K_{12} + \alpha_2^2y_2^2K_{22}\big)
+      = \alpha_1+\alpha_2 - 2\alpha_2^2 ,
+      $$
+      subject to $\alpha\ge0$ and $\alpha_1y_1+\alpha_2y_2 = -\alpha_1+\alpha_2 = 0$, i.e.
+      $\alpha_1=\alpha_2=:\alpha$.
+
+      **Optimise.** $g = 2\alpha - 2\alpha^2$, maximised at $\alpha^\star = 1/2$, with $g = 1/2$.
+
+      **Primal recovery.**
+      $$
+      w^\star = \sum_i\alpha_i^\star y_ix_i = \tfrac12(-1)(0,0) + \tfrac12(+1)(2,0) = (1,0).
+      $$
+      For $b^\star$, use $k=2$ (which has $\alpha_2^\star>0$):
+      $b^\star = y_2 - \langle w^\star,x_2\rangle = 1 - 2 = -1$.
+
+      **Check.** $f(x) = x_1 - 1$, so $f(x_1) = -1$ and $f(x_2)=1$: both margins are exactly $1$, both
+      constraints active, consistent with both multipliers being positive.
+
+      **Margin.** Geometric margin $= 1/\|w^\star\|_2 = 1$; the total separation between the two
+      supporting hyperplanes is $2/\|w^\star\|_2 = 2$, which is exactly the distance between the two
+      points. The decision boundary is the perpendicular bisector $x_1 = 1$, as geometry demands.
+
+      **Duality check.** $p^\star = \tfrac12\|w^\star\|_2^2 = \tfrac12$ and $d^\star = g(\alpha^\star) = \tfrac12$:
+      the gap is zero, as Slater guarantees.
+
+  - id: svm-margin-bound
+    title: The SVM margin bound
+    topic: machine-learning/support-vector-machines
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [svm, margin bound, rademacher, contraction, generalisation]
+    statement: |
+      Prove the margin generalisation bound for norm-bounded linear classifiers, and explain in one
+      paragraph why it justifies the SVM objective rather than merely being consistent with it. Then
+      compute the bound numerically for $B = 1$, $R = 1$, $\gamma = 0.1$, $n = 10^4$ and comment.
+    solution: |
+      **Proof.** See the derivation on the topic page: the three ingredients are
+      (i) the ramp surrogate $\phi_\gamma$, which is $1/\gamma$-Lipschitz and sandwiches the zero-one
+      loss between $\one\{u\le0\}$ and $\one\{u\le\gamma\}$; (ii) the Rademacher generalisation theorem
+      applied to $\phi_\gamma\circ\Fcal_B$; (iii) Talagrand's contraction lemma plus
+      $\mathfrak R_n(\Fcal_B)\le BR/\sqrt n$. The result is
+      $$
+      \P\big(Yf(X)\le0\big) \le \frac1n\sum_i\one\{y_if(x_i)\le\gamma\} + \frac{2BR}{\gamma\sqrt n} + \sqrt{\frac{\log(1/\delta)}{2n}}.
+      $$
+
+      **Why it justifies the objective.** The bound is a sum of two terms that the learner controls: the
+      empirical margin error and $BR/(\gamma\sqrt n)$. Minimising the second at fixed empirical error
+      means making $\gamma$ large relative to $\|w\|_2$ — which, under the canonical normalisation
+      $\gamma=1$, is exactly minimising $\|w\|_2$, the SVM primal objective. The soft-margin version
+      trades the two terms against each other with $C$ setting the exchange rate. So the algorithm is
+      not a heuristic with a bound attached after the fact; the bound is the derivation of the
+      objective.
+
+      **Numerically.** With $B=R=1$, $\gamma = 0.1$, $n = 10^4$, $\delta = 0.05$:
+      $$
+      \frac{2BR}{\gamma\sqrt n} = \frac{2}{0.1\times100} = 0.2,
+      \qquad
+      \sqrt{\frac{\log20}{2\times10^4}} = \sqrt{1.5\times10^{-4}} \approx 0.012 .
+      $$
+      Total slack $\approx0.21$. So the bound reads: test error $\le$ empirical $0.1$-margin error
+      $+\ 0.21$. If the classifier achieves zero margin error, this certifies a test error below $21\%$
+      — non-trivial but weak. At $\gamma = 0.01$ the complexity term becomes $2$ and the bound is
+      vacuous.
+
+      **Honest reading.** The bound explains the *shape* of the right objective and the *absence of
+      dimension dependence*. It does not certify the performance of a particular trained model at
+      realistic parameter values, which is the normal situation in learning theory.
+
+  - id: svm-implement-smo
+    title: Implement SMO for the SVM dual
+    topic: machine-learning/support-vector-machines
+    difficulty: graduate
+    type: coding
+    estimated_time: 1d
+    abyss: true
+    tags: [svm, smo, implementation, kkt, quadratic programming]
+    statement: |
+      Implement sequential minimal optimisation for the soft-margin dual and verify it against a
+      general-purpose QP solver.
+
+      1. Derive the closed-form solution of the two-variable subproblem with clipping.
+      2. Implement the working-set selection by maximal KKT violation.
+      3. Verify the support-vector classification (the three KKT regimes) on a synthetic problem.
+      4. Compare the decision boundary with a kernel of your choice against a linear one.
+    solution: |
+      **1. Two-variable subproblem.** Fix all but $\alpha_i,\alpha_j$. The equality constraint
+      $\sum_k\alpha_ky_k=0$ forces $\alpha_iy_i+\alpha_jy_j = $ const, so $\alpha_i$ determines
+      $\alpha_j$ and the objective is a one-dimensional concave quadratic. Writing
+      $E_k = f(x_k)-y_k$ for the prediction errors and
+      $\eta = K_{ii}+K_{jj}-2K_{ij}$ (which is $\ge0$ by positive definiteness),
+      the unconstrained maximiser is
+      $$
+      \alpha_j^{\text{new}} = \alpha_j + \frac{y_j(E_i-E_j)}{\eta},
+      $$
+      then clipped to $[\Lcal,\Hcal]$ where the bounds depend on the signs:
+      $$
+      y_i\ne y_j:\ \Lcal = \max(0,\alpha_j-\alpha_i),\ \Hcal = \min(C, C+\alpha_j-\alpha_i);
+      $$
+      $$
+      y_i = y_j:\ \Lcal = \max(0,\alpha_i+\alpha_j-C),\ \Hcal = \min(C,\alpha_i+\alpha_j).
+      $$
+      Then $\alpha_i^{\text{new}} = \alpha_i + y_iy_j(\alpha_j - \alpha_j^{\text{new}})$. (The case
+      $\eta = 0$, when $x_i$ and $x_j$ have identical feature vectors, needs the endpoints compared
+      directly.)
+
+      **2. Working-set selection.** Maintain the error cache $E_k$ and select the pair with the largest
+      KKT violation: $i$ maximising $y_iE_i$ among $\{\alpha_i<C \text{ or } y_i=-1\}$ and $j$
+      minimising it among the complementary set. This "maximal violating pair" rule gives much faster
+      convergence than random selection and is what libsvm uses.
+
+      **3. Verification.** After convergence, check every point falls into one of the three regimes to
+      tolerance, and confirm the primal and dual objectives agree (zero duality gap). A useful
+      correctness check: compare $\alpha^\star$ against `cvxpy` or `scipy.optimize` on a small instance
+      — they should match to solver tolerance.
+
+      **4. Kernels.** With an RBF kernel of moderate bandwidth the boundary is curved and the number of
+      support vectors grows; with a linear kernel it is a hyperplane and typically far fewer points are
+      support vectors. Plot the support vectors: the margin ones sit exactly on the $\pm1$ contours,
+      which is a direct visual confirmation of complementary slackness.
+
+      **Practical notes.** Cache the kernel matrix for small $n$ and the error vector always;
+      recomputing $f(x_k)$ from scratch each step makes the algorithm $O(n^2)$ per update instead of
+      $O(n)$. Update $b$ from the changed pair after each step, using a margin support vector when one
+      exists and the midpoint of the two bounds otherwise.

@@ -1,0 +1,561 @@
+defaults:
+  field: foundations
+problems:
+  - id: la-cauchy-schwarz-equality
+    title: Equality in Cauchy–Schwarz
+    topic: foundations/linear-algebra
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [cauchy-schwarz, inner product, equality case]
+    statement: |
+      Prove that for $x,y \in \R^d$,
+      $$
+      |\langle x, y\rangle| = \|x\|_2\|y\|_2
+      $$
+      if and only if $x$ and $y$ are linearly dependent. Then deduce that the cosine similarity
+      $\cos(x,y) = \langle x,y\rangle/(\|x\|_2\|y\|_2)$ takes the value $\pm 1$ exactly for parallel
+      and anti-parallel vectors.
+    hints:
+      - |
+        Start from the proof of the inequality itself: the function $t \mapsto \|x - ty\|_2^2$ is a non-negative quadratic in $t$.
+      - Equality in the inequality means the discriminant of that quadratic vanishes. What does a non-negative quadratic with zero discriminant look like?
+      - A quadratic with a double root $t_\star$ satisfies $\|x - t_\star y\|_2 = 0$. What does that say about $x$?
+    solution: |
+      Assume $y \neq 0$ (if $y = 0$ both sides are $0$ and the vectors are trivially dependent).
+      Define
+      $$
+      q(t) = \|x - ty\|_2^2 = \|y\|_2^2 t^2 - 2\langle x,y\rangle t + \|x\|_2^2 \ \ge 0 \quad \text{for all } t.
+      $$
+      A real quadratic with positive leading coefficient is non-negative everywhere if and only if its
+      discriminant is non-positive:
+      $$
+      4\langle x,y\rangle^2 - 4\|x\|_2^2\|y\|_2^2 \le 0,
+      $$
+      which is Cauchy–Schwarz.
+
+      **Equality $\Rightarrow$ dependence.** If $|\langle x,y\rangle| = \|x\|_2\|y\|_2$ the discriminant
+      is exactly zero, so $q$ has a double real root $t_\star = \langle x,y\rangle/\|y\|_2^2$, meaning
+      $q(t_\star) = \|x - t_\star y\|_2^2 = 0$. A vector of zero norm is zero, so $x = t_\star y$ and
+      the pair is dependent.
+
+      **Dependence $\Rightarrow$ equality.** If $x = cy$ then
+      $|\langle x,y\rangle| = |c|\|y\|_2^2 = \|x\|_2\|y\|_2$.
+
+      **Cosine.** For non-zero $x,y$, $\cos(x,y) = \pm1$ iff $|\langle x,y\rangle| = \|x\|_2\|y\|_2$,
+      iff $x = cy$; the sign of $\cos$ is the sign of $c$. So $\cos = 1$ for $c>0$ (parallel) and
+      $\cos = -1$ for $c<0$ (anti-parallel).
+
+  - id: la-projection-idempotent
+    title: Characterising orthogonal projectors
+    topic: foundations/linear-algebra
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [projection, idempotent, symmetric]
+    statement: |
+      Let $P \in \R^{d\times d}$. Prove that the following are equivalent.
+
+      1. $P = P^\top$ and $P^2 = P$.
+      2. There is a subspace $V \subseteq \R^d$ such that $Px$ is the closest point of $V$ to $x$, for every $x$.
+
+      Deduce that the eigenvalues of an orthogonal projector are all $0$ or $1$, and that
+      $\operatorname{tr}(P) = \dim V$.
+    hints:
+      - For (1) $\Rightarrow$ (2), take $V = \operatorname{range}(P)$ and show $x - Px \perp V$.
+      - |
+        For (2) $\Rightarrow$ (1), use the characterisation of the closest point: $x - Px \perp V$ for all $x$.
+      - For the eigenvalues, apply $P^2 = P$ to an eigenvector.
+    solution: |
+      **(1) $\Rightarrow$ (2).** Let $V = \operatorname{range}(P)$. For $v = Pz \in V$,
+      $$
+      \langle x - Px, v\rangle = \langle x - Px, Pz\rangle = \langle P^\top(x - Px), z\rangle
+      = \langle Px - P^2x, z\rangle = 0
+      $$
+      using $P^\top = P$ and $P^2 = P$. So $x - Px \perp V$. For any $v \in V$, writing
+      $x - v = (x - Px) + (Px - v)$ with the two terms orthogonal gives
+      $\|x-v\|_2^2 = \|x-Px\|_2^2 + \|Px - v\|_2^2 \ge \|x-Px\|_2^2$, with equality iff $v = Px$.
+
+      **(2) $\Rightarrow$ (1).** The closest point of a subspace is characterised by orthogonality of
+      the residual: $x - Px \perp V$ for all $x$, and $Px \in V$.
+
+      *Idempotence.* For $x \in V$ the closest point of $V$ to $x$ is $x$ itself, so $Px = x$. Since
+      $Px \in V$ always, $P(Px) = Px$, i.e. $P^2 = P$.
+
+      *Symmetry.* For any $x,y$,
+      $$
+      \langle Px, y\rangle = \langle Px, (y - Py) + Py\rangle = \langle Px, Py\rangle,
+      $$
+      because $Px \in V$ and $y - Py \perp V$. The right-hand side is symmetric in $x$ and $y$, so
+      $\langle Px,y\rangle = \langle x, Py\rangle$ for all $x,y$, which is $P^\top = P$.
+
+      **Eigenvalues.** If $Pu = \lambda u$ with $u \ne 0$ then $P^2u = \lambda^2 u$, and $P^2 = P$
+      gives $\lambda^2 = \lambda$, so $\lambda \in \{0,1\}$. By the spectral theorem $P$ is
+      diagonalisable with these eigenvalues, and the eigenspace for $1$ is exactly $V$. Hence
+      $\operatorname{tr}(P) = \sum_i \lambda_i = \dim V$.
+
+  - id: la-psd-schur
+    title: Schur complement and block positive semidefiniteness
+    topic: foundations/linear-algebra
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [psd, schur complement, block matrix]
+    statement: |
+      Let $A \in \mathbb{S}^n$ with $A \succ 0$, $B \in \R^{n\times m}$ and $C \in \mathbb{S}^m$.
+      Prove that
+      $$
+      M = \begin{pmatrix} A & B \\ B^\top & C\end{pmatrix} \succeq 0
+      \qquad\Longleftrightarrow\qquad
+      C - B^\top A^{-1} B \succeq 0 .
+      $$
+      The matrix $S = C - B^\top A^{-1}B$ is the **Schur complement** of $A$ in $M$.
+    hints:
+      - Try to complete the square in the quadratic form $(x,y)^\top M (x,y)$.
+      - Write the quadratic form as $x^\top A x + 2x^\top B y + y^\top C y$ and choose the substitution $x = u - A^{-1}By$.
+      - The substitution corresponds to a block factorisation $M = L D L^\top$ with $L$ unit lower triangular.
+    solution: |
+      Write the quadratic form with $x \in \R^n$, $y \in \R^m$:
+      $$
+      \begin{pmatrix}x\\y\end{pmatrix}^\top M \begin{pmatrix}x\\y\end{pmatrix}
+      = x^\top A x + 2x^\top B y + y^\top C y .
+      $$
+      Complete the square in $x$. Since $A \succ 0$ it is invertible and
+      $$
+      x^\top Ax + 2x^\top By = \big(x + A^{-1}By\big)^\top A \big(x + A^{-1}By\big) - y^\top B^\top A^{-1} B y .
+      $$
+      Therefore
+      $$
+      \begin{pmatrix}x\\y\end{pmatrix}^\top M\begin{pmatrix}x\\y\end{pmatrix}
+      = \underbrace{\big(x+A^{-1}By\big)^\top A\big(x+A^{-1}By\big)}_{\ge 0 \text{ always}}
+      + y^\top\big(C - B^\top A^{-1}B\big)y .
+      $$
+
+      ($\Leftarrow$) If $S = C - B^\top A^{-1}B \succeq 0$ then both terms are non-negative for every
+      $(x,y)$, so $M \succeq 0$.
+
+      ($\Rightarrow$) Suppose $M \succeq 0$ and fix any $y$. Choose $x = -A^{-1}By$, which makes the
+      first term vanish. Then the form equals $y^\top S y$, which must be $\ge 0$. As $y$ was
+      arbitrary, $S \succeq 0$.
+
+      Equivalently, the computation is the block factorisation
+      $$
+      M = \begin{pmatrix}I & 0\\ B^\top A^{-1} & I\end{pmatrix}
+      \begin{pmatrix}A & 0 \\ 0 & S\end{pmatrix}
+      \begin{pmatrix}I & A^{-1}B\\0 & I\end{pmatrix},
+      $$
+      and congruence by an invertible matrix preserves positive semidefiniteness.
+
+  - id: la-spectral-norm-bound
+    title: Bounding the spectral norm by row and column sums
+    topic: foundations/linear-algebra
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [operator norm, holder, interpolation]
+    statement: |
+      For $A \in \R^{m\times n}$ define
+      $$
+      R = \max_i \sum_j |A_{ij}| \quad (\text{max row sum}), \qquad
+      C = \max_j \sum_i |A_{ij}| \quad (\text{max column sum}).
+      $$
+      Prove that $\|A\|_{\infty\to\infty} = R$, that $\|A\|_{1\to1} = C$, and that
+      $$
+      \|A\|_{2\to2} \le \sqrt{RC}.
+      $$
+      Verify the last bound is tight for the all-ones matrix.
+    hints:
+      - $\|A\|_{\infty\to\infty} = \max_{\|x\|_\infty = 1}\|Ax\|_\infty$; bound each output coordinate and then find an $x$ attaining it.
+      - For the $\sqrt{RC}$ bound, estimate $|y^\top A x|$ for unit $\ell^2$ vectors using the AM–GM inequality $|y_i||x_j| \le \frac12(t y_i^2 + t^{-1}x_j^2)$ and optimise over $t$.
+      - Alternatively use Riesz–Thorin interpolation between the $1\to1$ and $\infty\to\infty$ bounds.
+    solution: |
+      **$\ell^\infty$ operator norm.** For $\|x\|_\infty \le 1$,
+      $|(Ax)_i| \le \sum_j|A_{ij}||x_j| \le \sum_j|A_{ij}| \le R$, so $\|A\|_{\infty\to\infty}\le R$.
+      Attained by taking $i^\star$ the maximising row and $x_j = \operatorname{sign}(A_{i^\star j})$.
+
+      **$\ell^1$ operator norm.** $\|Ax\|_1 = \sum_i|\sum_j A_{ij}x_j| \le \sum_j|x_j|\sum_i|A_{ij}| \le C\|x\|_1$,
+      attained at $x = e_{j^\star}$ for the maximising column.
+
+      **Spectral norm.** For unit vectors $x,y$ and any $t>0$,
+      $$
+      |y^\top A x| \le \sum_{i,j}|A_{ij}||y_i||x_j|
+      \le \frac12\sum_{i,j}|A_{ij}|\Big(t\,y_i^2 + t^{-1}x_j^2\Big)
+      = \frac t2\sum_i y_i^2\sum_j|A_{ij}| + \frac{1}{2t}\sum_j x_j^2\sum_i|A_{ij}|
+      $$
+      $$
+      \le \frac t2 R + \frac{1}{2t}C .
+      $$
+      Minimising over $t>0$ gives $t = \sqrt{C/R}$ and the value $\sqrt{RC}$. Taking the supremum over
+      unit $x,y$ gives $\|A\|_{2\to2}\le\sqrt{RC}$.
+
+      **Tightness.** For the $n\times n$ all-ones matrix, $R = C = n$ and the bound gives $n$. The true
+      spectral norm is $n$ (the vector $\mathbf 1/\sqrt n$ is an eigenvector with eigenvalue $n$), so
+      the bound is attained.
+
+  - id: la-power-iteration
+    title: Implement power iteration and verify the convergence rate
+    topic: foundations/linear-algebra
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [power iteration, eigenvalue, convergence rate, implementation]
+    statement: |
+      Implement power iteration for a symmetric matrix $A$: starting from a random unit vector $v_0$,
+      repeat $v_{t+1} = Av_t/\|Av_t\|_2$ and estimate $\lambda_{\max}$ by the Rayleigh quotient
+      $v_t^\top A v_t$.
+
+      1. Test it on a diagonal matrix with known spectrum.
+      2. Measure the error $|\lambda_t - \lambda_1|$ against $t$ on a log scale and verify that it decays
+         geometrically with ratio $(\lambda_2/\lambda_1)^2$.
+      3. Construct a matrix with $\lambda_1 = \lambda_2$ and explain what happens.
+    hints:
+      - |
+        Expand $v_0$ in the eigenbasis: $v_0 = \sum_i c_i u_i$. What does $A^t v_0$ look like?
+      - The Rayleigh quotient error involves the *square* of the eigenvalue ratio, while the eigenvector error involves the first power. Make sure you measure the right one.
+      - For part 3, think about which subspace the iterate converges into rather than which vector.
+    solution: |
+      **Algorithm.**
+      ```python
+      import numpy as np
+
+      def power_iteration(A, iters=200, seed=0):
+          rng = np.random.default_rng(seed)
+          v = rng.standard_normal(A.shape[0])
+          v /= np.linalg.norm(v)
+          lams = []
+          for _ in range(iters):
+              w = A @ v
+              v = w / np.linalg.norm(w)
+              lams.append(v @ A @ v)
+          return np.array(lams), v
+      ```
+
+      **Why it works.** Write $v_0 = \sum_i c_iu_i$ in the orthonormal eigenbasis, with
+      $|\lambda_1| > |\lambda_2| \ge \dots$. Then
+      $$
+      A^tv_0 = \sum_i c_i\lambda_i^tu_i = \lambda_1^t\Big(c_1u_1 + \sum_{i\ge2}c_i(\lambda_i/\lambda_1)^tu_i\Big),
+      $$
+      so after normalising, the component along $u_1$ dominates and the residual decays like
+      $|\lambda_2/\lambda_1|^t$. Provided $c_1 \ne 0$ — which holds with probability one for a random
+      start — $v_t \to \pm u_1$.
+
+      **The squared rate.** Write $v_t = \cos\theta_t\,u_1 + \sin\theta_t\,w_t$ with $w_t \perp u_1$,
+      $\|w_t\|_2=1$. Then
+      $$
+      v_t^\top Av_t = \lambda_1\cos^2\theta_t + \sin^2\theta_t\,(w_t^\top Aw_t),
+      $$
+      so
+      $$
+      |\lambda_1 - v_t^\top Av_t| = \sin^2\theta_t\,\big|\lambda_1 - w_t^\top Aw_t\big| \lesssim \sin^2\theta_t .
+      $$
+      Since $\tan\theta_t \propto |\lambda_2/\lambda_1|^t$, the Rayleigh quotient error decays like
+      $(\lambda_2/\lambda_1)^{2t}$ — twice as fast, on a log plot, as the eigenvector error. This is
+      the general phenomenon that a symmetric Rayleigh quotient is stationary at an eigenvector, so
+      its error is second order in the eigenvector error.
+
+      **Degenerate top eigenvalue.** If $\lambda_1 = \lambda_2$, the iterate converges to *some*
+      vector in the two-dimensional eigenspace — determined by the random start — and does not
+      converge to a particular eigenvector. The Rayleigh quotient still converges to $\lambda_1$ at
+      the rate set by $\lambda_3/\lambda_1$. Nothing breaks; the eigenvector is simply not unique.
+
+  - id: mc-descent-lemma-tight
+    title: Tightness of the descent lemma
+    topic: foundations/matrix-calculus
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [smoothness, descent lemma, tightness]
+    statement: |
+      The descent lemma states that for $L$-smooth $f$,
+      $$
+      f(y) \le f(x) + \langle \nabla f(x), y-x\rangle + \frac L2\|y-x\|_2^2 .
+      $$
+      Exhibit a function for which this holds with equality for all $x,y$, and deduce that the constant
+      $L/2$ cannot be improved. Then show that the step size $\eta = 1/L$ is exactly the minimiser of
+      the right-hand side over steps of the form $y = x - \eta\nabla f(x)$.
+    hints:
+      - Which functions have a Taylor expansion that terminates at second order?
+      - For the second part, substitute $y = x - \eta\nabla f(x)$ and minimise the resulting expression in $\eta$.
+    solution: |
+      **Equality case.** Take $f(x) = \frac L2\|x\|_2^2$. Then $\nabla f(x) = Lx$ and
+      $$
+      f(y) = \frac L2\|y\|_2^2 = \frac L2\|x\|_2^2 + L\langle x, y-x\rangle + \frac L2\|y-x\|_2^2
+      = f(x) + \langle\nabla f(x), y-x\rangle + \frac L2\|y-x\|_2^2,
+      $$
+      using $\|y\|^2 = \|x\|^2 + 2\langle x,y-x\rangle + \|y-x\|^2$. So equality holds identically.
+      This $f$ is $L$-smooth since $\nabla^2 f = LI$, so no constant smaller than $L/2$ can work for
+      all $L$-smooth functions.
+
+      **Optimal step.** Substituting $y = x - \eta g$ with $g = \nabla f(x)$,
+      $$
+      f(x-\eta g) \le f(x) - \eta\|g\|_2^2 + \frac{L\eta^2}{2}\|g\|_2^2 = f(x) - \Big(\eta - \frac{L\eta^2}{2}\Big)\|g\|_2^2 .
+      $$
+      The bracket $\varphi(\eta) = \eta - L\eta^2/2$ is a downward parabola with
+      $\varphi'(\eta) = 1 - L\eta$, so it is maximised at $\eta = 1/L$ with value $1/(2L)$. Hence the
+      guaranteed decrease $\frac{1}{2L}\|\nabla f(x)\|_2^2$ is the best obtainable from this bound, and
+      $\eta = 1/L$ is exactly the step that achieves it. Note $\varphi(\eta) > 0$ iff $\eta < 2/L$,
+      which is the stability threshold that appears in the gradient-descent analysis.
+
+  - id: mc-softmax-jacobian
+    title: The softmax Jacobian is a covariance
+    topic: foundations/matrix-calculus
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [softmax, jacobian, variance, psd]
+    statement: |
+      Let $p = \operatorname{softmax}(z)$ for $z \in \R^K$. Prove that
+      $$
+      \frac{\partial p}{\partial z} = \operatorname{diag}(p) - pp^\top,
+      $$
+      that this matrix is positive semidefinite with $(\operatorname{diag}(p)-pp^\top)\mathbf 1 = 0$,
+      and that for any $v$,
+      $$
+      v^\top\big(\operatorname{diag}(p)-pp^\top\big)v = \operatorname{Var}_{i\sim p}(v_i).
+      $$
+      Deduce the rank of the Jacobian when $p$ has full support.
+    hints:
+      - Differentiate $p_i = e^{z_i}/\sum_k e^{z_k}$ using the quotient rule, keeping the $i=j$ and $i \ne j$ cases separate.
+      - For the variance identity, expand $\sum_i p_iv_i^2 - (\sum_ip_iv_i)^2$.
+      - A variance vanishes exactly when the random variable is constant. Which $v$ are constant under $p$?
+    solution: |
+      **Jacobian.** With $Z = \sum_ke^{z_k}$,
+      $$
+      \frac{\partial p_i}{\partial z_j}
+      = \frac{\partial}{\partial z_j}\frac{e^{z_i}}{Z}
+      = \frac{\delta_{ij}e^{z_i}Z - e^{z_i}e^{z_j}}{Z^2}
+      = \delta_{ij}p_i - p_ip_j,
+      $$
+      which in matrix form is $\operatorname{diag}(p) - pp^\top$.
+
+      **Variance identity.** For any $v\in\R^K$,
+      $$
+      v^\top\big(\operatorname{diag}(p)-pp^\top\big)v = \sum_ip_iv_i^2 - \Big(\sum_ip_iv_i\Big)^2
+      = \E_{i\sim p}[v_i^2] - \big(\E_{i\sim p}[v_i]\big)^2 = \operatorname{Var}_{i\sim p}(v_i).
+      $$
+
+      **PSD and kernel.** A variance is non-negative, so the matrix is PSD. It vanishes exactly when
+      $v_i$ is $p$-almost-surely constant. If $p$ has full support ($p_i>0$ for all $i$) this means
+      $v$ is a constant vector, i.e. $v \in \operatorname{span}(\mathbf 1)$. Directly:
+      $(\operatorname{diag}(p)-pp^\top)\mathbf 1 = p - p(\mathbf 1^\top p) = p - p = 0$.
+
+      **Rank.** With full support the kernel is exactly $\operatorname{span}(\mathbf 1)$, of dimension
+      $1$, so the Jacobian has rank $K-1$. This is the precise statement that softmax is invariant to
+      adding a constant to all logits — shifting $z$ by $c\mathbf 1$ changes nothing, so the derivative
+      in that direction must be zero.
+
+  - id: mc-logdet-gradient
+    title: Gradient and Hessian of log-determinant
+    topic: foundations/matrix-calculus
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [log determinant, matrix derivative, concavity]
+    statement: |
+      For $X \succ 0$ prove that
+      $$
+      \nabla_X \log\det X = X^{-1},
+      $$
+      and that $X \mapsto \log\det X$ is **concave** on the cone of positive definite matrices.
+    hints:
+      - Use the first-order expansion $\log\det(X + \Delta) = \log\det X + \log\det(I + X^{-1}\Delta)$.
+      - For a small symmetric $E$, $\log\det(I+E) = \operatorname{tr}(E) - \frac12\operatorname{tr}(E^2)+O(\|E\|^3)$, which follows from $\log\det M = \operatorname{tr}\log M$ and the series for $\log(1+u)$ applied to the eigenvalues.
+      - For concavity, restrict to a line $X + tV$ and reduce to a one-dimensional statement about eigenvalues.
+    solution: |
+      **Gradient.** For $X\succ0$ and small symmetric $\Delta$,
+      $$
+      \log\det(X+\Delta) = \log\det\big(X(I + X^{-1}\Delta)\big) = \log\det X + \log\det(I + X^{-1}\Delta).
+      $$
+      Writing $E = X^{-1}\Delta$ and using $\log\det M = \operatorname{tr}\log M$ with
+      $\log(I+E) = E - \tfrac12E^2 + O(E^3)$,
+      $$
+      \log\det(X+\Delta) = \log\det X + \operatorname{tr}(X^{-1}\Delta) - \tfrac12\operatorname{tr}\big((X^{-1}\Delta)^2\big) + O(\|\Delta\|^3).
+      $$
+      The first-order term is $\langle X^{-1},\Delta\rangle$ in the trace inner product, so
+      $\nabla_X\log\det X = X^{-1}$ (it is symmetric because $X$ is).
+
+      **Concavity.** Fix $X\succ0$ and a symmetric direction $V$, and let
+      $\varphi(t) = \log\det(X+tV)$ on the interval where $X+tV\succ0$. Factor
+      $$
+      X + tV = X^{1/2}\big(I + tX^{-1/2}VX^{-1/2}\big)X^{1/2},
+      $$
+      so with $\lambda_1,\dots,\lambda_d$ the eigenvalues of the symmetric matrix
+      $W = X^{-1/2}VX^{-1/2}$,
+      $$
+      \varphi(t) = \log\det X + \sum_{i=1}^d\log(1 + t\lambda_i).
+      $$
+      Each summand is a concave function of $t$ (second derivative $-\lambda_i^2/(1+t\lambda_i)^2 \le 0$),
+      so $\varphi$ is concave. Since this holds along every line, $\log\det$ is concave on the PD cone.
+
+      Note the second-order term computed above, $-\tfrac12\operatorname{tr}((X^{-1}\Delta)^2) \le 0$,
+      is the same statement: the Hessian is negative semidefinite.
+
+  - id: mc-directional-not-differentiable
+    title: All directional derivatives exist, yet the function is not differentiable
+    topic: foundations/matrix-calculus
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [differentiability, directional derivative, counterexample]
+    statement: |
+      Let
+      $$
+      f(x_1,x_2) = \begin{cases} \dfrac{x_1^3}{x_1^2+x_2^2} & (x_1,x_2)\neq(0,0),\\[2mm] 0 & (x_1,x_2)=(0,0).\end{cases}
+      $$
+      Show that every directional derivative of $f$ at the origin exists, but $f$ is not differentiable
+      there. Explain precisely which property of the derivative fails.
+    hints:
+      - Compute $\lim_{t \downarrow 0} \big(f(tv) - f(0)\big)/t$ for a unit vector $v = (v_1,v_2)$.
+      - Differentiability requires the directional derivative to be a *linear* function of the direction.
+      - Compare $D_v f(0)$ with $\langle g, v\rangle$ for any candidate gradient $g$.
+    solution: |
+      **Directional derivatives.** For a unit vector $v = (v_1,v_2)$ and $t>0$,
+      $$
+      f(tv) = \frac{t^3v_1^3}{t^2(v_1^2+v_2^2)} = t v_1^3 ,
+      $$
+      using $\|v\|_2=1$. Hence
+      $$
+      D_vf(0) = \lim_{t\downarrow0}\frac{f(tv)-f(0)}{t} = v_1^3 ,
+      $$
+      which exists for every direction. In particular the partial derivatives are
+      $\partial_1 f(0) = 1$ and $\partial_2f(0)=0$.
+
+      **Failure of differentiability.** If $f$ were differentiable at $0$ there would be a vector $g$
+      with $D_vf(0) = \langle g,v\rangle$ for every $v$ — the directional derivative would be
+      **linear** in $v$. The partials force $g = (1,0)$, so we would need $v_1^3 = v_1$ for all unit
+      $v$. Taking $v = (1/\sqrt2, 1/\sqrt2)$ gives $v_1^3 = 2^{-3/2} \approx 0.354$ while
+      $\langle g,v\rangle = 2^{-1/2}\approx0.707$. Contradiction.
+
+      **What fails.** The map $v \mapsto D_vf(0)$ is well defined but not linear, so there is no
+      single linear map approximating $f$ near $0$ to first order. Equivalently, the limit in the
+      definition of differentiability,
+      $$
+      \frac{f(h) - f(0) - \langle g,h\rangle}{\|h\|_2}\to0,
+      $$
+      fails to hold uniformly over directions: along $h = t(1,1)/\sqrt2$ the quotient tends to a
+      non-zero constant. Existence of all directional derivatives is strictly weaker than
+      differentiability.
+
+  - id: an-jensen-equality
+    title: Equality in Jensen's inequality
+    topic: foundations/analysis-prerequisites
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [jensen, convexity, equality case]
+    statement: |
+      Let $\varphi$ be strictly convex and $X$ integrable with $\E|\varphi(X)|<\infty$. Prove that
+      $\varphi(\E X) = \E[\varphi(X)]$ if and only if $X$ is almost surely constant. Then use Jensen to
+      show that for a positive random variable, $\E[1/X] \ge 1/\E[X]$, and characterise equality.
+    hints:
+      - Use the supporting-line form of convexity at $m = \E X$.
+      - The difference $\varphi(X) - \varphi(m) - c(X-m)$ is a non-negative random variable. What does zero expectation give you?
+      - For the second part, apply Jensen to $\varphi(t) = 1/t$ on $(0,\infty)$.
+    solution: |
+      **Equality case.** Let $m = \E X$ and let $c$ be a subgradient of $\varphi$ at $m$, so
+      $\varphi(t)\ge\varphi(m)+c(t-m)$ for all $t$, with **strict** inequality for $t\ne m$ by strict
+      convexity. Define
+      $$
+      Y = \varphi(X) - \varphi(m) - c(X-m) \ \ge 0 .
+      $$
+      Taking expectations, $\E Y = \E[\varphi(X)] - \varphi(m)$ since $\E[X-m]=0$. So Jensen's
+      inequality is exactly $\E Y \ge 0$, and equality means $\E Y = 0$. A non-negative random
+      variable with zero expectation is almost surely zero, so $Y = 0$ a.s. But $Y>0$ whenever
+      $X \ne m$, so $\P(X \ne m) = 0$, i.e. $X = \E X$ almost surely. The converse is immediate.
+
+      **Harmonic mean.** $\varphi(t) = 1/t$ is strictly convex on $(0,\infty)$ (second derivative
+      $2/t^3>0$), so Jensen gives
+      $$
+      \frac{1}{\E X} = \varphi(\E X) \le \E[\varphi(X)] = \E\Big[\frac1X\Big],
+      $$
+      with equality iff $X$ is a.s. constant. The inequality says the harmonic mean never exceeds the
+      arithmetic mean.
+
+  - id: an-lipschitz-norms
+    title: Lipschitz constants depend on the norm
+    topic: foundations/analysis-prerequisites
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [lipschitz, norms, dimension dependence]
+    statement: |
+      For each of the following functions on $\R^d$, compute the smallest Lipschitz constant with
+      respect to $\|\cdot\|_2$ and with respect to $\|\cdot\|_\infty$.
+
+      1. $f(x) = \max_i x_i$
+      2. $f(x) = \sum_i x_i$
+      3. $f(x) = \|x\|_2$
+      4. $f(x) = \frac1d\sum_i x_i$
+
+      State which constants grow with $d$ and explain the consequence for concentration bounds.
+    hints:
+      - For a differentiable $f$, the Lipschitz constant in $\|\cdot\|_2$ is $\sup_x\|\nabla f(x)\|_2$; in $\|\cdot\|_\infty$ it is $\sup_x\|\nabla f(x)\|_1$ (the dual norm).
+      - The max function is not differentiable everywhere; bound it directly from the definition.
+    solution: |
+      In general, the best Lipschitz constant of $f$ with respect to a norm $\|\cdot\|$ is
+      $\sup_x\|\nabla f(x)\|_*$ in the **dual** norm. The dual of $\ell^2$ is $\ell^2$; the dual of
+      $\ell^\infty$ is $\ell^1$.
+
+      | $f$ | $\nabla f$ | $K$ in $\|\cdot\|_2$ | $K$ in $\|\cdot\|_\infty$ |
+      | --- | --- | --- | --- |
+      | $\max_i x_i$ | $e_{i^\star}$ | $1$ | $1$ |
+      | $\sum_i x_i$ | $\mathbf 1$ | $\sqrt d$ | $d$ |
+      | $\|x\|_2$ | $x/\|x\|_2$ | $1$ | $\sqrt d$ |
+      | $\frac1d\sum_ix_i$ | $\mathbf 1/d$ | $1/\sqrt d$ | $1$ |
+
+      For the max: $|\max_ix_i - \max_iy_i| \le \max_i|x_i-y_i| = \|x-y\|_\infty \le \|x-y\|_2$, and
+      taking $y = x + te_{i^\star}$ shows both constants are attained.
+
+      **Consequence.** Gaussian concentration gives
+      $\P(|f(X)-\E f| \ge t) \le 2e^{-t^2/2K^2}$ with $K$ the $\ell^2$ Lipschitz constant. So
+      $\max_ix_i$ and $\|x\|_2$ concentrate at scale $O(1)$ **independently of $d$**, while
+      $\sum_ix_i$ concentrates only at scale $\sqrt d$ — which is correct, since it is exactly
+      $\Ncal(0,d)$. The average $\frac1d\sum_ix_i$ concentrates at scale $1/\sqrt d$, recovering the
+      law of large numbers. Getting the norm right is what makes these bounds dimension-free or not.
+
+  - id: an-sup-lipschitz
+    title: The supremum is 1-Lipschitz in the uniform norm
+    topic: foundations/analysis-prerequisites
+    difficulty: intermediate
+    type: proof
+    estimated_time: 15m
+    tags: [supremum, lipschitz, uniform convergence]
+    statement: |
+      Let $g,h$ be bounded real functions on a set $T$. Prove that
+      $$
+      \Big|\sup_{t\in T}g(t) - \sup_{t\in T}h(t)\Big| \le \sup_{t\in T}\big|g(t)-h(t)\big| .
+      $$
+      Then explain why this makes the quantity
+      $Z = \sup_{f\in\Fcal}\big(R(f) - \hat R_n(f)\big)$ satisfy the bounded-differences condition with
+      constants $c_i = 1/n$ when the loss is in $[0,1]$.
+    hints:
+      - For every $t$, $g(t) \le h(t) + \sup_s|g(s)-h(s)|$. Take the supremum over $t$ on the left.
+      - Then swap the roles of $g$ and $h$.
+      - For the second part, ask how much $\hat R_n(f)$ changes when one sample point changes, uniformly in $f$.
+    solution: |
+      **The inequality.** Write $D = \sup_s|g(s)-h(s)|$. For every $t$,
+      $$
+      g(t) = h(t) + \big(g(t)-h(t)\big) \le h(t) + D \le \sup_sh(s) + D .
+      $$
+      The right-hand side does not depend on $t$, so taking the supremum over $t$ on the left,
+      $$
+      \sup_tg(t) \le \sup_sh(s) + D .
+      $$
+      Swapping $g$ and $h$ gives $\sup_th(t) \le \sup_sg(s)+D$. Together these give
+      $|\sup g - \sup h| \le D$.
+
+      **Bounded differences.** Let $S = (z_1,\dots,z_n)$ and let $S^{(i)}$ differ from $S$ only in the
+      $i$-th point. Write $g(f) = R(f) - \hat R_n^{S}(f)$ and $h(f) = R(f) - \hat R_n^{S^{(i)}}(f)$.
+      Then for every $f$,
+      $$
+      |g(f)-h(f)| = \big|\hat R_n^{S}(f) - \hat R_n^{S^{(i)}}(f)\big|
+      = \frac1n\big|\ell(f,z_i) - \ell(f,z_i')\big| \le \frac1n
+      $$
+      because the loss is in $[0,1]$ and only one of the $n$ terms changed. By the inequality just
+      proved,
+      $$
+      \big|Z(S) - Z(S^{(i)})\big| = \Big|\sup_fg(f) - \sup_fh(f)\Big| \le \sup_f|g(f)-h(f)| \le \frac1n .
+      $$
+      This is exactly the bounded-differences hypothesis with $c_i = 1/n$, so McDiarmid's inequality
+      applies and gives $\P(Z - \E Z \ge t) \le e^{-2nt^2}$. Note that the argument is completely
+      uniform in $\Fcal$ — the class can be infinite, and its complexity enters only through $\E Z$.

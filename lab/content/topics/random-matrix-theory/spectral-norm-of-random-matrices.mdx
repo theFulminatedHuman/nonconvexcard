@@ -1,0 +1,254 @@
+---
+title: Spectral Norm of Random Matrices
+summary: The net-plus-concentration argument that gives the sqrt(n) + sqrt(p) bound, and the semicircle law for Wigner matrices.
+field: random-matrix-theory
+level: 3
+order: 10
+prerequisites: [high-dimensional-probability/nets-covering-and-packing]
+tags: [random matrices, spectral norm, wigner, semicircle, operator norm]
+estimated_time: 3h
+claims:
+  - id: operator-norm-bound
+    kind: theorem
+    title: Spectral norm of a matrix with sub-Gaussian entries
+    summary: An n-by-p matrix with independent sub-Gaussian entries has spectral norm O(sqrt n + sqrt p) with exponentially high probability.
+    proved: true
+    tags: [operator norm, net, sub-gaussian]
+  - id: variational-norm
+    kind: lemma
+    title: Bilinear variational form of the spectral norm
+    summary: The spectral norm is the maximum of a bilinear form over two spheres, which is what allows a two-sided net argument.
+    proved: true
+    tags: [variational, operator norm]
+  - id: semicircle
+    kind: theorem
+    title: Wigner semicircle law
+    summary: The empirical spectral distribution of a scaled Wigner matrix converges to the semicircle density on [-2,2].
+    proved: false
+    tags: [wigner, semicircle, limiting spectrum]
+  - id: bai-yin
+    kind: theorem
+    title: Bai–Yin law for extreme singular values
+    summary: For i.i.d. entries with four finite moments the extreme singular values converge to sqrt n ± sqrt p.
+    proved: false
+    tags: [extreme singular values, bai-yin]
+  - id: matrix-bernstein
+    kind: theorem
+    title: Matrix Bernstein inequality
+    summary: A Bernstein-type bound for sums of independent random matrices, with a log-dimension factor.
+    proved: false
+    tags: [matrix concentration, bernstein, tropp]
+references:
+  - key: vershynin-hdp-7
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+    note: Chapter 4 contains the net argument reproduced below in the author's own words; Chapter 7 covers the sharper bounds.
+  - key: tropp-matrix
+    title: An Introduction to Matrix Concentration Inequalities
+    authors: Joel A. Tropp
+    year: 2015
+    kind: survey
+    url: https://arxiv.org/abs/1501.01571
+    note: The standard reference for matrix Bernstein and its relatives.
+  - key: bai-silverstein
+    title: Spectral Analysis of Large Dimensional Random Matrices
+    authors: Zhidong Bai and Jack W. Silverstein
+    year: 2010
+    kind: book
+    note: The reference for limiting spectral distributions, including the Bai–Yin and Marchenko–Pastur results quoted here.
+  - key: tao-rmt
+    title: Topics in Random Matrix Theory
+    authors: Terence Tao
+    year: 2012
+    kind: book
+    note: A readable route to the semicircle law via moment methods and via Stieltjes transforms.
+---
+
+## The variational reduction
+
+<Lemma id="variational-norm" title="Bilinear variational form of the spectral norm">
+For any $A \in \R^{n\times p}$,
+$$
+\norm{A} = \max_{u \in S^{n-1}}\ \max_{v\in S^{p-1}}\ \ip{Au}{v} = \max_{u,v} u^\top A^\top v .
+$$
+Moreover, if $\Ncal \subseteq S^{p-1}$ and $\mathcal{M}\subseteq S^{n-1}$ are $\eps$-nets with
+$\eps<1/2$, then
+$$
+\norm{A} \le \frac{1}{1-2\eps}\max_{v\in\mathcal{M}}\max_{u\in\Ncal} \ip{Au}{v}.
+$$
+</Lemma>
+
+<Proof>
+The first identity is the definition of the operator norm combined with
+$\norm{w}_2 = \max_{v\in S^{n-1}}\ip{w}{v}$ (attained at $w/\norm{w}_2$).
+
+For the net statement, let $u_\star, v_\star$ attain the maximum, and choose $u\in\Ncal$,
+$v\in\mathcal{M}$ within $\eps$ of them. Then
+$$
+\norm{A} = \ip{Au_\star}{v_\star}
+= \ip{Au}{v} + \ip{A(u_\star - u)}{v_\star} + \ip{Au}{v_\star - v},
+$$
+and each of the last two terms is at most $\eps\norm{A}$ in absolute value, by the definition of the
+operator norm and Cauchy–Schwarz. Rearranging gives the claim.
+</Proof>
+
+## The main bound
+
+<Theorem id="operator-norm-bound" title="Spectral norm of a matrix with sub-Gaussian entries">
+Let $A\in\R^{n\times p}$ have independent, mean-zero entries with
+$\norm{A_{ij}}_{\psi_2}\le K$. Then there is an absolute constant $C$ such that for every $t \ge 0$,
+$$
+\P\Big(\norm{A} \ge CK\big(\sqrt n + \sqrt p + t\big)\Big) \le 2e^{-t^2}.
+$$
+In particular $\E\norm{A} \le CK(\sqrt n + \sqrt p)$.
+</Theorem>
+
+<Assumptions>
+Independence of the **entries** (not merely of the rows), mean zero, uniformly bounded $\psi_2$
+norm. No identical distribution and no symmetry is needed.
+</Assumptions>
+
+<Proof>
+Set $\eps = 1/4$ and fix $\tfrac14$-nets $\Ncal \subseteq S^{p-1}$ and $\mathcal{M}\subseteq S^{n-1}$.
+By the <TopicRef id="high-dimensional-probability/nets-covering-and-packing">volumetric bound</TopicRef>,
+$$
+|\Ncal| \le 12^p, \qquad |\mathcal{M}| \le 12^n .
+$$
+
+**Step 1: one pair at a time.** Fix $u \in S^{p-1}$ and $v \in S^{n-1}$ and consider
+$$
+\ip{Au}{v} = \sum_{i=1}^n\sum_{j=1}^p A_{ij}u_jv_i .
+$$
+This is a linear combination of the independent, mean-zero, sub-Gaussian entries $A_{ij}$ with
+coefficients $u_jv_i$. By the
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">sum rule</TopicRef> it is
+sub-Gaussian with
+$$
+\norm{\ip{Au}{v}}_{\psi_2}^2 \le C_0K^2\sum_{i,j}u_j^2v_i^2 = C_0K^2\norm{u}_2^2\norm{v}_2^2 = C_0K^2 .
+$$
+Hence for every $s\ge0$,
+$$
+\P\big(\ip{Au}{v}\ge s\big) \le 2\exp\left(-\frac{c_0 s^2}{K^2}\right).
+$$
+
+**Step 2: union bound over the nets.** Let $s = CK(\sqrt n+\sqrt p + t)$ for a constant $C$ to be
+chosen. Then
+$$
+\P\left(\max_{u\in\Ncal}\max_{v\in\mathcal{M}}\ip{Au}{v}\ge s\right)
+\le 12^{n+p}\cdot 2\exp\left(-\frac{c_0s^2}{K^2}\right)
+= 2\exp\Big((n+p)\log 12 - \frac{c_0s^2}{K^2}\Big).
+$$
+Now $s^2/K^2 = C^2(\sqrt n+\sqrt p+t)^2 \ge C^2\big(\tfrac{n+p}{2} + t^2\big)$, using
+$(a+b+c)^2 \ge \tfrac12(a+b)^2 + c^2 \ge \tfrac12(a^2+b^2)+c^2$ for non-negative $a,b,c$. Choosing $C$
+large enough that $c_0C^2/2 \ge \log 12 + 1$ and $c_0C^2 \ge 1$, the exponent is at most
+$-(n+p) - t^2 \le -t^2$, so the probability is at most $2e^{-t^2}$.
+
+**Step 3: remove the net.** On the complementary event, the net lemma with $\eps=1/4$ gives
+$\norm{A} \le \frac{1}{1-1/2}\,s = 2s$, which is the claim after renaming the constant.
+
+The bound on the expectation follows by integrating the tail:
+$\E\norm{A}\le CK(\sqrt n+\sqrt p) + CK\int_0^\infty 2e^{-t^2}dt$.
+</Proof>
+
+<KeyIdea>
+Count the exponents once more. The net has $e^{(n+p)\log 12}$ points, and each fails with probability
+$e^{-c s^2/K^2}$. For the union bound to survive we need $s^2 \gtrsim K^2(n+p)$, that is
+$s \gtrsim K\sqrt{n+p} \asymp K(\sqrt n+\sqrt p)$. The answer is forced by the arithmetic of the net
+size against the concentration exponent — there is no cleverness left in the argument once the two
+ingredients are in place.
+</KeyIdea>
+
+<Note title="Comparing norms">
+The Frobenius norm of the same matrix is $\norm{A}_F \approx K\sqrt{np}$, since it is a sum of $np$
+squared entries. So the theorem says
+$$
+\norm{A} \asymp K(\sqrt n+\sqrt p) \ll K\sqrt{np} \asymp \norm{A}_F
+$$
+whenever both $n,p$ are large. A random matrix has a much smaller operator norm than its Frobenius
+norm allows in the worst case — its singular values are spread out, not concentrated on one. This is
+the quantitative statement behind "random matrices are well conditioned when $n \gg p$".
+</Note>
+
+## Sharp constants: the Bai–Yin law
+
+<Theorem id="bai-yin" title="Bai–Yin law">
+Let $A \in \R^{n\times p}$ have i.i.d. entries with mean $0$, variance $1$ and finite fourth moment,
+and let $n,p \to \infty$ with $p/n \to \lambda \in (0,1]$. Then almost surely
+$$
+\sigma_{\max}(A) = \sqrt n + \sqrt p + o(\sqrt n),
+\qquad \sigma_{\min}(A) = \sqrt n - \sqrt p + o(\sqrt n) .
+$$
+</Theorem>
+
+Quoted from the references. The point of comparison with the theorem above is instructive: the net
+argument gives the right *order* with an unspecified constant $C$, valid for every finite $n,p$ and
+with an exponential tail. Bai–Yin gives the exact constant $1$ in front of each square root, but only
+asymptotically and only almost surely. Both are useful, for different purposes — and the
+finite-sample statement is the one a statistician needs.
+
+<ExperimentRef id="marchenko-pastur" />
+
+## Wigner matrices and the semicircle law
+
+<Definition id="wigner" title="Wigner matrix">
+A **Wigner matrix** is a symmetric $W \in \R^{d\times d}$ whose entries $\{W_{ij}\}_{i\le j}$ are
+independent with mean $0$ and variance $1$ (the diagonal may have a different variance). The
+normalisation of interest is $W/\sqrt d$, which keeps the spectrum $O(1)$.
+</Definition>
+
+<Theorem id="semicircle" title="Wigner semicircle law">
+Let $W_d$ be Wigner matrices with uniformly bounded fourth moments and let
+$\mu_d = \frac1d\sum_{i=1}^d \delta_{\lambda_i(W_d/\sqrt d)}$ be the empirical spectral distribution.
+Then $\mu_d$ converges weakly, almost surely, to the **semicircle law** with density
+$$
+\rho_{sc}(x) = \frac{1}{2\pi}\sqrt{4-x^2}\,\one\{|x|\le2\}.
+$$
+</Theorem>
+
+The standard proofs are the moment method — show
+$\frac1d\E\tr\big((W/\sqrt d)^{2k}\big) \to \frac{1}{k+1}\binom{2k}{k}$, the Catalan numbers, which are
+the moments of the semicircle — and the Stieltjes transform method, which derives the self-consistent
+equation $s(z) = \frac{1}{-z - s(z)}$ for the limiting transform. Both are given in the references;
+neither is short, and neither is reproduced here.
+
+<Note title="What to take from it">
+Two facts are worth carrying. First, the spectrum of a normalised Wigner matrix fills the interval
+$[-2,2]$ with a definite shape — it does not concentrate at a point, and it does not have Gaussian
+tails. Second, the limit is **universal**: it depends on the entry variance and nothing else, not on
+whether the entries are Gaussian, Rademacher or anything with four moments. Universality is the
+organising theme of random matrix theory, and it is why simulations with convenient distributions are
+informative about the general case — for the *bulk*. Extreme eigenvalues are more delicate and are
+governed by the fourth moment.
+</Note>
+
+## Matrix concentration
+
+The net argument above is specific to the operator norm of a matrix with independent entries. A more
+flexible tool handles sums of *dependent-within-summand* random matrices.
+
+<Theorem id="matrix-bernstein" title="Matrix Bernstein inequality">
+Let $X_1,\dots,X_n$ be independent, mean-zero, symmetric random matrices in $\R^{d\times d}$ with
+$\norm{X_i}\le M$ almost surely, and set $\sigma^2 = \norm{\sum_i \E X_i^2}$. Then for all $t\ge0$,
+$$
+\P\left(\norm{\sum_{i=1}^n X_i} \ge t\right)
+\le 2d\exp\left(-\frac{t^2}{2\sigma^2 + \tfrac23 Mt}\right).
+$$
+</Theorem>
+
+Quoted from Tropp's survey. Compare with the scalar
+<TopicRef id="high-dimensional-probability/concentration-inequalities">Bernstein inequality</TopicRef>:
+the bound is identical except for the factor $2d$ in front, which is the price of passing from a
+number to a $d\times d$ matrix. Since it appears inside a logarithm after inversion, the practical
+cost is an extra $\log d$ in every sample-complexity statement — which is exactly the $\log d$ that
+appears in covariance-estimation rates on the
+<TopicRef id="high-dimensional-statistics/covariance-estimation">next section</TopicRef>.
+
+## Problems
+
+<ProblemRef id="rm-operator-norm-net" />
+<ProblemRef id="rm-frobenius-vs-operator" />
+<ProblemRef id="rm-semicircle-moments" />
+<ProblemRef id="rm-simulate-spectrum" />

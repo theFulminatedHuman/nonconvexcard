@@ -1,0 +1,333 @@
+---
+title: Kernels, RKHS and the Representer Theorem
+summary: Positive definite kernels, the reproducing property, a complete proof of the representer theorem, and kernel ridge regression.
+field: machine-learning
+level: 3
+order: 30
+prerequisites: [foundations/linear-algebra, machine-learning/linear-and-ridge-regression]
+tags: [kernel, rkhs, positive definite, representer theorem, kernel ridge, kernel pca, mercer]
+estimated_time: 1d
+experiments: [kernel-regression]
+claims:
+  - id: pd-kernel
+    kind: definition
+    title: Positive definite kernel
+    summary: A symmetric function whose Gram matrices are all PSD.
+    proved: false
+    tags: [kernel, psd]
+  - id: kernel-iff-feature-map
+    kind: theorem
+    title: A kernel is positive definite iff it is an inner product of features
+    summary: Positive definiteness is exactly the condition for a feature-map representation to exist.
+    proved: true
+    tags: [feature map, equivalence]
+  - id: rkhs-construction
+    kind: theorem
+    title: Construction of the reproducing kernel Hilbert space
+    summary: Every positive definite kernel has a unique Hilbert space of functions in which it reproduces evaluation.
+    proved: true
+    tags: [rkhs, reproducing property, moore-aronszajn]
+  - id: representer
+    kind: theorem
+    title: Representer theorem
+    summary: Any regularised empirical risk minimiser over an RKHS lies in the span of the kernel sections at the data points.
+    proved: true
+    tags: [representer theorem, finite dimensional]
+  - id: krr-solution
+    kind: proposition
+    title: Kernel ridge regression in closed form
+    summary: The coefficients solve an n-by-n linear system involving only the kernel matrix.
+    proved: true
+    tags: [kernel ridge, closed form]
+  - id: kernel-closure
+    kind: proposition
+    title: Operations that preserve positive definiteness
+    summary: Sums, products, scalings, limits and compositions with power series of PD kernels are PD.
+    proved: true
+    tags: [kernel algebra, construction]
+  - id: kernel-cost
+    kind: proposition
+    title: Kernel methods cost O(n^2) memory and O(n^3) time
+    summary: The exact solution requires forming and factorising the kernel matrix, which is why approximations exist.
+    proved: true
+    tags: [complexity, nystrom, random features]
+references:
+  - key: scholkopf-smola
+    title: Learning with Kernels
+    authors: Bernhard Schölkopf and Alexander J. Smola
+    year: 2002
+    kind: book
+  - key: aronszajn
+    title: Theory of Reproducing Kernels
+    authors: Nachman Aronszajn
+    year: 1950
+    kind: paper
+  - key: steinwart-christmann
+    title: Support Vector Machines
+    authors: Ingo Steinwart and Andreas Christmann
+    year: 2008
+    kind: book
+    note: The most careful modern treatment of RKHS theory for learning.
+  - key: rahimi-recht
+    title: Random Features for Large-Scale Kernel Machines
+    authors: Ali Rahimi and Benjamin Recht
+    year: 2007
+    kind: paper
+---
+
+<Intuition>
+A linear method in the wrong coordinates is a nonlinear method in the right ones. The kernel idea is
+that you never need the right coordinates explicitly — only the inner products between them — and
+that for many useful feature maps those inner products have a closed form even when the features are
+infinite-dimensional. The mathematics below makes "many useful" precise: it is exactly the positive
+definite kernels, no more and no less.
+</Intuition>
+
+## Positive definite kernels
+
+<Definition id="pd-kernel" title="Positive definite kernel">
+$K:\Xcal\times\Xcal\to\R$ is a **positive definite kernel** if it is symmetric,
+$K(x,x')=K(x',x)$, and for every finite $\{x_1,\dots,x_n\}\subseteq\Xcal$ the Gram matrix
+$\mathbf{K}_{ij}=K(x_i,x_j)$ is positive semidefinite.
+</Definition>
+
+<Theorem id="kernel-iff-feature-map" title="Positive definite iff an inner product of features">
+$K$ is a positive definite kernel if and only if there is a Hilbert space $\Hcal$ and a map
+$\phi:\Xcal\to\Hcal$ with
+$$
+K(x,x') = \ip{\phi(x)}{\phi(x')}_\Hcal \qquad\text{for all } x,x' .
+$$
+</Theorem>
+
+<Proof>
+($\Leftarrow$) Symmetry is symmetry of the inner product. For positive semidefiniteness, let
+$c\in\R^n$ and compute
+$$
+c^\top\mathbf{K}c = \sum_{i,j}c_ic_j\ip{\phi(x_i)}{\phi(x_j)}
+= \left\|\sum_i c_i\phi(x_i)\right\|_\Hcal^2 \ge 0 .
+$$
+
+($\Rightarrow$) This is the content of the RKHS construction below: take $\Hcal$ to be the RKHS of
+$K$ and $\phi(x) = K(x,\cdot)$, the **canonical feature map**. Then the reproducing property gives
+$\ip{K(x,\cdot)}{K(x',\cdot)}_\Hcal = K(x,x')$.
+</Proof>
+
+<Theorem id="rkhs-construction" title="Construction of the RKHS (Moore–Aronszajn)">
+Let $K$ be a positive definite kernel on $\Xcal$. There is a unique Hilbert space
+$\Hcal_K$ of real-valued functions on $\Xcal$ such that
+
+1. $K(x,\cdot)\in\Hcal_K$ for every $x$;
+2. $\operatorname{span}\{K(x,\cdot):x\in\Xcal\}$ is dense in $\Hcal_K$;
+3. **reproducing property**: $f(x) = \ip{f}{K(x,\cdot)}_{\Hcal_K}$ for every $f\in\Hcal_K$ and $x\in\Xcal$.
+</Theorem>
+
+<Proof>
+**Pre-Hilbert space.** Let $\Hcal_0 = \operatorname{span}\{K(x,\cdot)\}$, whose elements are finite
+sums $f = \sum_ia_iK(x_i,\cdot)$. Define
+$$
+\left\langle \sum_ia_iK(x_i,\cdot),\ \sum_jb_jK(x_j',\cdot)\right\rangle := \sum_{i,j}a_ib_jK(x_i,x_j').
+$$
+
+*Well-defined.* The value depends only on the functions, not the representations: if
+$f = \sum_ia_iK(x_i,\cdot)$ is the zero function then for any $g = \sum_jb_jK(x_j',\cdot)$,
+$\ip fg = \sum_jb_jf(x_j') = 0$. So two representations of the same $f$ give the same inner product
+against everything in $\Hcal_0$.
+
+*Positive semidefinite.* $\ip ff = \sum_{i,j}a_ia_jK(x_i,x_j) = a^\top\mathbf{K}a \ge 0$ by positive
+definiteness of $K$.
+
+*Definite.* Suppose $\ip ff = 0$. The reproducing identity holds on $\Hcal_0$ by construction:
+$f(x) = \sum_ia_iK(x_i,x) = \ip{f}{K(x,\cdot)}$. Cauchy–Schwarz then gives
+$$
+|f(x)| = |\ip f{K(x,\cdot)}| \le \norm{f}\sqrt{K(x,x)} = 0
+$$
+for every $x$, so $f\equiv0$. Hence $\ip\cdot\cdot$ is a genuine inner product on $\Hcal_0$.
+
+**Completion.** Let $\Hcal_K$ be the completion of $\Hcal_0$. A Cauchy sequence $(f_n)$ in $\Hcal_0$ is
+pointwise Cauchy, by the inequality $|f_n(x)-f_m(x)|\le\norm{f_n-f_m}\sqrt{K(x,x)}$ just derived, so
+it has a pointwise limit function, and identifying each equivalence class with that function realises
+$\Hcal_K$ as a space of functions on $\Xcal$. The reproducing property extends to the completion by
+continuity of the inner product.
+
+**Uniqueness.** If $\Hcal'$ is another such space, the reproducing property forces
+$\ip{K(x,\cdot)}{K(x',\cdot)}_{\Hcal'} = K(x,x')$, so the inner products agree on the dense subspace
+$\Hcal_0$, hence the spaces are isometrically isomorphic.
+</Proof>
+
+<KeyIdea>
+The two halves of the reproducing property are worth separating. It says (a) evaluation at $x$ is a
+*continuous linear functional* on $\Hcal_K$ — which is the defining property of an RKHS and is false
+in, say, $L^2$, where pointwise values are not even defined; and (b) that functional is represented by
+$K(x,\cdot)$. Everything computational about kernels follows from (b), and everything about
+well-posedness of pointwise learning follows from (a).
+</KeyIdea>
+
+## The representer theorem
+
+<Theorem id="representer" title="Representer theorem">
+Let $\Hcal_K$ be the RKHS of $K$, let $\Omega:[0,\infty)\to\R$ be strictly increasing, and let
+$c:\R^n\to\R$ be arbitrary. Then any minimiser of
+$$
+J(f) = c\big(f(x_1),\dots,f(x_n)\big) + \Omega\big(\norm{f}_{\Hcal_K}\big)
+$$
+over $f\in\Hcal_K$ admits a representation
+$$
+f^\star = \sum_{i=1}^n\alpha_iK(x_i,\cdot), \qquad \alpha\in\R^n .
+$$
+</Theorem>
+
+<Proof>
+Let $V = \operatorname{span}\{K(x_1,\cdot),\dots,K(x_n,\cdot)\}$, a subspace of dimension at most $n$,
+and decompose any $f\in\Hcal_K$ orthogonally as $f = f_V + f_\perp$ with $f_V\in V$,
+$f_\perp\in V^\perp$.
+
+**The data term does not see $f_\perp$.** By the reproducing property, for each $j$,
+$$
+f(x_j) = \ip{f}{K(x_j,\cdot)} = \ip{f_V}{K(x_j,\cdot)} + \underbrace{\ip{f_\perp}{K(x_j,\cdot)}}_{=0} = f_V(x_j),
+$$
+the middle term vanishing because $K(x_j,\cdot)\in V$ and $f_\perp\perp V$. So
+$c(f(x_1),\dots,f(x_n)) = c(f_V(x_1),\dots,f_V(x_n))$.
+
+**The penalty strictly prefers $f_\perp = 0$.** By the Pythagorean identity,
+$\norm f^2 = \norm{f_V}^2+\norm{f_\perp}^2 \ge \norm{f_V}^2$, with equality iff $f_\perp = 0$. Since
+$\Omega$ is strictly increasing, $\Omega(\norm f)\ge\Omega(\norm{f_V})$, strictly unless
+$f_\perp=0$.
+
+Hence $J(f)\ge J(f_V)$, strictly unless $f_\perp = 0$. Therefore every minimiser has $f_\perp=0$,
+i.e. lies in $V$, which is the claim.
+</Proof>
+
+<KeyIdea>
+An infinite-dimensional optimisation problem has been reduced to $n$ real numbers, and the reduction
+is exact, not an approximation. Note precisely what made it work: the loss depends on $f$ only through
+its values at the $n$ data points, and the penalty is a strictly increasing function of the norm. Both
+hypotheses are essential — a penalty like $\norm{f'}_{L^2}$ that is not a function of
+$\norm{f}_{\Hcal_K}$, or a loss involving $f$ at unseen points, breaks the conclusion.
+</KeyIdea>
+
+<ExperimentRef id="kernel-regression" />
+
+<Proposition id="krr-solution" title="Kernel ridge regression in closed form">
+For the squared loss with regularisation $\lambda$,
+$$
+\hat f = \argmin_{f\in\Hcal_K}\left\{\frac1n\sum_{i=1}^n\big(y_i-f(x_i)\big)^2 + \lambda\norm f_{\Hcal_K}^2\right\}
+= \sum_{i=1}^n\alpha_iK(x_i,\cdot),
+\qquad
+\alpha = (\mathbf{K}+n\lambda I)^{-1}y .
+$$
+</Proposition>
+
+<Proof>
+By the representer theorem, write $f = \sum_i\alpha_iK(x_i,\cdot)$. Then
+$f(x_j) = \sum_i\alpha_iK(x_i,x_j) = (\mathbf{K}\alpha)_j$ and
+$\norm f^2_{\Hcal_K} = \sum_{i,j}\alpha_i\alpha_jK(x_i,x_j) = \alpha^\top\mathbf{K}\alpha$. The
+objective becomes
+$$
+\frac1n\norm{y-\mathbf{K}\alpha}_2^2 + \lambda\alpha^\top\mathbf{K}\alpha .
+$$
+Setting the gradient in $\alpha$ to zero,
+$$
+-\frac2n\mathbf{K}(y - \mathbf{K}\alpha) + 2\lambda\mathbf{K}\alpha = 0
+\ \Longleftrightarrow\
+\mathbf{K}\big[(\mathbf{K}+n\lambda I)\alpha - y\big] = 0 .
+$$
+Any $\alpha$ solving $(\mathbf{K}+n\lambda I)\alpha = y$ satisfies this, and the matrix is invertible
+for $\lambda>0$ since $\mathbf{K}\succeq0$. (Solutions differing by an element of $\ker\mathbf{K}$
+give the same function $f$, so the resulting $\hat f$ is unique.)
+</Proof>
+
+## Building kernels
+
+<Proposition id="kernel-closure" title="Operations preserving positive definiteness">
+Let $K_1,K_2$ be positive definite kernels on $\Xcal$, $c>0$, $f:\Xcal\to\R$, and
+$\psi:\Xcal'\to\Xcal$. Then the following are positive definite:
+$$
+cK_1,\quad K_1+K_2,\quad K_1K_2,\quad f(x)f(x'),\quad K_1(\psi(x),\psi(x')),\quad
+\exp(K_1),\quad \lim_n K_n \text{ (pointwise, if it exists)} .
+$$
+</Proposition>
+
+<Proof>
+Scaling and sums: $c\mathbf{K}_1\succeq0$ and $\mathbf{K}_1+\mathbf{K}_2\succeq0$ directly.
+
+Products: the Gram matrix of $K_1K_2$ is the **Hadamard** (entrywise) product
+$\mathbf{K}_1\circ\mathbf{K}_2$, and the Schur product theorem says the Hadamard product of PSD
+matrices is PSD. A short proof: write $\mathbf{K}_1 = \sum_k\lambda_ku_ku_k^\top$ with
+$\lambda_k\ge0$; then
+$\mathbf{K}_1\circ\mathbf{K}_2 = \sum_k\lambda_k\,\diag(u_k)\mathbf{K}_2\diag(u_k)$, a non-negative
+combination of PSD matrices.
+
+Rank one: $f(x)f(x')$ has Gram matrix $vv^\top\succeq0$ with $v_i=f(x_i)$.
+
+Pullback: the Gram matrix of $K_1\circ(\psi\times\psi)$ on $\{x_i'\}$ is the Gram matrix of $K_1$ on
+$\{\psi(x_i')\}$.
+
+Exponential: $\exp(K_1) = \sum_{m\ge0}K_1^m/m!$, a limit of non-negative combinations of products,
+each PD by the above, and pointwise limits of PD kernels are PD since PSD-ness is preserved under
+limits (the quadratic form is continuous).
+</Proof>
+
+<Derivation title="The Gaussian kernel is positive definite">
+<Step why="Expand the exponent.">
+$$
+K(x,x') = \exp\left(-\frac{\norm{x-x'}_2^2}{2\sigma^2}\right)
+= \exp\left(-\frac{\norm x^2}{2\sigma^2}\right)\exp\left(\frac{\ip{x}{x'}}{\sigma^2}\right)\exp\left(-\frac{\norm{x'}^2}{2\sigma^2}\right).
+$$
+</Step>
+<Step why="The middle factor is the exponential of the linear kernel, hence PD by the closure proposition.">
+$\ip{x}{x'}/\sigma^2$ is PD (it is an inner product of features, namely $x/\sigma$), and $\exp$ of a PD kernel is PD.
+</Step>
+<Step why="The outer factors form a rank-one kernel f(x)f(x'), which is PD, and the product of PD kernels is PD.">
+With $f(x)=\exp(-\norm x^2/2\sigma^2)$, $K = f(x)f(x')\cdot\exp(\ip{x}{x'}/\sigma^2)$ is a product of two PD kernels.
+</Step>
+</Derivation>
+
+Standard kernels and the feature spaces they correspond to:
+
+| Kernel | Formula | Feature space |
+| --- | --- | --- |
+| Linear | $\ip{x}{x'}$ | $\R^d$ itself |
+| Polynomial | $(1+\ip{x}{x'})^m$ | all monomials of degree $\le m$, dimension $\binom{d+m}{m}$ |
+| Gaussian (RBF) | $\exp(-\norm{x-x'}^2/2\sigma^2)$ | infinite-dimensional |
+| Laplace | $\exp(-\norm{x-x'}_1/\sigma)$ | infinite-dimensional |
+| Cosine similarity | $\ip{x}{x'}/(\norm x\norm{x'})$ | normalised $\R^d$ |
+
+<Note title="Kernel PCA in one paragraph">
+Ordinary PCA diagonalises the covariance $\frac1n\sum_i\tilde x_i\tilde x_i^\top$ of centred data.
+Kernel PCA does the same in feature space, and by the same duality as the representer theorem it
+suffices to diagonalise the *centred kernel matrix* $\tilde{\mathbf{K}} = H\mathbf{K}H$ with
+$H = I - \frac1n\one\one^\top$. The $k$-th kernel principal component of a new point $x$ is
+$\frac{1}{\sqrt{\lambda_k}}\sum_i u_{k,i}\tilde K(x_i,x)$. No feature map is ever formed, which is
+exactly the point.
+</Note>
+
+## The cost
+
+<Proposition id="kernel-cost" title="Kernel methods cost O(n²) memory and O(n³) time">
+Forming $\mathbf{K}$ requires $n^2$ kernel evaluations and $n^2$ storage; solving
+$(\mathbf{K}+n\lambda I)\alpha = y$ by Cholesky costs $\tfrac13n^3$ flops. Prediction at a new point
+costs $n$ kernel evaluations.
+</Proposition>
+
+<NotSaid>
+This is the reason kernel methods are not used at the scale deep learning operates at: $n = 10^7$
+makes $n^2 = 10^{14}$ entries impossible. The standard remedies are
+
+- **Nyström approximation**: sample $m \ll n$ landmarks and approximate $\mathbf{K}\approx \mathbf{K}_{nm}\mathbf{K}_{mm}^{-1}\mathbf{K}_{mn}$, reducing cost to $O(nm^2)$.
+- **Random features** (Rahimi–Recht): for a shift-invariant kernel, $K(x,x') = \E_\omega[z_\omega(x)z_\omega(x')]$ by Bochner's theorem, so sampling $m$ frequencies gives an explicit $m$-dimensional feature map with $O(nm)$ cost.
+- **Structured kernels** with fast transforms.
+
+None of these changes the statistical guarantees materially for moderate $m$, and all of them make
+the method a *finite*-dimensional linear model again — which is worth noticing, because the same
+observation connects kernels to the neural tangent kernel picture on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="kr-gaussian-pd" />
+<ProblemRef id="kr-representer-proof" />
+<ProblemRef id="kr-reproducing-property" />
+<ProblemRef id="kr-krr-solution" />
+<ProblemRef id="kr-implement-krr" />
+<ProblemRef id="kr-schur-product" />

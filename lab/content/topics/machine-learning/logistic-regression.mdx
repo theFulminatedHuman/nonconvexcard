@@ -1,0 +1,177 @@
+---
+title: Logistic Regression
+summary: The log-likelihood, its convexity, the Hessian as a weighted Gram matrix, and what happens when the data is separable.
+field: machine-learning
+level: 1
+order: 20
+prerequisites: [machine-learning/linear-and-ridge-regression, optimization/convex-sets-and-functions]
+tags: [logistic regression, maximum likelihood, convexity, irls, separability, calibration]
+estimated_time: 1h
+claims:
+  - id: logistic-nll
+    kind: proposition
+    title: The logistic negative log-likelihood and its derivatives
+    summary: Gradient equals the design matrix times the residual; Hessian is a variance-weighted Gram matrix.
+    proved: true
+    tags: [likelihood, gradient, hessian]
+  - id: logistic-convex
+    kind: theorem
+    title: The logistic loss is convex, and strictly convex iff the design has full rank
+    summary: Convexity follows from the PSD Hessian; strictness requires full column rank and non-degenerate probabilities.
+    proved: true
+    tags: [convexity, hessian]
+  - id: separable-divergence
+    kind: proposition
+    title: The maximum likelihood estimate does not exist under separability
+    summary: If the classes are linearly separable the likelihood has no maximiser and the norm of the iterates diverges.
+    proved: true
+    tags: [separability, divergence, regularisation]
+  - id: logistic-calibration
+    kind: proposition
+    title: The score equations enforce calibration on the feature directions
+    summary: At the optimum the predicted probabilities match the observed labels in every feature direction.
+    proved: true
+    tags: [calibration, score equations]
+references:
+  - key: hastie-tibshirani-friedman-2
+    title: The Elements of Statistical Learning
+    authors: Trevor Hastie, Robert Tibshirani and Jerome Friedman
+    year: 2009
+    kind: book
+    url: https://hastie.su.domains/ElemStatLearn/
+  - key: mccullagh-nelder
+    title: Generalized Linear Models
+    authors: Peter McCullagh and John A. Nelder
+    year: 1989
+    kind: book
+  - key: soudry-et-al
+    title: The Implicit Bias of Gradient Descent on Separable Data
+    authors: Daniel Soudry, Elad Hoffer, Mor Shpigel Nacson, Suriya Gunasekar and Nathan Srebro
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1710.10345
+---
+
+## Model and likelihood
+
+With $y\in\{0,1\}$ and $\sigma(t) = (1+e^{-t})^{-1}$, the model is
+$$
+\P(y=1\mid x) = \sigma\big(\ip{w}{x}\big) =: p_w(x).
+$$
+
+<Proposition id="logistic-nll" title="Negative log-likelihood and its derivatives">
+The negative log-likelihood of an i.i.d. sample is
+$$
+\mathcal{L}(w) = -\sum_{i=1}^n\Big[y_i\log p_w(x_i) + (1-y_i)\log\big(1-p_w(x_i)\big)\Big]
+= \sum_{i=1}^n\Big[\log\big(1+e^{\ip{w}{x_i}}\big) - y_i\ip{w}{x_i}\Big],
+$$
+with
+$$
+\nabla\mathcal{L}(w) = X^\top(p - y), \qquad
+\nabla^2\mathcal{L}(w) = X^\top S X, \quad S = \diag\big(p_i(1-p_i)\big),
+$$
+where $p_i = p_w(x_i)$.
+</Proposition>
+
+<Proof>
+The second form of $\mathcal{L}$ follows from
+$\log p_w = \ip{w}{x}-\log(1+e^{\ip{w}{x}})$ and $\log(1-p_w) = -\log(1+e^{\ip{w}{x}})$.
+
+Differentiate: $\sigma'(t) = \sigma(t)(1-\sigma(t))$, so
+$$
+\frac{\partial}{\partial w}\log\big(1+e^{\ip{w}{x_i}}\big) = \sigma\big(\ip{w}{x_i}\big)x_i = p_ix_i ,
+$$
+giving $\nabla\mathcal{L} = \sum_i(p_i-y_i)x_i = X^\top(p-y)$. Differentiating once more,
+$\partial p_i/\partial w = p_i(1-p_i)x_i$, so
+$\nabla^2\mathcal{L} = \sum_ip_i(1-p_i)x_ix_i^\top = X^\top SX$.
+</Proof>
+
+<Note title="Compare with linear regression">
+The gradient is $X^\top(\text{prediction} - \text{target})$ in both cases; only the prediction map
+differs. That is not a coincidence — both are generalised linear models with canonical link, and the
+identity $\nabla\mathcal{L} = X^\top(\mu - y)$ holds for the whole exponential family. It is also why
+the same code, with a different activation, trains both.
+</Note>
+
+<Theorem id="logistic-convex" title="Convexity">
+$\mathcal{L}$ is convex. It is strictly convex if and only if $\rank X = p$ and no $p_i\in\{0,1\}$;
+under those conditions the Hessian is positive definite.
+</Theorem>
+
+<Proof>
+For any $v$, $v^\top\nabla^2\mathcal{L}v = \sum_ip_i(1-p_i)\ip{v}{x_i}^2 \ge 0$ because
+$p_i\in(0,1)$ makes each weight positive. So $\nabla^2\mathcal{L}\succeq0$ and $\mathcal{L}$ is convex
+by the <TopicRef id="optimization/convex-sets-and-functions">second-order characterisation</TopicRef>.
+
+The form vanishes iff $\ip{v}{x_i}=0$ for every $i$ with $p_i(1-p_i)>0$. If $\rank X = p$ and all
+weights are positive, that forces $v=0$, so $\nabla^2\mathcal{L}\succ0$ and $\mathcal{L}$ is strictly
+convex. Conversely if $\rank X<p$ there is $v\ne0$ in the null space of $X$, along which
+$\mathcal{L}$ is constant.
+</Proof>
+
+<Algorithm title="IRLS / Newton's method for logistic regression">
+<ol>
+<li><strong>Initialise</strong> $w_0 = 0$, so $p_i = 1/2$ and $S = \tfrac14 I$.</li>
+<li><strong>Repeat:</strong> compute $p_i = \sigma(\ip{w_t}{x_i})$ and $S = \diag(p_i(1-p_i))$.</li>
+<li>  Solve the weighted least-squares system $(X^\top SX)\,\delta = X^\top(y-p)$.</li>
+<li>  Update $w_{t+1} = w_t + \delta$ (optionally with a line search for robustness).</li>
+<li><strong>Until</strong> $\norm{X^\top(y-p)}_\infty$ is below tolerance.</li>
+</ol>
+</Algorithm>
+
+Because $\nabla^2\mathcal{L}$ is a weighted Gram matrix, each Newton step *is* a weighted least-squares
+solve — hence the name iteratively reweighted least squares. By the
+<TopicRef id="advanced-optimization/second-order-methods">local quadratic convergence</TopicRef>
+theorem, this converges in a handful of iterations when a maximiser exists.
+
+## Separability
+
+<Proposition id="separable-divergence" title="The MLE does not exist under separability">
+Suppose there is $w_0$ with $\ip{w_0}{x_i}>0$ whenever $y_i=1$ and $\ip{w_0}{x_i}<0$ whenever
+$y_i=0$. Then $\mathcal{L}(cw_0)\to0$ strictly decreasing as $c\to\infty$, so
+$\inf_w\mathcal{L}(w)=0$ is not attained and $\norm{w}_2\to\infty$ along any minimising sequence.
+</Proposition>
+
+<Proof>
+Write $s_i = (2y_i-1)\ip{w_0}{x_i} > 0$ by the separability hypothesis. Then
+$$
+\mathcal{L}(cw_0) = \sum_i\log\big(1+e^{-c s_i}\big),
+$$
+using $\log(1+e^{z})-y z = \log(1+e^{-(2y-1)z})$ for $y\in\{0,1\}$. Each summand is strictly
+decreasing in $c$ and tends to $\log 1 = 0$. So the infimum is $0$; it is not attained because
+$\mathcal{L}(w)>0$ for every finite $w$ (each $\log(1+e^{-s})>0$).
+</Proof>
+
+<KeyIdea>
+Unregularised logistic regression on separable data diverges. The standard fixes are ridge
+regularisation, which makes the objective coercive and restores a unique minimiser, or early stopping.
+But the direction of divergence is not arbitrary: Soudry et al. prove that
+$w_t/\norm{w_t}_2$ converges to the **maximum-margin** direction — the
+<TopicRef id="machine-learning/support-vector-machines">hard-margin SVM</TopicRef> solution. So
+gradient descent on the logistic loss implicitly performs margin maximisation. This is the cleanest
+rigorous instance of the *implicit bias* phenomenon discussed on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page, and it is
+worth knowing that the result is a genuine theorem in this setting, unlike its deep-network analogues.
+</KeyIdea>
+
+<Proposition id="logistic-calibration" title="The score equations enforce calibration">
+At any stationary point, $X^\top p = X^\top y$. In particular, if the design includes an intercept
+column of ones, $\sum_ip_i = \sum_iy_i$: the predicted number of positives equals the observed number.
+</Proposition>
+
+<Proof>
+Setting $\nabla\mathcal{L} = X^\top(p-y)$ to zero gives $X^\top p = X^\top y$. Reading off the
+coordinate corresponding to the all-ones column gives the second statement.
+</Proof>
+
+This is a real but limited form of calibration: it holds **in-sample** and only along the $p$ feature
+directions. It says nothing about out-of-sample calibration, and nothing about calibration within
+subgroups not expressible as feature directions — which is why post-hoc calibration methods
+(temperature scaling, isotonic regression) exist.
+
+## Problems
+
+<ProblemRef id="lg-convexity" />
+<ProblemRef id="lg-separable-divergence" />
+<ProblemRef id="lg-irls-step" />
+<ProblemRef id="lg-calibration" />

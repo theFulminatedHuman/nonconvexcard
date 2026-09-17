@@ -1,0 +1,181 @@
+---
+title: Analysis Prerequisites
+summary: Suprema, limits, Lipschitz continuity, compactness and the two or three analysis facts that the probability and optimisation proofs quietly rely on.
+field: foundations
+level: 0
+order: 30
+tags: [analysis, lipschitz, compactness, supremum, convergence]
+estimated_time: 1h
+claims:
+  - id: jensen
+    kind: theorem
+    title: Jensen's inequality
+    summary: A convex function of an average is at most the average of the function.
+    proved: true
+    tags: [convexity, expectation]
+  - id: holder
+    kind: theorem
+    title: Hölder's inequality
+    summary: The expectation of a product is bounded by the product of conjugate Lp norms.
+    proved: false
+    tags: [inequality, lp]
+  - id: fatou-mct
+    kind: theorem
+    title: Monotone and dominated convergence
+    summary: Conditions under which a limit may be exchanged with an integral.
+    proved: false
+    tags: [measure theory, limits]
+  - id: extreme-value
+    kind: theorem
+    title: Extreme value theorem
+    summary: A continuous function on a compact set attains its supremum.
+    proved: false
+    tags: [compactness, existence]
+references:
+  - key: rudin-pma-2
+    title: Principles of Mathematical Analysis
+    authors: Walter Rudin
+    year: 1976
+    kind: book
+  - key: durrett
+    title: 'Probability: Theory and Examples'
+    authors: Rick Durrett
+    year: 2019
+    kind: book
+    url: https://services.math.duke.edu/~rtd/PTE/pte.html
+    note: Chapter 1 for the measure-theoretic facts quoted here without proof.
+---
+
+This page is a short reference, not a course. It states the analysis facts that later proofs use
+without comment, so that a reader who wants to check a step has somewhere to look. Where a result is
+standard and long, it is stated with a citation rather than proved — and marked as such.
+
+## Suprema and infima
+
+<Definition id="sup-def" title="Supremum">
+For $S \subseteq \R$ non-empty and bounded above, $\sup S$ is the least upper bound: $\sup S \ge s$
+for all $s \in S$, and no smaller number has that property. It need not belong to $S$. By convention
+$\sup \emptyset = -\infty$ and $\sup S = +\infty$ when $S$ is unbounded above.
+</Definition>
+
+Two facts are used repeatedly in learning theory, where the object of interest is
+$\sup_{f \in \Fcal} \big(R(f) - \hat R_n(f)\big)$ over a function class $\Fcal$:
+
+$$
+\sup_{x}\big(g(x) + h(x)\big) \le \sup_x g(x) + \sup_x h(x), \qquad
+\Big|\sup_x g(x) - \sup_x h(x)\Big| \le \sup_x |g(x) - h(x)| .
+$$
+
+The first is subadditivity; the second says the supremum is a $1$-Lipschitz functional in the uniform
+norm, and it is what makes the bounded-differences argument behind
+<TopicRef id="high-dimensional-probability/concentration-inequalities">McDiarmid's inequality</TopicRef>
+apply to suprema at all.
+
+## Continuity and Lipschitz continuity
+
+<Definition id="lipschitz" title="Lipschitz continuity">
+$f : \Xcal \to \R$ on a metric space $(\Xcal, \rho)$ is **$K$-Lipschitz** if
+$|f(x) - f(y)| \le K\rho(x,y)$ for all $x,y$. The smallest such $K$ is $\norm{f}_{\mathrm{Lip}}$.
+</Definition>
+
+Lipschitz continuity is the regularity assumption of choice in high-dimensional probability, for a
+specific reason: it is exactly what is needed for a function of many independent inputs to
+concentrate, and the resulting bounds do not degrade with dimension. Compare:
+
+- $f(x) = \max_i x_i$ is $1$-Lipschitz in $\norm{\cdot}_2$ on $\R^d$ — uniformly in $d$.
+- $f(x) = \sum_i x_i$ is $\sqrt d$-Lipschitz.
+- $f(x) = \norm{x}_2$ is $1$-Lipschitz, by the triangle inequality.
+
+For differentiable $f$, $\norm{f}_{\mathrm{Lip}} = \sup_x \norm{\nabla f(x)}_2$, which is the bridge
+between the analytic condition and the calculus.
+
+<Note title="Lipschitz in which metric?">
+The constant depends on the metric, and sloppiness here produces wrong dimension dependence. A
+function that is $1$-Lipschitz in $\norm{\cdot}_\infty$ can be $\sqrt d$-Lipschitz in
+$\norm{\cdot}_2$. Every Lipschitz assumption on this site names its norm.
+</Note>
+
+## Convexity inequalities
+
+<Theorem id="jensen" title="Jensen's inequality">
+Let $\varphi : \R \to \R$ be convex and $X$ an integrable random variable with
+$\E|\varphi(X)| < \infty$. Then
+$$
+\varphi(\E X) \le \E[\varphi(X)] .
+$$
+If $\varphi$ is strictly convex, equality holds if and only if $X$ is almost surely constant.
+</Theorem>
+
+<Proof>
+Let $m = \E X$. Convexity gives a supporting line at $m$: there is $c \in \R$ (any subgradient of
+$\varphi$ at $m$) with
+$$
+\varphi(t) \ge \varphi(m) + c(t - m) \quad \text{for all } t \in \R .
+$$
+Substitute $t = X$ and take expectations. The linear term has expectation
+$c(\E X - m) = 0$, leaving $\E[\varphi(X)] \ge \varphi(m)$.
+
+For the equality case with $\varphi$ strictly convex, the supporting line touches $\varphi$ only at
+$m$, so $\varphi(X) - \varphi(m) - c(X-m)$ is a non-negative random variable that is strictly
+positive whenever $X \ne m$. Its expectation is zero exactly when $X = m$ almost surely.
+</Proof>
+
+<KeyIdea>
+The supporting-line trick — replace a convex function by a linear lower bound, then take
+expectations — is one of the two or three most reused moves in this laboratory. It proves Jensen
+here, it proves the variational characterisation of the KL divergence, and it is the first step of
+the Chernoff method.
+</KeyIdea>
+
+<Theorem id="holder" title="Hölder's inequality">
+For $p, q \in [1,\infty]$ with $1/p + 1/q = 1$,
+$$
+\E|XY| \le \norm{X}_{L^p}\,\norm{Y}_{L^q}, \qquad \norm{X}_{L^p} = \big(\E|X|^p\big)^{1/p} .
+$$
+The case $p = q = 2$ is Cauchy–Schwarz.
+</Theorem>
+
+Hölder is quoted, not proved here; see the references. The consequence used most often is the
+monotonicity of $L^p$ norms, $\norm{X}_{L^p} \le \norm{X}_{L^q}$ for $p \le q$, which is why
+convergence in $L^2$ implies convergence in $L^1$ but not conversely.
+
+## Limits and integrals
+
+<Theorem id="fatou-mct" title="Monotone and dominated convergence">
+Let $X_n \to X$ pointwise almost surely.
+
+- **Monotone convergence.** If $0 \le X_1 \le X_2 \le \cdots$ then $\E X_n \to \E X$ (both sides possibly $+\infty$).
+- **Dominated convergence.** If $|X_n| \le Y$ for all $n$ with $\E Y < \infty$, then $\E X_n \to \E X$.
+- **Fatou.** If $X_n \ge 0$ then $\E[\liminf_n X_n] \le \liminf_n \E X_n$.
+</Theorem>
+
+These are quoted from measure theory. They appear whenever a proof differentiates under an
+expectation — for instance when showing that a moment generating function is smooth inside its
+domain, a step used silently in the
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">sub-Gaussian</TopicRef>
+computations.
+
+<Warning title="Common mistake">
+Exchanging a limit and an expectation without checking a hypothesis is the single most common gap in
+otherwise correct probability arguments. $X_n = n\one\{U < 1/n\}$ with $U$ uniform on $[0,1]$ satisfies
+$X_n \to 0$ almost surely while $\E X_n = 1$ for every $n$: pointwise convergence alone gives nothing.
+</Warning>
+
+## Compactness and existence of minimisers
+
+<Theorem id="extreme-value" title="Extreme value theorem">
+A continuous real-valued function on a compact subset of $\R^d$ attains its supremum and infimum.
+</Theorem>
+
+In $\R^d$, compact means closed and bounded (Heine–Borel). This theorem is what the proof of the
+<TopicRef id="foundations/linear-algebra">spectral theorem</TopicRef> uses to produce the top
+eigenvector, and it is the reason optimisation theory cares about **coercivity**: if
+$f(x) \to \infty$ as $\norm{x} \to \infty$, then the sublevel set $\{f \le f(x_0)\}$ is bounded,
+closed by continuity, hence compact, so a minimiser exists. Without coercivity a continuous convex
+function need not have a minimiser at all — $f(x) = e^{x}$ on $\R$ is the one-line counterexample.
+
+## Problems
+
+<ProblemRef id="an-jensen-equality" />
+<ProblemRef id="an-lipschitz-norms" />
+<ProblemRef id="an-sup-lipschitz" />

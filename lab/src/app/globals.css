@@ -1,0 +1,444 @@
+@import 'tailwindcss';
+@import 'katex/dist/katex.min.css';
+
+/*
+ * Theme is driven by `data-theme` on <html>, set before first paint by the
+ * inline script in `layout.tsx`, so there is no flash of the wrong theme.
+ * `data-theme="system"` is absent from the DOM: the script resolves it.
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, ui-serif, serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Surfaces */
+  --color-canvas: #fcfcfb;
+  --color-surface: #ffffff;
+  --color-elevated: #f6f6f4;
+  --color-sunken: #f1f1ee;
+  --color-line: #e3e2dd;
+  --color-line-strong: #cfcdc6;
+
+  /* Text */
+  --color-ink: #17181a;
+  --color-ink-soft: #4a4d52;
+  --color-ink-faint: #767a80;
+
+  /* Accent — a single restrained hue, used for interaction only. */
+  --color-accent: #2f5fd0;
+  --color-accent-soft: #e8eefb;
+  --color-accent-ink: #1e3f8f;
+
+  /* Claim palette. Each epistemic status gets its own stable hue so that a
+     reader can tell a theorem from an empirical observation at a glance. */
+  --color-claim-definition: #5b6472;
+  --color-claim-theorem: #2f5fd0;
+  --color-claim-lemma: #0f766e;
+  --color-claim-proposition: #6d28d9;
+  --color-claim-corollary: #1d4ed8;
+  --color-claim-heuristic: #b45309;
+  --color-claim-empirical: #0e7490;
+  --color-claim-conjecture: #c2410c;
+  --color-claim-open-problem: #be123c;
+
+  /* Difficulty scale — monotone in difficulty, colour-blind safe ordering. */
+  --color-diff-foundation: #4b8f6b;
+  --color-diff-beginner: #3f7f4f;
+  --color-diff-intermediate: #b07d18;
+  --color-diff-advanced: #c05621;
+  --color-diff-graduate: #a13b6b;
+  --color-diff-research: #7c3aed;
+  --color-diff-olympiad: #b91c1c;
+
+  /* Data-visualisation series. Chosen for legibility in both themes. */
+  --color-series-1: #2f5fd0;
+  --color-series-2: #c2410c;
+  --color-series-3: #0f766e;
+  --color-series-4: #6d28d9;
+  --color-series-5: #b45309;
+  --color-series-6: #be123c;
+
+  /* Contribution heatmap, light theme. */
+  --color-heat-0: #ececeb;
+  --color-heat-1: #cfe0d0;
+  --color-heat-2: #9cc6a2;
+  --color-heat-3: #5fa372;
+  --color-heat-4: #2f7a4f;
+
+  --radius-card: 0.5rem;
+}
+
+[data-theme='dark'] {
+  --color-canvas: #0c0e12;
+  --color-surface: #12151b;
+  --color-elevated: #171b22;
+  --color-sunken: #0f1216;
+  --color-line: #232832;
+  --color-line-strong: #333a47;
+
+  --color-ink: #e7e9ec;
+  --color-ink-soft: #a7aeba;
+  --color-ink-faint: #767f8d;
+
+  --color-accent: #7ea2ff;
+  --color-accent-soft: #18233c;
+  --color-accent-ink: #a9c1ff;
+
+  --color-claim-definition: #9aa4b4;
+  --color-claim-theorem: #7ea2ff;
+  --color-claim-lemma: #4bbfae;
+  --color-claim-proposition: #b191f5;
+  --color-claim-corollary: #86a8ff;
+  --color-claim-heuristic: #e0b04a;
+  --color-claim-empirical: #56b8cd;
+  --color-claim-conjecture: #f0895a;
+  --color-claim-open-problem: #f27a90;
+
+  --color-diff-foundation: #6cc596;
+  --color-diff-beginner: #62b877;
+  --color-diff-intermediate: #d9ab4a;
+  --color-diff-advanced: #ef9158;
+  --color-diff-graduate: #e075a8;
+  --color-diff-research: #a98bf7;
+  --color-diff-olympiad: #f0666a;
+
+  --color-series-1: #7ea2ff;
+  --color-series-2: #f0895a;
+  --color-series-3: #4bbfae;
+  --color-series-4: #b191f5;
+  --color-series-5: #e0b04a;
+  --color-series-6: #f27a90;
+
+  --color-heat-0: #1a1e26;
+  --color-heat-1: #1d3f31;
+  --color-heat-2: #2a6b46;
+  --color-heat-3: #3f9c62;
+  --color-heat-4: #5fcf85;
+}
+
+:root {
+  color-scheme: light;
+}
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* --------------------------------------------------------------- KaTeX --- */
+
+.katex {
+  font-size: 1.05em;
+}
+
+/* Long display equations scroll rather than overflowing the column. */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.35rem 0;
+  margin: 1.15rem 0;
+}
+
+.katex-display > .katex {
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- prose --- */
+
+.prose-lab {
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  color: var(--color-ink);
+}
+
+.prose-lab > * + * {
+  margin-top: 1.05rem;
+}
+
+.prose-lab h2,
+.prose-lab h3,
+.prose-lab h4 {
+  font-family: var(--font-sans);
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  color: var(--color-ink);
+  scroll-margin-top: 5.5rem;
+}
+
+.prose-lab h2 {
+  font-size: 1.4rem;
+  margin-top: 2.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.prose-lab h3 {
+  font-size: 1.15rem;
+  margin-top: 2rem;
+}
+
+.prose-lab h4 {
+  font-size: 1rem;
+  margin-top: 1.5rem;
+  color: var(--color-ink-soft);
+}
+
+.prose-lab a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+.prose-lab a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.prose-lab strong {
+  font-weight: 650;
+}
+
+.prose-lab ul,
+.prose-lab ol {
+  padding-left: 1.4rem;
+}
+
+.prose-lab ul {
+  list-style: disc;
+}
+
+.prose-lab ol {
+  list-style: decimal;
+}
+
+.prose-lab li + li {
+  margin-top: 0.4rem;
+}
+
+.prose-lab li::marker {
+  color: var(--color-ink-faint);
+}
+
+.prose-lab blockquote {
+  border-left: 3px solid var(--color-line-strong);
+  padding-left: 1rem;
+  color: var(--color-ink-soft);
+  font-style: italic;
+}
+
+.prose-lab code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.prose-lab pre {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+}
+
+.prose-lab pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.prose-lab hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 2rem 0;
+}
+
+.prose-lab table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose-lab th,
+.prose-lab td {
+  border: 1px solid var(--color-line);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose-lab th {
+  background: var(--color-elevated);
+  font-weight: 600;
+}
+
+/* Tighter prose inside cards (theorem bodies, problem statements, hints). */
+.prose-tight {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.prose-tight > * + * {
+  margin-top: 0.75rem;
+}
+
+.prose-tight ul {
+  list-style: disc;
+  padding-left: 1.3rem;
+}
+
+.prose-tight ol {
+  list-style: decimal;
+  padding-left: 1.3rem;
+}
+
+.prose-tight code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-sunken);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+
+.prose-tight pre {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+
+.prose-tight pre code {
+  background: none;
+  padding: 0;
+}
+
+.prose-tight a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-tight table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.86rem;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose-tight th,
+.prose-tight td {
+  border: 1px solid var(--color-line);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose-tight th {
+  background: var(--color-elevated);
+  font-weight: 600;
+}
+
+.prose-tight blockquote {
+  border-left: 3px solid var(--color-line-strong);
+  padding-left: 0.9rem;
+  color: var(--color-ink-soft);
+}
+
+.prose-tight hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 1.25rem 0;
+}
+
+.prose-tight h3,
+.prose-tight h4 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-top: 1.25rem;
+}
+
+/* ------------------------------------------------------------ utilities --- */
+
+.hairline {
+  border: 1px solid var(--color-line);
+}
+
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Subtle graph-paper field used behind the hero. Static, not animated. */
+.grid-field {
+  background-image:
+    linear-gradient(to right, var(--color-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 20%, transparent 78%);
+}

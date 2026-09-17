@@ -1,0 +1,299 @@
+---
+title: Convex Sets, Convex Functions, Smoothness and Strong Convexity
+summary: The four properties that every convergence theorem quantifies over, with the equivalences and the counterexamples that show they are genuinely different.
+field: optimization
+level: 1
+order: 10
+prerequisites: [foundations/matrix-calculus]
+tags: [convexity, strong convexity, smoothness, lipschitz, stationary point, coercivity]
+estimated_time: 3h
+claims:
+  - id: first-order-convexity
+    kind: theorem
+    title: First-order characterisation of convexity
+    summary: A differentiable function is convex exactly when it lies above all of its tangent planes.
+    proved: true
+    tags: [convexity, tangent, characterisation]
+  - id: second-order-convexity
+    kind: theorem
+    title: Second-order characterisation of convexity
+    summary: A twice-differentiable function is convex exactly when its Hessian is positive semidefinite everywhere.
+    proved: true
+    tags: [hessian, convexity]
+  - id: strong-convexity-props
+    kind: proposition
+    title: Consequences of strong convexity
+    summary: Strong convexity gives a unique minimiser, a quadratic growth lower bound and the Polyak–Lojasiewicz inequality.
+    proved: true
+    tags: [strong convexity, uniqueness, pl inequality]
+  - id: smooth-strongly-convex-sandwich
+    kind: proposition
+    title: The sandwich between smoothness and strong convexity
+    summary: An L-smooth and mu-strongly convex function is trapped between two quadratics, and the ratio L/mu is the condition number.
+    proved: true
+    tags: [condition number, sandwich]
+  - id: stationary-classification
+    kind: proposition
+    title: Stationary points of convex functions are global minimisers
+    summary: For convex functions the first-order condition is sufficient, not merely necessary.
+    proved: true
+    tags: [stationary point, global minimum]
+  - id: independence-of-properties
+    kind: proposition
+    title: The four properties are logically independent
+    summary: Explicit functions separating convexity, strong convexity, smoothness and Lipschitz continuity.
+    proved: true
+    tags: [counterexamples]
+references:
+  - key: boyd-vandenberghe-2
+    title: Convex Optimization
+    authors: Stephen Boyd and Lieven Vandenberghe
+    year: 2004
+    kind: book
+    url: https://web.stanford.edu/~boyd/cvxbook/
+    note: Chapters 2–3 are the standard reference for the material of this page.
+  - key: nesterov-lectures
+    title: 'Lectures on Convex Optimization'
+    authors: Yurii Nesterov
+    year: 2018
+    kind: book
+    note: The source of the modern complexity-theoretic framing used throughout the optimisation section.
+  - key: bubeck-survey
+    title: 'Convex Optimization: Algorithms and Complexity'
+    authors: Sébastien Bubeck
+    year: 2015
+    kind: survey
+    url: https://arxiv.org/abs/1405.4980
+---
+
+Every convergence theorem in the optimisation section has the shape: *under assumptions A, B, C,
+algorithm X satisfies rate R*. This page defines A, B and C precisely, proves the equivalences that
+let one be swapped for another, and gives the counterexamples that show none of them implies the
+others.
+
+## Convex sets and functions
+
+<Definition id="convex-set" title="Convex set">
+$\mathcal{C}\subseteq\R^d$ is **convex** if $\theta x + (1-\theta)y \in \mathcal{C}$ for all
+$x,y\in\mathcal{C}$ and $\theta\in[0,1]$.
+</Definition>
+
+<Definition id="convex-function" title="Convex function">
+$f:\mathcal{C}\to\R$ on a convex domain is **convex** if for all $x,y\in\mathcal{C}$,
+$\theta\in[0,1]$,
+$$
+f\big(\theta x + (1-\theta)y\big) \le \theta f(x) + (1-\theta)f(y),
+$$
+**strictly convex** if the inequality is strict for $x \ne y$ and $\theta\in(0,1)$, and
+**$\mu$-strongly convex** ($\mu>0$) if $x \mapsto f(x) - \tfrac\mu2\norm{x}_2^2$ is convex.
+</Definition>
+
+<Theorem id="first-order-convexity" title="First-order characterisation">
+Let $f$ be differentiable on an open convex set. Then $f$ is convex if and only if
+$$
+f(y) \ge f(x) + \ip{\nabla f(x)}{y-x} \qquad\text{for all } x,y,
+$$
+and $\mu$-strongly convex if and only if
+$$
+f(y) \ge f(x) + \ip{\nabla f(x)}{y-x} + \frac\mu2\norm{y-x}_2^2 \qquad\text{for all }x,y .
+$$
+</Theorem>
+
+<Proof>
+($\Rightarrow$) Assume convexity. For $\theta\in(0,1]$, rearranging the definition with
+$z = x + \theta(y-x)$ gives
+$$
+\frac{f(x+\theta(y-x)) - f(x)}{\theta} \le f(y) - f(x).
+$$
+Letting $\theta\downarrow0$, the left side tends to the directional derivative
+$\ip{\nabla f(x)}{y-x}$, giving the inequality.
+
+($\Leftarrow$) Assume the tangent-plane inequality. Fix $x,y$ and $\theta\in[0,1]$ and let
+$z = \theta x + (1-\theta)y$. Applying the inequality at $z$ twice,
+$$
+f(x) \ge f(z) + \ip{\nabla f(z)}{x - z}, \qquad f(y) \ge f(z) + \ip{\nabla f(z)}{y-z}.
+$$
+Multiply the first by $\theta$, the second by $1-\theta$, and add. The gradient terms combine to
+$\ip{\nabla f(z)}{\theta x + (1-\theta)y - z} = 0$ by the definition of $z$, leaving
+$\theta f(x) + (1-\theta)f(y) \ge f(z)$.
+
+The strongly convex case follows by applying the convex case to
+$g(x) = f(x) - \tfrac\mu2\norm{x}_2^2$, whose gradient is $\nabla f(x) - \mu x$: the tangent-plane
+inequality for $g$ rearranges exactly into the stated inequality for $f$, using
+$\tfrac12\norm{y}^2 - \tfrac12\norm{x}^2 - \ip{x}{y-x} = \tfrac12\norm{y-x}^2$.
+</Proof>
+
+<KeyIdea>
+"A convex function lies above its tangent planes" is the single most useful form of convexity in
+proofs. It converts a *global* comparison between two points into a statement involving only the
+gradient at one of them, which is exactly what an algorithm has access to. Almost every proof in the
+optimisation section applies this inequality at $x = x_t$ and $y = x^\star$.
+</KeyIdea>
+
+<Theorem id="second-order-convexity" title="Second-order characterisation">
+Let $f$ be twice continuously differentiable on an open convex set. Then
+
+- $f$ is convex $\iff \nabla^2f(x)\succeq0$ for all $x$;
+- $f$ is $\mu$-strongly convex $\iff \nabla^2f(x)\succeq\mu I$ for all $x$;
+- $f$ is $L$-smooth $\iff -LI \preceq \nabla^2f(x)\preceq LI$ for all $x$; if $f$ is also convex this reads $\nabla^2 f(x) \preceq LI$.
+</Theorem>
+
+<Proof>
+Restrict to a line: fix $x$ and a direction $v$ and let $\phi(t) = f(x+tv)$, so
+$\phi''(t) = v^\top\nabla^2f(x+tv)v$. A one-dimensional twice-differentiable function is convex iff
+$\phi''\ge0$, which is elementary. Since $f$ is convex iff its restriction to every line is convex,
+and $v^\top\nabla^2f(z)v\ge0$ for all $v$ is the definition of $\nabla^2f(z)\succeq0$, the first
+equivalence follows. For strong convexity apply the same argument to
+$f - \tfrac\mu2\norm{\cdot}_2^2$, whose Hessian is $\nabla^2f - \mu I$. For smoothness, $L$-Lipschitz
+gradient is equivalent to $\norm{\nabla^2f(x)}\le L$ by the mean value theorem in one direction and
+the fundamental theorem of calculus in the other, and $\norm{M}\le L$ for symmetric $M$ is exactly
+$-LI\preceq M\preceq LI$ by the
+<TopicRef id="foundations/linear-algebra">Rayleigh quotient</TopicRef>.
+</Proof>
+
+## Strong convexity and its consequences
+
+<Proposition id="strong-convexity-props" title="Consequences of strong convexity">
+Let $f$ be differentiable and $\mu$-strongly convex, with minimiser set $\argmin f$. Then
+
+1. $f$ has a **unique** minimiser $x^\star$;
+2. **quadratic growth**: $f(x) - f(x^\star) \ge \tfrac\mu2\norm{x-x^\star}_2^2$;
+3. **Polyak–Łojasiewicz (PL) inequality**: $\norm{\nabla f(x)}_2^2 \ge 2\mu\big(f(x)-f(x^\star)\big)$;
+4. **coercivity**: $f(x)\to\infty$ as $\norm{x}_2\to\infty$.
+</Proposition>
+
+<Proof>
+(2) Apply the first-order characterisation at $x^\star$, where $\nabla f(x^\star)=0$:
+$f(x)\ge f(x^\star) + 0 + \tfrac\mu2\norm{x-x^\star}_2^2$.
+
+(1) Existence: by (4) the sublevel set $\{f\le f(x_0)\}$ is bounded, and it is closed by continuity,
+hence compact, so $f$ attains its minimum there by the
+<TopicRef id="foundations/analysis-prerequisites">extreme value theorem</TopicRef>. Uniqueness: if
+$x_1^\star \ne x_2^\star$ were both minimisers, (2) applied at $x_1^\star$ with $x^\star = x_2^\star$
+gives $0 \ge \tfrac\mu2\norm{x_1^\star - x_2^\star}_2^2 > 0$, a contradiction.
+
+(3) Minimise both sides of the strong convexity inequality
+$f(y)\ge f(x) + \ip{\nabla f(x)}{y-x} + \tfrac\mu2\norm{y-x}_2^2$ over $y$. The left side has minimum
+$f(x^\star)$. The right side is a quadratic in $y$, minimised at
+$y = x - \nabla f(x)/\mu$ with value $f(x) - \norm{\nabla f(x)}_2^2/(2\mu)$. Therefore
+$$
+f(x^\star) \ge f(x) - \frac{\norm{\nabla f(x)}_2^2}{2\mu},
+$$
+which rearranges to the PL inequality.
+
+(4) Apply (2) — or directly, from the definition,
+$f(x) \ge f(x_0) + \ip{\nabla f(x_0)}{x-x_0} + \tfrac\mu2\norm{x-x_0}_2^2$, and the quadratic term
+dominates the linear one as $\norm{x}\to\infty$.
+</Proof>
+
+<KeyIdea>
+The PL inequality is the property that actually drives linear convergence, and it is *weaker* than
+strong convexity — there are non-convex functions satisfying it. Every proof on this site that
+obtains a geometric rate uses PL, not strong convexity directly, which is why some of those proofs
+extend to non-convex settings. This is the technical content behind the over-parameterised
+convergence results on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page.
+</KeyIdea>
+
+<Proposition id="smooth-strongly-convex-sandwich" title="The sandwich">
+If $f$ is $L$-smooth and $\mu$-strongly convex then for all $x,y$,
+$$
+f(x) + \ip{\nabla f(x)}{y-x} + \frac\mu2\norm{y-x}_2^2
+\;\le\; f(y) \;\le\;
+f(x) + \ip{\nabla f(x)}{y-x} + \frac L2\norm{y-x}_2^2 ,
+$$
+and necessarily $\mu\le L$. The ratio $\kappa = L/\mu \ge 1$ is the **condition number** of $f$.
+</Proposition>
+
+<Proof>
+The lower bound is the first-order characterisation of strong convexity; the upper bound is the
+<TopicRef id="foundations/matrix-calculus">descent lemma</TopicRef>. Taking $y = x + tv$ for a unit
+$v$ and letting $t\to0$ after dividing by $t^2/2$ gives $\mu \le v^\top\nabla^2f(x)v\le L$ in the
+twice-differentiable case, hence $\mu\le L$; in general compare the two inequalities at any
+$y \ne x$.
+</Proof>
+
+<Note title="Why the condition number is the complexity parameter">
+The sandwich says $f$ is trapped between two quadratics whose curvatures differ by a factor $\kappa$.
+A gradient step is exactly the minimisation of the *upper* quadratic, so it makes progress calibrated
+to $L$; the distance to the optimum is governed by the *lower* quadratic, calibrated to $\mu$. The
+mismatch is $\kappa$, and it appears in the rate of
+<TopicRef id="optimization/gradient-descent-convergence">gradient descent</TopicRef> as
+$(1-1/\kappa)^t$ and — after acceleration — as $(1-1/\sqrt\kappa)^t$.
+</Note>
+
+## Stationary points
+
+<Definition id="stationary" title="Stationary point">
+$x$ is a **stationary point** of a differentiable $f$ if $\nabla f(x)=0$. It is an
+**$\eps$-stationary point** if $\norm{\nabla f(x)}_2\le\eps$.
+</Definition>
+
+<Proposition id="stationary-classification" title="Stationary points of convex functions are global minimisers">
+If $f$ is convex and differentiable and $\nabla f(x^\star)=0$, then $x^\star\in\argmin f$. For
+non-convex $f$, a stationary point may be a local minimum, a local maximum, or a saddle point, and
+second-order information does not always decide which.
+</Proposition>
+
+<Proof>
+By the first-order characterisation, $f(y)\ge f(x^\star) + \ip{0}{y - x^\star} = f(x^\star)$ for all
+$y$.
+
+For the non-convex statement, three examples in one dimension: $x^2$ (minimum), $-x^2$ (maximum),
+$x^3$ (neither — an inflection with $f''(0)=0$). In two dimensions $f(x,y) = x^2 - y^2$ has a saddle
+at the origin with $\nabla^2f$ indefinite; $f(x,y) = x^2 + y^4$ has a minimum with $\nabla^2 f$ only
+semidefinite. So a semidefinite Hessian at a stationary point is consistent with both a minimum and
+a saddle, and the second-order test is inconclusive there.
+</Proof>
+
+This is why every non-convex convergence result in this laboratory states its conclusion as
+"converges to an $\eps$-stationary point" and not "converges to a minimum". The gap between the two
+statements is not a technical nicety; it is where essentially all of the difficulty of non-convex
+optimisation lives.
+
+## The four properties are independent
+
+<Proposition id="independence-of-properties" title="Logical independence">
+The following functions on $\R$ separate the properties:
+
+| Function | Convex | Strongly convex | $L$-smooth | Lipschitz |
+| --- | --- | --- | --- | --- |
+| $x^2$ | yes | yes ($\mu=2$) | yes ($L=2$) | no |
+| $x^4$ | yes | no | no | no |
+| $\abs{x}$ | yes | no | no | yes ($K=1$) |
+| $\sqrt{1+x^2}$ | yes | no | yes ($L=1$) | yes ($K=1$) |
+| $\sin x$ | no | no | yes ($L=1$) | yes ($K=1$) |
+| $x^2 + \sin(5x)/2$ | no | no | yes | no |
+</Proposition>
+
+<Proof>
+Each entry is a direct computation.
+
+$x^4$: convex since $12x^2\ge0$; not strongly convex because $f''(0)=0$, contradicting
+$f''\ge\mu>0$; not $L$-smooth because $f''(x) = 12x^2$ is unbounded.
+
+$\abs x$: convex as a norm; not differentiable at $0$ so not smooth; $1$-Lipschitz by the triangle
+inequality; not strongly convex because it is linear on $[0,\infty)$.
+
+$\sqrt{1+x^2}$: $f'(x) = x/\sqrt{1+x^2}\in(-1,1)$ so $1$-Lipschitz; $f''(x) = (1+x^2)^{-3/2}\in(0,1]$
+so convex and $1$-smooth; $f''(x)\to0$ as $|x|\to\infty$ so not strongly convex.
+
+$x^2 + \sin(5x)/2$: $f'' = 2 - \tfrac{25}{2}\sin(5x)$ takes both signs, so not convex; $f''$ is
+bounded so $f$ is smooth; $f'$ is unbounded so $f$ is not Lipschitz.
+</Proof>
+
+<Warning title="Common mistake">
+"Strongly convex" and "smooth" are not opposites and neither implies the other. Strong convexity is a
+*lower* bound on curvature; smoothness is an *upper* bound. A function can have both (a quadratic),
+neither ($\abs x$), or exactly one ($x^4$ is convex with no lower curvature bound at the origin;
+$\sqrt{1+x^2}$ is smooth with no lower bound). Every theorem statement should be read for which of
+the two it assumes, because the achievable rates differ qualitatively.
+</Warning>
+
+## Problems
+
+<ProblemRef id="cv-first-order-equivalence" />
+<ProblemRef id="cv-pl-inequality" />
+<ProblemRef id="cv-strongly-convex-unique" />
+<ProblemRef id="cv-operator-norm-convex" />
+<ProblemRef id="cv-counterexamples" />

@@ -1,0 +1,73 @@
+---
+title: Auto-Encoding Variational Bayes
+authors: Diederik P. Kingma, Max Welling
+year: 2014
+venue: ICLR
+url: https://arxiv.org/abs/1312.6114
+arxiv: '1312.6114'
+field: deep-learning
+also: [probability]
+tags: [vae, variational inference, elbo, reparameterisation trick]
+problem: Variational inference in a model with a neural-network likelihood requires optimising a bound whose gradient with respect to the variational parameters has prohibitive variance under naive Monte Carlo.
+contribution: The reparameterisation trick, which moves the sampling outside the parameterised distribution so that the ELBO's gradient can be estimated by ordinary backpropagation with low variance.
+prerequisites:
+  - probability/expectation-and-conditioning
+  - deep-learning/approximation-and-backpropagation
+  - stochastic-optimization/sgd-convergence
+descendants: [diffusion]
+related: [gan, diffusion]
+---
+
+## What problem does this paper solve?
+
+Scalable approximate inference in latent-variable models with flexible, neural likelihoods.
+
+## What mathematical objects are introduced?
+
+The **evidence lower bound** with an amortised variational posterior $q_\phi(z\mid x)$:
+$$
+\log p_\theta(x) \ge \E_{q_\phi(z|x)}\big[\log p_\theta(x\mid z)\big] - \mathrm{KL}\big(q_\phi(z\mid x)\,\|\,p(z)\big) =: \mathcal{F}(\theta,\phi;x),
+$$
+and the reparameterisation $z = \mu_\phi(x)+\sigma_\phi(x)\odot\eps$, $\eps\sim\Ncal(0,I)$.
+
+## What assumptions are made?
+
+A differentiable, reparameterisable variational family — Gaussian in practice. Discrete latents are
+not covered, which is why they need score-function estimators or relaxations.
+
+## What equations matter?
+
+The reparameterisation is the whole idea. With $z\sim q_\phi$ directly,
+$\nabla_\phi\E_{q_\phi}[f(z)]$ requires the score-function estimator
+$\E_{q_\phi}[f(z)\nabla_\phi\log q_\phi(z)]$, whose variance is large. After reparameterisation,
+$$
+\nabla_\phi\E_{\eps}\big[f(\mu_\phi+\sigma_\phi\odot\eps)\big] = \E_\eps\big[\nabla_\phi f(\mu_\phi+\sigma_\phi\odot\eps)\big],
+$$
+an ordinary pathwise derivative — one sample often suffices. The KL term is closed-form for Gaussians.
+
+## What theorem or result is important?
+
+The ELBO's gap is exactly $\mathrm{KL}(q_\phi(z\mid x)\|p_\theta(z\mid x))$, so maximising it both
+fits the model and tightens the posterior approximation. The bound and the gap identity are the
+theorem; the same computation appears in the
+<TopicRef id="rag/retrieval-as-latent-variable-model">RAG variational bound</TopicRef>.
+
+## What proof techniques are used?
+
+Jensen's inequality for the bound; the change-of-variables identity for the estimator.
+
+## What prior mathematics is required?
+
+KL divergence, Jensen's inequality, change of variables for expectations, and Monte Carlo variance.
+
+## Limitations
+
+The Gaussian posterior is often too restrictive, producing blurry reconstructions. Posterior collapse
+— the KL term driving $q_\phi(z\mid x)$ to the prior so the latent is unused — is a standard failure.
+And the ELBO is a bound: a better ELBO does not necessarily mean a better model.
+
+## Why it mattered
+
+The reparameterisation trick is now used far beyond VAEs — in Bayesian neural networks, in
+policy-gradient variance reduction, in normalising flows and in diffusion models. It is one of the
+most broadly useful single ideas in the modern toolbox.

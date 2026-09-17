@@ -1,0 +1,77 @@
+---
+title: 'Dropout: A Simple Way to Prevent Neural Networks from Overfitting'
+authors: Nitish Srivastava, Geoffrey Hinton, Alex Krizhevsky, Ilya Sutskever, Ruslan Salakhutdinov
+year: 2014
+venue: JMLR
+url: https://jmlr.org/papers/v15/srivastava14a.html
+field: deep-learning
+also: [learning-theory]
+tags: [dropout, regularisation, ensemble, overfitting]
+problem: Large networks overfit small datasets, and training a true ensemble of many large networks is computationally infeasible.
+contribution: Randomly zeroing units during training, which acts as an implicit ensemble over exponentially many subnetworks with shared weights and is a strong regulariser at negligible cost.
+prerequisites:
+  - deep-learning/approximation-and-backpropagation
+  - learning-theory/bias-variance-and-double-descent
+  - machine-learning/linear-and-ridge-regression
+descendants: [alexnet]
+related: [batchnorm, alexnet]
+---
+
+## What problem does this paper solve?
+
+Overfitting in overparameterised networks, at a time when explicit regularisers ($L^2$, early
+stopping) were insufficient and ensembling was too expensive.
+
+## What mathematical objects are introduced?
+
+A random mask $m\sim\text{Bernoulli}(1-p)^{\dim}$ applied elementwise:
+$$
+\tilde a = \frac{1}{1-p}\,m\odot a \quad\text{(inverted dropout, so that } \E\tilde a = a).
+$$
+At test time the mask is dropped and no rescaling is needed.
+
+## What assumptions are made?
+
+That the ensemble average is well approximated by the single "mean network" obtained by using all
+units with scaled weights. This is **exact** for a linear model and only approximate once
+nonlinearities are present.
+
+## What equations matter?
+
+The exact case is instructive. For a linear model with dropout on the inputs, the expected squared
+loss is
+$$
+\E_m\big\|y - w^\top(m\odot x)/(1-p)\big\|^2
+= \norm{y - w^\top x}^2 + \frac{p}{1-p}\sum_j w_j^2 x_j^2 ,
+$$
+so dropout on a linear model is exactly a data-dependent
+<TopicRef id="machine-learning/linear-and-ridge-regression">ridge penalty</TopicRef> with
+per-feature weights $x_j^2$. This identity is the only rigorous characterisation of dropout available,
+and it does not extend to deep networks.
+
+## What theorem or result is important?
+
+No theorem for the deep case. Empirically, consistent gains across vision, speech and text
+benchmarks, with $p=0.5$ on fully-connected layers becoming the default.
+
+## What proof techniques are used?
+
+The linear-model expectation computation above; otherwise experiment.
+
+## What prior mathematics is required?
+
+Expectation of a quadratic form under a Bernoulli mask; the
+<TopicRef id="probability/expectation-and-conditioning">bias–variance</TopicRef> framing.
+
+## Limitations
+
+The ensemble interpretation is heuristic for nonlinear networks. Dropout interacts badly with
+<TopicRef id="deep-learning/convolution-recurrence-normalisation">batch normalisation</TopicRef> (the
+variance shift between train and test compounds), and it is largely absent from modern large
+transformers, where data scale makes explicit regularisation less necessary.
+
+## Why it mattered
+
+It was the default regulariser of the 2012–2018 period and remains standard in smaller models. The
+linear-model identity is also a useful reminder that a "stochastic trick" can often be resolved into
+an explicit penalty, which is the right first question to ask of any such method.

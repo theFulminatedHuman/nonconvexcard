@@ -1,0 +1,505 @@
+defaults:
+  field: stochastic-optimization
+problems:
+  - id: sgd-noise-floor
+    title: Derive the constant-step SGD noise floor
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [sgd, noise floor, constant step, recursion, flagship]
+    statement: |
+      Let $f$ be $\mu$-strongly convex and $L$-smooth, and let SGD use a constant step $\eta\le1/(2L)$
+      with an unbiased oracle of variance at most $\sigma^2$. Prove
+      $$
+      \E\|x_T-x^\star\|_2^2 \le (1-\eta\mu)^T\|x_0-x^\star\|_2^2 + \frac{\eta\sigma^2}{\mu},
+      $$
+      and interpret each term. Then determine the $\eta$ minimising the bound for a fixed budget $T$.
+    hints:
+      - Expand the squared distance, condition on the past, and use unbiasedness to replace $g_t$ by $\nabla f(x_t)$ in the cross term.
+      - Strong convexity gives $\langle\nabla f(x),x-x^\star\rangle \ge \mu\|x-x^\star\|_2^2$.
+      - You will obtain a linear recursion $e_{t+1}\le(1-\eta\mu)e_t + \eta^2\sigma^2$; solve it with the geometric series.
+    solution: |
+      **One step.** With $x_{t+1} = x_t-\eta g_t$,
+      $$
+      \|x_{t+1}-x^\star\|_2^2 = \|x_t-x^\star\|_2^2 - 2\eta\langle g_t, x_t-x^\star\rangle + \eta^2\|g_t\|_2^2 .
+      $$
+      Condition on $\mathcal F_t$. Since $x_t-x^\star$ is $\mathcal F_t$-measurable and
+      $\E[g_t\mid\mathcal F_t] = \nabla f(x_t)$,
+      $$
+      \E\big[\langle g_t,x_t-x^\star\rangle\mid\mathcal F_t\big] = \langle\nabla f(x_t),x_t-x^\star\rangle \ge \mu\|x_t-x^\star\|_2^2,
+      $$
+      the inequality from strong convexity (add the first-order inequalities at $x_t$ and $x^\star$ and
+      use $\nabla f(x^\star)=0$). For the second moment, the bias–variance split gives
+      $$
+      \E\big[\|g_t\|_2^2\mid\mathcal F_t\big] = \|\nabla f(x_t)\|_2^2 + \E\big[\|g_t-\nabla f(x_t)\|_2^2\mid\mathcal F_t\big]
+      \le L^2\|x_t-x^\star\|_2^2 + \sigma^2 ,
+      $$
+      using $L$-smoothness and $\nabla f(x^\star)=0$.
+
+      **Recursion.** Writing $e_t = \E\|x_t-x^\star\|_2^2$ and taking total expectations,
+      $$
+      e_{t+1} \le \big(1-2\eta\mu+\eta^2L^2\big)e_t + \eta^2\sigma^2 .
+      $$
+      For $\eta \le \mu/L^2$ (implied by $\eta\le1/(2L)$ after adjusting constants) the bracket is at
+      most $1-\eta\mu$, so
+      $$
+      e_{t+1}\le(1-\eta\mu)e_t + \eta^2\sigma^2 .
+      $$
+
+      **Solve.** Unrolling,
+      $$
+      e_T \le (1-\eta\mu)^Te_0 + \eta^2\sigma^2\sum_{j=0}^{T-1}(1-\eta\mu)^j
+      \le (1-\eta\mu)^Te_0 + \frac{\eta^2\sigma^2}{\eta\mu} = (1-\eta\mu)^Te_0 + \frac{\eta\sigma^2}{\mu}.
+      $$
+
+      **Interpretation.** The first term is the deterministic geometric decay — the initial condition
+      being forgotten at the gradient-descent rate. The second, $\eta\sigma^2/\mu$, is a **floor**: it
+      does not decay with $T$. Constant-step SGD converges to a ball of radius
+      $\sqrt{\eta\sigma^2/\mu}$ around $x^\star$, not to $x^\star$.
+
+      **Optimal $\eta$ for a budget $T$.** Balance the two terms. Using
+      $(1-\eta\mu)^T\le e^{-\eta\mu T}$, minimise $h(\eta) = e_0e^{-\eta\mu T}+\eta\sigma^2/\mu$:
+      $$
+      h'(\eta) = -\mu Te_0e^{-\eta\mu T} + \frac{\sigma^2}{\mu} = 0
+      \ \Longrightarrow\
+      \eta^\star = \frac{1}{\mu T}\log\frac{\mu^2Te_0}{\sigma^2},
+      $$
+      capped at $1/(2L)$. Substituting gives $e_T = \tilde O(\sigma^2/(\mu^2T))$ — the
+      $\log$ factor is the price of a constant step, and a decaying schedule removes it.
+
+  - id: sgd-convex-rate
+    title: SGD on convex Lipschitz objectives
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [sgd, convex, averaging, rate]
+    statement: |
+      Prove $\E f(\bar x_T)-f^\star\le GR/\sqrt T$ for SGD with constant step $\eta = R/(G\sqrt T)$,
+      where $R = \|x_0-x^\star\|_2$ and $\E[\|g_t\|_2^2\mid\mathcal F_t]\le G^2$. Note where the proof
+      is identical to the deterministic subgradient argument and where it differs.
+    solution: |
+      Expand as usual:
+      $$
+      \|x_{t+1}-x^\star\|_2^2 = \|x_t-x^\star\|_2^2 - 2\eta\langle g_t,x_t-x^\star\rangle + \eta^2\|g_t\|_2^2 .
+      $$
+      Take conditional expectation given $\mathcal F_t$. **This is the only place stochasticity
+      enters**: unbiasedness and the measurability of $x_t-x^\star$ give
+      $$
+      \E\big[\langle g_t,x_t-x^\star\rangle\mid\mathcal F_t\big] = \langle\nabla f(x_t),x_t-x^\star\rangle \ge f(x_t)-f^\star
+      $$
+      by convexity, and $\E[\|g_t\|_2^2\mid\mathcal F_t]\le G^2$. Taking total expectations,
+      $$
+      2\eta\,\E\big[f(x_t)-f^\star\big] \le \E\|x_t-x^\star\|_2^2 - \E\|x_{t+1}-x^\star\|_2^2 + \eta^2G^2 .
+      $$
+      Summing over $t<T$ and telescoping,
+      $$
+      2\eta\sum_{t<T}\E\big[f(x_t)-f^\star\big] \le R^2 + T\eta^2G^2 .
+      $$
+      Jensen gives $f(\bar x_T)\le\frac1T\sum_tf(x_t)$, so
+      $$
+      \E f(\bar x_T)-f^\star \le \frac{R^2}{2\eta T} + \frac{\eta G^2}{2},
+      $$
+      minimised at $\eta = R/(G\sqrt T)$ with value $GR/\sqrt T$.
+
+      **Comparison.** The argument is *identical* to the deterministic subgradient proof, with each
+      inequality replaced by its conditional expectation. The consequence is striking: in the
+      non-smooth convex regime, SGD achieves the same per-iteration guarantee as full gradient descent,
+      while each iteration is $n$ times cheaper. This is the strongest theoretical case for SGD, and
+      note that it is a statement about the *comparison*, not about SGD being fast in absolute terms —
+      $1/\sqrt T$ is slow.
+
+  - id: sgd-nonconvex-rate
+    title: The non-convex SGD rate
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [sgd, non-convex, stationarity, rate]
+    statement: |
+      Prove that for $L$-smooth $f$ bounded below, SGD with constant $\eta\le1/L$ satisfies
+      $$
+      \frac1T\sum_{t<T}\E\|\nabla f(x_t)\|_2^2 \le \frac{2(f(x_0)-f^\star)}{\eta T}+\eta L\sigma^2 ,
+      $$
+      and determine the $\eta$ and the resulting rate for a budget $T$. Compare with the deterministic
+      $O(1/T)$ rate.
+    solution: |
+      **One step.** The descent lemma applied to $x_{t+1} = x_t-\eta g_t$ gives
+      $$
+      f(x_{t+1}) \le f(x_t) - \eta\langle\nabla f(x_t),g_t\rangle + \frac{L\eta^2}{2}\|g_t\|_2^2 .
+      $$
+      Conditioning and using unbiasedness plus bounded variance,
+      $$
+      \E\big[f(x_{t+1})\mid\mathcal F_t\big] \le f(x_t) - \eta\|\nabla f(x_t)\|_2^2 + \frac{L\eta^2}{2}\big(\|\nabla f(x_t)\|_2^2+\sigma^2\big)
+      $$
+      $$
+      = f(x_t) - \eta\Big(1-\frac{L\eta}{2}\Big)\|\nabla f(x_t)\|_2^2 + \frac{L\eta^2\sigma^2}{2}.
+      $$
+      With $\eta\le1/L$ the bracket is $\ge1/2$, so
+      $$
+      \frac\eta2\E\|\nabla f(x_t)\|_2^2 \le \E f(x_t)-\E f(x_{t+1}) + \frac{L\eta^2\sigma^2}{2}.
+      $$
+
+      **Sum.** Telescoping over $t<T$ and dividing by $\eta T/2$,
+      $$
+      \frac1T\sum_{t<T}\E\|\nabla f(x_t)\|_2^2 \le \frac{2\Delta_0}{\eta T}+L\eta\sigma^2,
+      \qquad \Delta_0 = f(x_0)-f^\star .
+      $$
+
+      **Optimal step.** Balancing the two terms: $\eta = \sqrt{2\Delta_0/(L\sigma^2T)}$ (capped at
+      $1/L$), giving
+      $$
+      \frac1T\sum_t\E\|\nabla f(x_t)\|_2^2 \le 2\sqrt{\frac{2L\sigma^2\Delta_0}{T}} = O(T^{-1/2}).
+      $$
+
+      **Comparison.** Deterministic gradient descent gives $\min_{t<T}\|\nabla f(x_t)\|_2^2 = O(1/T)$.
+      Noise costs a full square root: $O(T^{-1/2})$ instead of $O(T^{-1})$, so reaching an
+      $\eps$-stationary point takes $O(\eps^{-4})$ stochastic steps against $O(\eps^{-2})$ deterministic
+      ones. The $\eps^{-4}$ is known to be optimal for this oracle model, so the loss is intrinsic and
+      not an artefact of the proof.
+
+  - id: sgd-minibatch-variance
+    title: Mini-batching and the compute budget
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [minibatch, variance, compute, scaling]
+    statement: |
+      1. Show that averaging $B$ conditionally i.i.d. unbiased gradients divides the variance by $B$.
+      2. Substituting into the non-convex rate, show that the bound depends on $B$ and $T$ only through
+         $BT$ when the step is retuned.
+      3. What does this predict about the value of increasing batch size at fixed total compute? What
+         does it fail to predict?
+    solution: |
+      **1.** $g^{(B)} = \frac1B\sum_bg^{(b)}$ is unbiased by linearity, and since the $g^{(b)}$ are
+      conditionally independent with common conditional mean $\nabla f$,
+      $$
+      \E\big\|g^{(B)}-\nabla f\big\|_2^2 = \frac{1}{B^2}\sum_{b}\E\|g^{(b)}-\nabla f\|_2^2 = \frac{\sigma^2}{B},
+      $$
+      the cross terms vanishing by conditional independence and zero conditional mean.
+
+      **2.** Substituting $\sigma^2\to\sigma^2/B$ into the optimised non-convex rate,
+      $$
+      \frac1T\sum_t\E\|\nabla f\|_2^2 \lesssim \sqrt{\frac{L\sigma^2\Delta_0}{BT}} .
+      $$
+      The total gradient-evaluation cost is $C = BT$. So the bound is $\sqrt{L\sigma^2\Delta_0/C}$ —
+      a function of the compute budget alone, independent of how it is split between batch size and
+      number of steps.
+
+      **3. Prediction.** At fixed compute, large batches buy nothing in the bound; they buy
+      **parallelism**, since the $B$ gradients can be computed simultaneously. So the theory says:
+      increase $B$ as far as your hardware parallelises, and no further.
+
+      **What it fails to predict.** Empirically there is a **critical batch size** beyond which
+      increasing $B$ stops reducing the number of steps needed — exactly the behaviour the bound
+      predicts — but its *location* varies by orders of magnitude across tasks and is not determined by
+      $\sigma^2$, $L$ and $\Delta_0$ in any way the theory identifies. The bound also assumes the step
+      size is retuned optimally, whereas in practice the linear-scaling rule ($\eta\propto B$) is used
+      and works only up to a point. And it says nothing about the observed generalisation gap between
+      small- and large-batch training, which is not an optimisation phenomenon at all.
+
+  - id: sgd-robbins-monro
+    title: Reading the Robbins–Monro conditions off the proof
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [robbins-monro, step size, schedule]
+    statement: |
+      From the recursion $e_{t+1}\le(1-\eta_t\mu)e_t+\eta_t^2\sigma^2$, explain why the conditions
+      $$
+      \sum_t\eta_t = \infty,\qquad \sum_t\eta_t^2<\infty
+      $$
+      are exactly what is needed for $e_t\to0$. Check which of $\eta_t = \eta$, $\eta_t = c/\sqrt t$,
+      $\eta_t = c/t$ satisfy them, and what each gives.
+    solution: |
+      **Unrolling the recursion.**
+      $$
+      e_T \le \underbrace{\prod_{t<T}(1-\eta_t\mu)\,e_0}_{\text{(A) initial condition}}
+      + \underbrace{\sum_{t<T}\eta_t^2\sigma^2\prod_{s>t}(1-\eta_s\mu)}_{\text{(B) accumulated noise}} .
+      $$
+
+      **(A) forgetting the start.** Using $1-u\le e^{-u}$,
+      $$
+      \prod_{t<T}(1-\eta_t\mu) \le \exp\Big(-\mu\sum_{t<T}\eta_t\Big),
+      $$
+      which tends to $0$ **iff** $\sum_t\eta_t=\infty$. This is the first Robbins–Monro condition: the
+      steps must not be summable, or the algorithm stalls before forgetting where it started.
+
+      **(B) controlling the noise.** Each noise contribution $\eta_t^2\sigma^2$ is damped by the
+      subsequent contraction, but for the total to be finite (and then to vanish as the damping acts)
+      one needs $\sum_t\eta_t^2<\infty$. Otherwise noise accumulates faster than it is forgotten.
+
+      **The three schedules.**
+
+      | $\eta_t$ | $\sum\eta_t$ | $\sum\eta_t^2$ | Behaviour |
+      | --- | --- | --- | --- |
+      | $\eta$ (constant) | $\infty$ ✓ | $\infty$ ✗ | geometric decay to a floor $\eta\sigma^2/\mu$ |
+      | $c/\sqrt t$ | $\infty$ ✓ | $\infty$ ✗ | converges, but slowly; error $O(1/\sqrt t)$ |
+      | $c/t$ | $\infty$ ✓ | $<\infty$ ✓ | converges; with $c>1/\mu$, error $O(\sigma^2/(\mu^2t))$ |
+
+      The $1/t$ schedule is the classical optimal one for strongly convex problems. Note that $c$
+      matters: with $c<1/(2\mu)$ the contraction is too weak and the rate degrades to $t^{-2c\mu}$,
+      which is why "$1/t$ decay" without the right constant can be worse than $1/\sqrt t$.
+
+      **In practice.** Deep learning uses schedules (cosine, warmup-then-decay) that satisfy neither
+      condition exactly, because training is run for a fixed budget rather than to convergence — the
+      relevant question is the error at step $T$, not the limit.
+
+  - id: sgd-high-probability
+    title: Expected error does not give a high-probability guarantee
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [high probability, markov, tightness]
+    statement: |
+      Suppose $\E[f(x_T)-f^\star]\le\epsilon$. Show that the best general tail bound is
+      $\P(f(x_T)-f^\star>s)\le\epsilon/s$ and that it is attained. Compute the $\epsilon$ needed for a
+      $99\%$ guarantee at accuracy $s$, and the resulting increase in $T$ under the $1/\sqrt T$ rate.
+    solution: |
+      **The bound.** $f(x_T)-f^\star\ge0$, so Markov's inequality gives
+      $\P(f(x_T)-f^\star>s)\le\epsilon/s$.
+
+      **Attained.** Let $f(x_T)-f^\star$ equal $s$ with probability $\epsilon/s$ and $0$ otherwise. The
+      expectation is exactly $\epsilon$ and the tail probability is exactly $\epsilon/s$. So without
+      additional assumptions on the distribution (sub-Gaussian noise, bounded gradients, a martingale
+      structure), no better bound follows from the expectation alone.
+
+      **Cost of confidence.** For $\P(\cdot>s)\le0.01$ we need $\epsilon\le s/100$. Under a rate
+      $\epsilon \asymp C/\sqrt T$, achieving $\epsilon = s/100$ instead of $\epsilon = s$ requires
+      $$
+      \frac{C}{\sqrt{T'}} = \frac{1}{100}\cdot\frac{C}{\sqrt T} \ \Longrightarrow\ T' = 10^4\,T .
+      $$
+      A $10^4$-fold increase in compute to convert an in-expectation statement into a $99\%$ statement.
+
+      **The right approach.** High-probability bounds for SGD are proved directly, by applying
+      martingale concentration (Azuma or Freedman) to the noise sequence
+      $M_T = \sum_{t<T}\eta_t\langle\nabla f(x_t), \xi_t\rangle$, under an additional hypothesis such as
+      sub-Gaussian gradient noise. The resulting bounds have a $\log(1/\delta)$ dependence rather than
+      $1/\delta$, which is the whole difference. Reporting an in-expectation bound as a confidence
+      guarantee is a common and consequential error.
+
+  - id: sgd-implement-verify
+    title: Implement SGD and locate the noise floor
+    topic: stochastic-optimization/sgd-convergence
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [sgd, implementation, noise floor, schedules]
+    statement: |
+      Implement SGD on a strongly convex quadratic with an explicit Gaussian gradient oracle.
+
+      1. Verify the two-phase behaviour: geometric decay followed by a plateau.
+      2. Verify that the plateau height is proportional to $\eta\sigma^2/\mu$ by sweeping $\eta$ and
+         $\sigma$.
+      3. Compare constant, $1/\sqrt t$ and $1/t$ schedules; fit the asymptotic slopes.
+      4. Add mini-batching and confirm the floor scales as $1/B$.
+    solution: |
+      ```python
+      import numpy as np
+
+      def sgd(A, eta_fn, sigma, steps=20000, batch=1, seed=0):
+          rng = np.random.default_rng(seed)
+          d = len(A)                      # A is the diagonal of the quadratic
+          x, gaps = np.ones(d), []
+          for t in range(1, steps + 1):
+              noise = rng.standard_normal((batch, d)).mean(0) * sigma / np.sqrt(batch)
+              g = A * x + noise
+              x = x - eta_fn(t) * g
+              gaps.append(0.5 * float(np.sum(A * x * x)))
+          return np.array(gaps)
+      ```
+
+      **1. Two phases.** On a log axis the curve falls linearly (the $(1-\eta\mu)^t$ term) and then
+      flattens. The knee is where the two terms of the bound are equal, at roughly
+      $t\approx\frac{1}{\eta\mu}\log\frac{\mu e_0}{\eta\sigma^2}$.
+
+      **2. Floor height.** Halving $\eta$ should halve the plateau; doubling $\sigma$ should quadruple
+      it (the floor is in squared-distance units, $\eta\sigma^2/\mu$). Plot the measured plateau against
+      $\eta\sigma^2/\mu$ on log–log axes and check for slope $1$ through the origin. Measure the
+      plateau as the median of the last $10\%$ of iterates, not the final value, which is noisy.
+
+      **3. Schedules.**
+      - Constant: plateau, slope $0$ asymptotically.
+      - $\eta_t = c/\sqrt t$: converges with $\log(\text{gap})$ versus $\log t$ slope near $-1/2$.
+      - $\eta_t = c/t$ with $c>1/\mu$: slope near $-1$, the optimal strongly convex rate. Try $c<1/(2\mu)$
+        as well and observe the degraded slope $-2c\mu$ — a good demonstration that the constant in a
+        $1/t$ schedule is not cosmetic.
+
+      **4. Mini-batching.** Sweeping $B\in\{1,4,16,64\}$ at fixed $\eta$ should divide the plateau by
+      $B$. Plotting against *total gradient evaluations* $BT$ rather than steps collapses the curves
+      onto one another — the visual form of the statement that the bound depends only on the compute
+      budget.
+
+  - id: ad-adagrad-sum-inequality
+    title: The AdaGrad summation inequality
+    topic: stochastic-optimization/adaptive-methods
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [adagrad, telescoping, regret]
+    statement: |
+      Prove that for non-negative $h_1,\dots,h_T$ with $S_t = \sum_{s\le t}h_s^2$,
+      $$
+      \sum_{t=1}^T\frac{h_t^2}{\sqrt{S_t}} \le 2\sqrt{S_T}.
+      $$
+      This is the key lemma in the AdaGrad regret analysis. Explain why it produces the
+      $\sum_i\sqrt{\sum_tg_{t,i}^2}$ form of the bound.
+    solution: |
+      **Proof by induction on $T$.** For $T=1$, $\frac{h_1^2}{\sqrt{h_1^2}} = |h_1| \le 2|h_1| = 2\sqrt{S_1}$.
+
+      Assume the bound for $T-1$. Then
+      $$
+      \sum_{t\le T}\frac{h_t^2}{\sqrt{S_t}} \le 2\sqrt{S_{T-1}} + \frac{h_T^2}{\sqrt{S_T}}
+      = 2\sqrt{S_T - h_T^2} + \frac{h_T^2}{\sqrt{S_T}} .
+      $$
+      It suffices to show this is at most $2\sqrt{S_T}$, i.e.
+      $$
+      2\big(\sqrt{S_T}-\sqrt{S_T-h_T^2}\big) \ge \frac{h_T^2}{\sqrt{S_T}} .
+      $$
+      Rationalising the left side,
+      $$
+      \sqrt{S_T}-\sqrt{S_T-h_T^2} = \frac{h_T^2}{\sqrt{S_T}+\sqrt{S_T-h_T^2}} \ge \frac{h_T^2}{2\sqrt{S_T}},
+      $$
+      since $\sqrt{S_T-h_T^2}\le\sqrt{S_T}$. Multiplying by $2$ gives the required inequality.
+
+      **Why the bound takes that form.** In the AdaGrad analysis the per-coordinate regret splits into
+      a term proportional to $\sqrt{S_T^{(i)}} = \sqrt{\sum_tg_{t,i}^2}$ from the telescoping of
+      $1/\eta_t$, and a term $\sum_t\frac{g_{t,i}^2}{\sqrt{S_t^{(i)}}}$ from the step-size penalty. The
+      lemma bounds the second by $2\sqrt{S_T^{(i)}}$, so **both** terms have the same form and the
+      total is $O\big(\sqrt{\sum_tg_{t,i}^2}\big)$ per coordinate. Summing over coordinates gives
+      $\sum_i\sqrt{\sum_tg_{t,i}^2}$, which is much smaller than $\sqrt{d\sum_t\|g_t\|_2^2}$ when the
+      gradients are sparse — the case AdaGrad was designed for.
+
+  - id: ad-adam-bias-correction
+    title: Derive Adam's bias correction
+    topic: stochastic-optimization/adaptive-methods
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [adam, bias correction, moving average]
+    statement: |
+      Show that the exponential moving average $m_t = \beta m_{t-1}+(1-\beta)g_t$ started from
+      $m_0 = 0$ satisfies $\E m_t = (1-\beta^t)\E g$ under a stationary gradient distribution, and
+      deduce the correction factor. Quantify the size of the bias at $t=1$ and $t=100$ for
+      $\beta = 0.999$.
+    solution: |
+      **Unroll.**
+      $$
+      m_t = (1-\beta)\sum_{s=1}^t\beta^{t-s}g_s .
+      $$
+      Taking expectations with $\E g_s = \E g$ for all $s$,
+      $$
+      \E m_t = (1-\beta)\,\E g\sum_{s=1}^t\beta^{t-s} = (1-\beta)\,\E g\cdot\frac{1-\beta^t}{1-\beta} = (1-\beta^t)\,\E g .
+      $$
+      So $m_t$ underestimates $\E g$ by the factor $1-\beta^t$, and the corrected estimator
+      $\hat m_t = m_t/(1-\beta^t)$ is unbiased. The same computation applies to $v_t$ with $\beta_2$.
+
+      **Magnitude of the bias.** With $\beta_2 = 0.999$:
+      - $t=1$: $1-\beta_2^1 = 0.001$, so $v_1$ is $1000\times$ too small and $\sqrt{v_1}$ is
+        $\approx31.6\times$ too small. Without correction the first step would be about $31$ times
+        larger than intended.
+      - $t=100$: $1-0.999^{100} = 1-0.905 = 0.095$, so $v_{100}$ is still about $10\times$ too small
+        and the step about $3.2\times$ too large.
+      - $t=5000$: $1-0.999^{5000}\approx0.993$ — the correction is negligible.
+
+      **Practical note.** The bias correction and learning-rate warmup address the same early-training
+      instability by different means, which is why implementations that use aggressive warmup sometimes
+      find the correction redundant. But the correction is exact and free, while warmup is a
+      hyperparameter.
+
+  - id: ad-adamw-difference
+    title: Why AdamW differs from Adam with L2
+    topic: stochastic-optimization/adaptive-methods
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [adamw, weight decay, preconditioner, regularisation]
+    statement: |
+      Write the update of (a) Adam applied to $f(\theta)+\frac\lambda2\|\theta\|_2^2$ and (b) Adam with
+      decoupled weight decay. Show the two coincide iff the preconditioner is a multiple of the
+      identity, and explain why the $L^2$ version applies *weaker* shrinkage to high-variance
+      coordinates.
+    solution: |
+      Let $P_t = \operatorname{diag}\big(1/(\sqrt{\hat v_{t,i}}+\epsilon)\big)$ be Adam's diagonal
+      preconditioner.
+
+      **(a) $L^2$ regularisation.** The gradient becomes $g_t + \lambda\theta_t$, so
+      $$
+      \theta_{t+1} = \theta_t - \eta P_t\big(\hat m_t + \lambda\theta_t\big) = \theta_t - \eta P_t\hat m_t - \eta\lambda P_t\theta_t .
+      $$
+
+      **(b) Decoupled weight decay (AdamW).**
+      $$
+      \theta_{t+1} = \theta_t - \eta P_t\hat m_t - \eta\lambda\theta_t .
+      $$
+
+      **When they coincide.** The two differ in the last term: $\eta\lambda P_t\theta_t$ versus
+      $\eta\lambda\theta_t$. These are equal for all $\theta_t$ iff $P_t = cI$ for a scalar $c$ (absorb
+      $c$ into $\lambda$). For plain SGD $P_t = I$ and the two are identical, which is the source of the
+      widespread belief that they are the same thing.
+
+      **The perverse direction.** Under Adam, $P_{t,ii} = 1/(\sqrt{\hat v_{t,i}}+\epsilon)$ is **small**
+      exactly for coordinates with large second moment — coordinates receiving large or highly variable
+      gradients. So the $L^2$ version shrinks those coordinates *least*. But those are precisely the
+      parameters that are moving most and are most at risk of fitting noise; a regulariser should
+      restrain them, not exempt them. AdamW's uniform $\eta\lambda\theta_t$ does exactly that.
+
+      **Consequence.** The effective regularisation strength under $L^2$-with-Adam is
+      coordinate-dependent and changes during training as $\hat v$ evolves, so "$\lambda$" does not
+      correspond to a fixed penalty at all. Empirically, decoupling improves generalisation
+      substantially and makes $\lambda$ transferable across learning rates. This is a case where a
+      one-line observation about operator ordering had a large practical effect.
+
+  - id: ad-svrg-variance
+    title: The SVRG control variate
+    topic: stochastic-optimization/adaptive-methods
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [svrg, variance reduction, control variate]
+    statement: |
+      For the SVRG direction $v_k = \nabla f_i(x_k)-\nabla f_i(\tilde x)+\nabla f(\tilde x)$ with $i$
+      uniform:
+
+      1. Show $\E_i[v_k] = \nabla f(x_k)$.
+      2. Show $\E_i\|v_k-\nabla f(x_k)\|_2^2 \le 2L^2\big(\|x_k-x^\star\|_2^2+\|\tilde x-x^\star\|_2^2\big)$
+         when each $f_i$ is $L$-smooth.
+      3. Explain why this vanishes at the optimum, and why the same construction fails for a
+         non-finite-sum objective.
+    solution: |
+      **1. Unbiasedness.** $\E_i[\nabla f_i(x_k)] = \nabla f(x_k)$ and
+      $\E_i[\nabla f_i(\tilde x)] = \nabla f(\tilde x)$, so the correction term has mean zero and
+      $\E_i[v_k] = \nabla f(x_k)$.
+
+      **2. Variance.** Write $\zeta = \nabla f_i(x_k)-\nabla f_i(\tilde x)$, so
+      $v_k - \nabla f(x_k) = \zeta - \E_i\zeta$ and
+      $$
+      \E_i\|v_k-\nabla f(x_k)\|_2^2 = \E_i\|\zeta - \E_i\zeta\|_2^2 \le \E_i\|\zeta\|_2^2 .
+      $$
+      By $L$-smoothness of each $f_i$,
+      $$
+      \|\zeta\|_2 = \|\nabla f_i(x_k)-\nabla f_i(\tilde x)\|_2 \le L\|x_k-\tilde x\|_2
+      \le L\big(\|x_k-x^\star\|_2+\|\tilde x-x^\star\|_2\big).
+      $$
+      Squaring and using $(a+b)^2\le2a^2+2b^2$ gives the claim.
+
+      **3. Vanishing at the optimum.** As both $x_k$ and $\tilde x$ approach $x^\star$, the bound tends
+      to zero: the variance of the SVRG direction **vanishes**, unlike plain SGD's $\sigma^2$ which is
+      a constant. That is why SVRG has no noise floor and achieves a linear rate, while constant-step
+      SGD does not.
+
+      The mechanism is a **control variate**: $\nabla f_i(\tilde x)$ is correlated with
+      $\nabla f_i(x_k)$ and has known mean $\nabla f(\tilde x)$, so subtracting it and adding back the
+      mean cancels most of the variance.
+
+      **Why it needs a finite sum.** The construction requires (i) evaluating the *same* $f_i$ at two
+      points, and (ii) computing the exact full gradient $\nabla f(\tilde x)$ periodically. For a
+      streaming or augmented objective — where each "example" is a fresh draw, as with data
+      augmentation or dropout — there is no fixed $f_i$ to re-evaluate and no finite sum to average
+      exactly. That is the main reason variance reduction has not transferred to deep learning, as
+      Defazio and Bottou document.

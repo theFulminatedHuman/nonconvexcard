@@ -1,0 +1,69 @@
+---
+title: Language Models are Few-Shot Learners
+authors: Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell and others
+year: 2020
+venue: NeurIPS
+url: https://arxiv.org/abs/2005.14165
+arxiv: '2005.14165'
+field: llm
+tags: [gpt-3, in-context learning, few-shot, scale, emergence]
+problem: Adapting a pretrained model to a task required gradient-based fine-tuning on a labelled dataset for that task, which is a barrier for every new task.
+contribution: A 175B-parameter autoregressive model that performs many tasks from a prompt containing a few examples, with no parameter updates, and whose few-shot performance improves smoothly with scale.
+prerequisites:
+  - llm/language-modelling-and-cross-entropy
+  - llm/scaling-and-in-context-learning
+  - deep-learning/transformers
+descendants: [instructgpt]
+related: [scaling-laws, chinchilla, instructgpt]
+---
+
+## What problem does this paper solve?
+
+Task adaptation without task-specific training data or gradient updates.
+
+## What mathematical objects are introduced?
+
+None. The model is a standard decoder-only
+<TopicRef id="deep-learning/transformers">transformer</TopicRef> trained on the usual
+<TopicRef id="llm/language-modelling-and-cross-entropy">cross-entropy</TopicRef> objective. The
+contribution is the demonstration and the measurement, not a new construct.
+
+## What assumptions are made?
+
+That the evaluation tasks are not contaminated by the training corpus — the paper investigates this
+directly and finds some contamination, which it quantifies and partially controls for. This remains a
+serious methodological difficulty for all such evaluations.
+
+## What equations matter?
+
+The scaling curves. Few-shot accuracy on many tasks is smooth in $\log(\text{parameters})$, and the
+*gap* between zero-shot, one-shot and few-shot widens with scale — which is the paper's evidence that
+in-context learning is itself a capability that improves with scale, not a fixed property.
+
+## What theorem or result is important?
+
+No theorem. The headline result is that a single model, unmodified, is competitive with fine-tuned
+task-specific models on a range of benchmarks.
+
+## What proof techniques are used?
+
+None; large-scale evaluation across $\sim40$ benchmarks and eight model sizes.
+
+## What prior mathematics is required?
+
+Autoregressive language modelling; the scaling-law framework; the complexity of attention for long
+prompts.
+
+## Limitations
+
+The mechanism of in-context learning is not explained — see the
+<TopicRef id="llm/scaling-and-in-context-learning">discussion</TopicRef> of induction heads and
+implicit optimisation. The model's parameter/token allocation was, by the later Chinchilla analysis,
+far from compute-optimal. Poor at tasks requiring precise multi-step reasoning. No instruction
+following, which <TopicRef id="llm/preference-optimisation">RLHF</TopicRef> supplied.
+
+## Why it mattered
+
+It demonstrated that scale alone changes what a model can do without retraining, which reframed the
+field's research agenda around scaling and prompting. It is also the paper that made "in-context
+learning" a phenomenon requiring explanation rather than an incidental observation.

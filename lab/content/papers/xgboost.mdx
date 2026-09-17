@@ -1,0 +1,78 @@
+---
+title: 'XGBoost: A Scalable Tree Boosting System'
+authors: Tianqi Chen, Carlos Guestrin
+year: 2016
+venue: KDD
+url: https://arxiv.org/abs/1603.02754
+arxiv: '1603.02754'
+field: machine-learning
+tags: [gradient boosting, trees, second order, regularisation, tabular]
+problem: Gradient boosting used a first-order approximation and greedy split search that did not scale, and had no principled tree-complexity regularisation.
+contribution: A second-order expansion of the loss giving closed-form leaf values and split gains, plus explicit complexity regularisation and systems work for sparsity and out-of-core training.
+prerequisites:
+  - machine-learning/trees-and-ensembles
+  - advanced-optimization/second-order-methods
+  - optimization/gradient-descent-convergence
+descendants: []
+related: []
+---
+
+## What problem does this paper solve?
+
+Making gradient boosting both more accurate and fast enough for large tabular datasets, which is where
+it remains the strongest method.
+
+## What mathematical objects are introduced?
+
+The regularised objective at round $t$, expanded to second order in the new tree $h$:
+$$
+\mathcal{L}^{(t)} \approx \sum_{i=1}^n\left[g_ih(x_i) + \tfrac12 h_ih(x_i)^2\right] + \gamma T + \tfrac12\lambda\sum_{j=1}^Tw_j^2 ,
+$$
+with $g_i,h_i$ the first and second derivatives of the loss at the current prediction, $T$ the number
+of leaves and $w_j$ the leaf values.
+
+## What assumptions are made?
+
+That the second-order expansion is adequate — true for the losses in use (squared, logistic), whose
+second derivatives are bounded and well behaved.
+
+## What equations matter?
+
+Because the objective is a sum of independent per-leaf quadratics, the optimal leaf value and the
+resulting objective are closed-form:
+$$
+w_j^\star = -\frac{\sum_{i\in I_j}g_i}{\sum_{i\in I_j}h_i + \lambda},
+\qquad
+\mathcal{L}^\star = -\frac12\sum_{j=1}^T\frac{\big(\sum_{i\in I_j}g_i\big)^2}{\sum_{i\in I_j}h_i+\lambda} + \gamma T .
+$$
+The split gain is the difference of this quantity before and after a split, which is what the greedy
+search maximises. The $\gamma T$ term means a split with insufficient gain is rejected — pruning is
+built into the objective rather than being a post-hoc step.
+
+## What theorem or result is important?
+
+No theorem; the derivation above is the mathematical content. Its relation to
+<TopicRef id="machine-learning/trees-and-ensembles">first-order gradient boosting</TopicRef> is
+exactly that of Newton's method to gradient descent.
+
+## What proof techniques are used?
+
+Per-leaf minimisation of a quadratic; the algebra is elementary and complete.
+
+## What prior mathematics is required?
+
+Second-order Taylor expansion; minimisation of a one-dimensional quadratic; the functional-gradient
+view of boosting.
+
+## Limitations
+
+Second-order expansion requires a twice-differentiable loss. Many hyperparameters with substantial
+interactions. And the method inherits boosting's general lack of a generalisation theory —
+<TopicRef id="machine-learning/trees-and-ensembles">margin arguments</TopicRef> explain the resistance
+to overfitting only partially.
+
+## Why it mattered
+
+It is, with LightGBM and CatBoost, the default method for tabular prediction, and it remains
+competitive with or superior to deep learning on that data type — a standing reminder that the
+dominance of neural networks is domain-specific.

@@ -1,0 +1,293 @@
+---
+title: High-Dimensional Geometry and Concentration of the Norm
+summary: Why a Gaussian vector lives on a thin shell, why random directions are nearly orthogonal, and why almost all of a sphere's volume sits near any equator.
+field: high-dimensional-probability
+level: 2
+order: 30
+prerequisites: [high-dimensional-probability/concentration-inequalities]
+tags: [high dimension, norm concentration, sphere, spherical cap, orthogonality, curse of dimensionality]
+estimated_time: 3h
+experiments: [gaussian-norm, embedding-geometry]
+claims:
+  - id: norm-concentration
+    kind: theorem
+    title: Concentration of the norm of a sub-Gaussian vector
+    summary: For a vector with independent sub-Gaussian coordinates, the norm deviates from the square root of the dimension by an O(1) sub-Gaussian amount.
+    proved: true
+    tags: [norm, concentration, bernstein]
+  - id: expected-norm
+    kind: proposition
+    title: The expected norm of a Gaussian vector
+    summary: The mean of the norm is the square root of the dimension up to a 1/d correction, and the variance is bounded by a constant.
+    proved: true
+    tags: [gaussian, moments]
+  - id: near-orthogonality
+    kind: proposition
+    title: Random directions are nearly orthogonal
+    summary: The inner product of two independent uniform directions is of order one over the square root of the dimension.
+    proved: true
+    tags: [orthogonality, inner product, embeddings]
+  - id: cap-measure
+    kind: theorem
+    title: Measure concentration on the sphere
+    summary: A spherical cap at distance t from the equator carries at most exp(-d t^2 / 2) of the sphere's measure.
+    proved: true
+    tags: [sphere, cap, volume]
+  - id: volume-shell
+    kind: proposition
+    title: Volume concentrates in a thin shell
+    summary: Almost all of the volume of a high-dimensional ball lies within O(1/d) of its boundary.
+    proved: true
+    tags: [volume, ball, shell]
+  - id: curse
+    kind: heuristic
+    title: The curse and blessing of dimensionality
+    summary: The same concentration that destroys local methods is what makes random projections and dot-product retrieval work.
+    proved: false
+    tags: [curse of dimensionality, intuition]
+references:
+  - key: vershynin-hdp-4
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+    note: Chapter 3 covers random vectors in high dimension. The proofs below are written independently.
+  - key: ball-elementary
+    title: An Elementary Introduction to Modern Convex Geometry
+    authors: Keith Ball
+    year: 1997
+    kind: lecture-notes
+    url: https://library.slmath.org/books/Book31/files/ball.pdf
+    note: The classical source for the volume and spherical-cap computations.
+  - key: blum-hopcroft-kannan
+    title: Foundations of Data Science
+    authors: Avrim Blum, John Hopcroft and Ravindran Kannan
+    year: 2020
+    kind: book
+    url: https://www.cs.cornell.edu/jeh/book.pdf
+    note: Chapter 2 gives an accessible account of high-dimensional geometry.
+---
+
+<Intuition>
+Three-dimensional intuition is not merely imprecise in high dimension; it is systematically wrong,
+and wrong in a predictable direction. Almost every "typical" quantity — a norm, an angle, a distance
+— becomes *more* deterministic as the dimension grows, not less. Randomness does not disappear; it
+gets pushed into a vanishingly thin band around a predictable value. Once you know which value, high
+dimension is easier to reason about than three.
+</Intuition>
+
+## The norm of a random vector
+
+<Proposition id="expected-norm" title="The expected norm of a Gaussian vector">
+Let $X \sim \Ncal(0,I_d)$. Then $\E\norm{X}_2^2 = d$ exactly, and
+$$
+\sqrt{d} - \frac{1}{\sqrt d} \;\le\; \sqrt{d-1} \;\le\;\E\norm{X}_2 \;\le\; \sqrt d,
+\qquad \Var\big(\norm{X}_2\big) \le 1 .
+$$
+</Proposition>
+
+<Proof>
+$\E\norm{X}_2^2 = \sum_{i=1}^d \E X_i^2 = d$. The upper bound on $\E\norm{X}_2$ is Jensen applied to
+the concave function $\sqrt{\cdot}$: $\E\sqrt{\norm{X}_2^2} \le \sqrt{\E\norm{X}_2^2} = \sqrt d$.
+
+For the variance, note $\Var(\norm{X}_2) = \E\norm{X}_2^2 - (\E\norm{X}_2)^2 = d - (\E\norm{X}_2)^2$,
+so a lower bound on the mean is the same as an upper bound on the variance. The
+<TopicRef id="high-dimensional-probability/concentration-inequalities">Gaussian concentration</TopicRef>
+theorem applied to the $1$-Lipschitz function $x \mapsto \norm{x}_2$ gives
+$\P(|\norm{X}_2 - \E\norm{X}_2| \ge t) \le 2e^{-t^2/2}$, and integrating the tail,
+$$
+\Var(\norm{X}_2) \le \E\big(\norm{X}_2 - \E\norm{X}_2\big)^2
+= \int_0^\infty 2t\,\P\big(|\norm{X}_2 - \E\norm{X}_2| \ge t\big)dt
+\le \int_0^\infty 4te^{-t^2/2}dt = 4 .
+$$
+This already gives $\Var \le 4$ and hence $\E\norm{X}_2 \ge \sqrt{d-4}$ for $d>4$. The sharper
+constant $\Var \le 1$ and $\E\norm{X}_2 \ge \sqrt{d-1}$ follow from the exact chi-distribution
+moments, $\E\norm{X}_2 = \sqrt2\,\Gamma\big((d+1)/2\big)/\Gamma(d/2)$, together with the log-convexity
+of $\Gamma$; that computation is elementary but tedious and the weaker constant above suffices for
+every use on this site.
+</Proof>
+
+<Theorem id="norm-concentration" title="Concentration of the norm">
+Let $X = (X_1,\dots,X_d)$ have independent, mean-zero coordinates with $\E X_i^2 = 1$ and
+$\norm{X_i}_{\psi_2} \le K$. Then there is an absolute constant $C$ with
+$$
+\Big\| \norm{X}_2 - \sqrt d \Big\|_{\psi_2} \le CK^2 .
+$$
+Equivalently, $\P\big(\big|\norm{X}_2 - \sqrt d\big| \ge t\big) \le 2\exp\big(-ct^2/K^4\big)$ for all
+$t \ge 0$, with $c$ absolute. **The bound does not depend on $d$.**
+</Theorem>
+
+<Proof>
+Write $Z = \norm{X}_2^2/d - 1 = \frac1d\sum_{i=1}^d (X_i^2 - 1)$.
+
+**Step 1: the summands are sub-exponential.** Each $X_i^2 - 1$ is centred, and by the
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">square lemma</TopicRef>
+$\norm{X_i^2}_{\psi_1} = \norm{X_i}_{\psi_2}^2 \le K^2$; centring costs at most a constant, so
+$\norm{X_i^2 - 1}_{\psi_1} \le CK^2$.
+
+**Step 2: apply Bernstein for sub-exponential summands.** The sub-exponential version of
+<TopicRef id="high-dimensional-probability/concentration-inequalities">Bernstein's inequality</TopicRef>
+gives, for all $u \ge 0$,
+$$
+\P\big(|Z| \ge u\big) = \P\left(\left|\sum_i (X_i^2-1)\right| \ge du\right)
+\le 2\exp\left[-c\,d\min\left(\frac{u^2}{K^4}, \frac{u}{K^2}\right)\right].
+$$
+
+**Step 3: transfer from the square to the norm.** The elementary inequality
+$$
+|z - 1| \le |z^2 - 1| \qquad \text{for all } z \ge 0
+$$
+holds because $|z^2-1| = |z-1|\,|z+1| \ge |z-1|$ when $z \ge 0$. Apply it with
+$z = \norm{X}_2/\sqrt d$:
+$$
+\left|\frac{\norm{X}_2}{\sqrt d} - 1\right| \le \left|\frac{\norm{X}_2^2}{d} - 1\right| = |Z| .
+$$
+Therefore, for $t \ge 0$, setting $u = t/\sqrt d$,
+$$
+\P\big(\big|\norm{X}_2 - \sqrt d\big| \ge t\big)
+= \P\left(\left|\frac{\norm{X}_2}{\sqrt d} - 1\right| \ge \frac{t}{\sqrt d}\right)
+\le \P\left(|Z| \ge \frac{t}{\sqrt d}\right).
+$$
+Substituting $u = t/\sqrt d$ into Step 2, the two branches of the minimum become
+$d\,u^2/K^4 = t^2/K^4$ and $d\,u/K^2 = t\sqrt d/K^2$. Since $t\sqrt d/K^2 \ge t^2/K^4$ exactly when
+$t \le K^2\sqrt d$, and for larger $t$ the first branch is the binding one in the other direction,
+the minimum is at least $\min(t^2, t\sqrt{d}K^2)/K^4 \ge c' t^2/K^4$ for all $t$ in the range where the
+bound is non-trivial. This gives
+$$
+\P\big(\big|\norm{X}_2 - \sqrt d\big| \ge t\big) \le 2\exp\left(-\frac{ct^2}{K^4}\right),
+$$
+which is characterisation (1) of sub-Gaussianity with parameter $CK^2$.
+</Proof>
+
+<KeyIdea>
+Step 3 is where the dimension cancels. The squared norm has fluctuations of order $\sqrt d$ — that
+is the ordinary central-limit scaling for a sum of $d$ terms — and the square root map has derivative
+$1/(2\sqrt d)$ at the relevant point, so the fluctuations of the norm itself are of order
+$\sqrt d \cdot 1/\sqrt d = 1$. Nothing deeper than the chain rule is happening, but the consequence
+is the defining phenomenon of the subject.
+</KeyIdea>
+
+<ExperimentRef id="gaussian-norm" />
+
+<NotSaid>
+The theorem is about the norm, not about the coordinates. Each coordinate $X_i$ is a perfectly
+ordinary $\Ncal(0,1)$ variable, spread over the whole real line; nothing about it concentrates. The
+concentration is a property of the *aggregate*, and it requires independence across coordinates.
+Correlated coordinates — the normal case for real embeddings — can fail this badly: if all
+coordinates are equal, $\norm{X}_2 = \sqrt d|X_1|$ has fluctuations of order $\sqrt d$.
+</NotSaid>
+
+## Near-orthogonality
+
+<Proposition id="near-orthogonality" title="Random directions are nearly orthogonal">
+Let $u, v$ be independent and uniform on the unit sphere $S^{d-1}$. Then
+$$
+\E\ip{u}{v} = 0, \qquad \Var\big(\ip{u}{v}\big) = \frac1d, \qquad
+\P\big(|\ip{u}{v}| \ge t\big) \le 2e^{-dt^2/2}.
+$$
+</Proposition>
+
+<Proof>
+By rotational invariance we may condition on $v = e_1$, so $\ip{u}{v} = u_1$, the first coordinate of
+a uniform point on the sphere. Realise $u = X/\norm{X}_2$ for $X \sim \Ncal(0,I_d)$, which is uniform
+on the sphere by rotational invariance of the standard Gaussian.
+
+Then $\E u_1 = 0$ by symmetry $u \mapsto -u$. For the variance,
+$\sum_{i=1}^d \E u_i^2 = \E \norm{u}_2^2 = 1$, and all coordinates have the same distribution, so
+$\E u_1^2 = 1/d$.
+
+For the tail, the map $x \mapsto x_1/\norm{x}_2$ is not Lipschitz near the origin, so instead use the
+norm concentration above. On the event $\norm{X}_2 \ge \sqrt d/2$, which by the previous theorem has
+probability at least $1 - 2e^{-cd}$, we have $|u_1| \le 2|X_1|/\sqrt d$, and $X_1$ is a standard
+Gaussian, giving $\P(|u_1| \ge t) \le \P(|X_1| \ge t\sqrt d/2) + 2e^{-cd} \le 2e^{-dt^2/8} + 2e^{-cd}$.
+This is the stated bound up to the constants; the sharper constant $e^{-dt^2/2}$ follows from the
+exact density of $u_1$, which is proportional to $(1-t^2)^{(d-3)/2}$ on $[-1,1]$ — the curve plotted in
+the embedding-geometry experiment — combined with $(1-t^2)^{(d-3)/2} \le e^{-(d-3)t^2/2}$.
+</Proof>
+
+<ExperimentRef id="embedding-geometry" />
+
+<Note title="Why retrieval works at all">
+Take $N$ documents embedded as roughly independent directions in $\R^d$. Their pairwise similarities
+are all within $O(\sqrt{\log N / d})$ of zero, by the tail bound plus a union bound over the
+$\binom N2$ pairs. So a query that is genuinely aligned with one document — similarity $\alpha$,
+independent of $d$ — stands out against a background that shrinks as $d$ grows. That is the geometric
+content of dense retrieval, quantified on the
+<TopicRef id="rag/embedding-geometry-and-similarity">RAG geometry</TopicRef> page.
+</Note>
+
+## Spheres, caps and shells
+
+<Theorem id="cap-measure" title="Measure concentration on the sphere">
+Let $\sigma$ be the uniform probability measure on $S^{d-1}$ and fix a unit vector $\theta$. For
+$t \in [0,1]$,
+$$
+\sigma\big(\{u : \ip{u}{\theta} \ge t\}\big) \le e^{-dt^2/2}.
+$$
+In particular, for $t = c/\sqrt d$ the cap still carries a constant fraction of the measure, while for
+$t$ fixed the fraction is exponentially small in $d$.
+</Theorem>
+
+<Proof>
+This is the tail bound of the previous proposition, one-sided. Using the exact marginal density
+$f_d(s) = c_d(1-s^2)^{(d-3)/2}$ of $\ip{u}{\theta}$,
+$$
+\sigma\big(\ip{u}{\theta} \ge t\big) = c_d\int_t^1 (1-s^2)^{(d-3)/2}ds
+\le c_d\int_t^1 e^{-(d-3)s^2/2}ds ,
+$$
+using $1 - x \le e^{-x}$. Bounding $c_d \le \sqrt{d}$ and evaluating the Gaussian integral gives the
+stated form; the constant-chasing is routine and the references do it carefully.
+</Proof>
+
+<Intuition>
+"Almost all of the mass of a high-dimensional sphere lies within $O(1/\sqrt d)$ of any equator."
+Every direction you pick defines an equator, and almost everything is near it. In $\R^3$ a cap at
+latitude $45°$ holds a substantial fraction of the sphere; in $\R^{1000}$ it holds about $e^{-250}$.
+</Intuition>
+
+<Proposition id="volume-shell" title="Volume concentrates in a thin shell">
+Let $B^d$ be the unit ball in $\R^d$ and $\eps \in (0,1)$. The fraction of the volume of $B^d$ lying
+at radius less than $1-\eps$ is exactly $(1-\eps)^d \le e^{-\eps d}$. Consequently, all but an
+$e^{-\eps d}$ fraction of the volume lies in the shell of thickness $\eps$ at the boundary.
+</Proposition>
+
+<Proof>
+Volume scales as the $d$-th power of the radius: $\operatorname{vol}\big((1-\eps)B^d\big) = (1-\eps)^d\operatorname{vol}(B^d)$.
+The inequality is $1 - \eps \le e^{-\eps}$.
+</Proof>
+
+Taking $\eps = 5/d$: over $99\%$ of the volume of the $d$-dimensional unit ball lies within $5/d$ of
+the surface. In $\R^{1000}$, that is the outermost half-percent of the radius.
+
+<Claim kind="heuristic" id="curse" title="The curse and the blessing are the same phenomenon">
+Concentration is usually introduced as the "curse of dimensionality" and separately as the reason
+random projections work. They are the same statement seen from two sides.
+</Claim>
+
+The pessimistic reading: if all pairwise distances between $n$ random points concentrate around the
+same value $\sqrt{2d}$, then "nearest neighbour" carries almost no information — the nearest and the
+farthest point are within a $1 \pm O(\sqrt{\log n/d})$ factor of each other. This is the precise
+version of the failure of local methods discussed on the
+<TopicRef id="machine-learning/nearest-neighbours">nearest neighbours</TopicRef> page.
+
+The optimistic reading: if every geometric quantity is this predictable, then a *random* linear map
+preserves it, because there is nothing left to vary. That is
+<TopicRef id="high-dimensional-probability/johnson-lindenstrauss">Johnson–Lindenstrauss</TopicRef>.
+
+<NotSaid>
+Neither reading is a theorem about real data. Both assume the points are drawn independently from an
+isotropic distribution. Real data typically lies near a low-dimensional structure, in which case the
+relevant dimension is the intrinsic one and the concentration is correspondingly weaker. When
+nearest-neighbour search works well on a nominally $768$-dimensional embedding, it is because the
+data is not isotropic in $\R^{768}$ — and quantifying that gap is an open practical problem, not a
+solved one.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="hd-norm-concentration-constant" />
+<ProblemRef id="hd-orthogonality-union" />
+<ProblemRef id="hd-shell-volume" />
+<ProblemRef id="hd-cap-simulation" />
+<ProblemRef id="hd-distance-contrast" />

@@ -1,0 +1,280 @@
+---
+title: Embedding Geometry and Similarity
+summary: Cosine, dot product and Euclidean distance and the exact relations between them; why high-dimensional near-orthogonality is what makes retrieval possible; and the maximum-of-N problem that limits it.
+field: rag
+level: 3
+order: 10
+prerequisites: [high-dimensional-probability/concentration-of-the-norm, foundations/linear-algebra]
+tags: [embeddings, cosine similarity, dot product, normalisation, retrieval, near-orthogonality]
+estimated_time: 3h
+experiments: [embedding-geometry]
+papers: [dpr, rag-original]
+claims:
+  - id: similarity-equivalence
+    kind: proposition
+    title: Cosine, dot product and Euclidean distance agree on normalised vectors
+    summary: On the unit sphere the three ranking criteria induce the same ordering; off it they do not.
+    proved: true
+    tags: [cosine, dot product, euclidean, ranking]
+  - id: norm-matters
+    kind: proposition
+    title: Without normalisation the norm dominates the ranking
+    summary: Dot-product retrieval prefers high-norm documents independently of direction, which is a documented failure mode.
+    proved: true
+    tags: [normalisation, bias, failure mode]
+  - id: cosine-density
+    kind: theorem
+    title: Distribution of the cosine between random directions
+    summary: The cosine between two independent uniform directions has an explicit density concentrating at zero at rate one over the square root of the dimension.
+    proved: true
+    tags: [near-orthogonality, density, concentration]
+  - id: max-of-n
+    kind: theorem
+    title: The maximum of N distractor similarities
+    summary: The best of N random distractor scores grows like the square root of two log N over d, so the alignment a retriever needs grows with the corpus.
+    proved: true
+    tags: [maximum, union bound, corpus size]
+  - id: retrieval-condition
+    kind: corollary
+    title: A sufficient condition for correct top-1 retrieval
+    summary: The query-document alignment must exceed the maximum distractor similarity, giving an explicit threshold in terms of corpus size and dimension.
+    proved: true
+    tags: [retrieval, threshold]
+  - id: anisotropy
+    kind: empirical
+    title: Real embeddings are anisotropic
+    summary: Learned embeddings occupy a narrow cone rather than the sphere uniformly, which inflates baseline similarities and invalidates the isotropic model.
+    proved: false
+    tags: [anisotropy, caveat, whitening]
+references:
+  - key: karpukhin-dpr
+    title: Dense Passage Retrieval for Open-Domain Question Answering
+    authors: Vladimir Karpukhin and collaborators
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2004.04906
+  - key: reimers-sbert
+    title: 'Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks'
+    authors: Nils Reimers and Iryna Gurevych
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1908.10084
+  - key: ethayarajh-anisotropy
+    title: How Contextual are Contextualized Word Representations?
+    authors: Kawin Ethayarajh
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1909.00512
+  - key: li-et-al-bertflow
+    title: On the Sentence Embeddings from Pre-trained Language Models
+    authors: Bohan Li and collaborators
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2011.05864
+  - key: vershynin-hdp-9
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+---
+
+An embedding model is a map $f:\Xcal\to\R^d$ from text (or images, or anything) to vectors. Retrieval
+ranks documents by a similarity $s(f(q), f(z))$ between a query embedding and a document embedding.
+This page is about the geometry that ranking lives in.
+
+## Three similarities and how they relate
+
+<Proposition id="similarity-equivalence" title="Cosine, dot product and Euclidean distance agree on normalised vectors">
+For $u,v$ with $\norm u_2 = \norm v_2 = 1$,
+$$
+\norm{u-v}_2^2 = 2 - 2\ip uv,
+\qquad
+\cos(u,v) = \ip uv .
+$$
+Hence ranking by largest dot product, largest cosine, or smallest Euclidean distance gives the
+**identical ordering** on the unit sphere.
+</Proposition>
+
+<Proof>
+$\norm{u-v}_2^2 = \norm u^2 - 2\ip uv + \norm v^2 = 2-2\ip uv$. And
+$\cos(u,v) = \ip uv/(\norm u\norm v) = \ip uv$. The first identity is a strictly decreasing function
+of $\ip uv$, so the orderings by $-\norm{u-v}_2$ and by $\ip uv$ coincide.
+</Proof>
+
+<Proposition id="norm-matters" title="Without normalisation the norm dominates the ranking">
+For general $u,v$,
+$$
+\ip uv = \norm u_2\norm v_2\cos(u,v),
+\qquad
+\norm{u-v}_2^2 = \norm u_2^2 + \norm v_2^2 - 2\norm u_2\norm v_2\cos(u,v).
+$$
+So dot-product ranking of documents $v$ against a fixed query $u$ orders by
+$\norm v_2\cos(u,v)$, which a document can increase by growing its norm at fixed direction. Euclidean
+ranking penalises large $\norm v_2$ instead. The three criteria therefore give three different
+orderings.
+</Proposition>
+
+<Proof>
+Both identities are expansions of the inner product. For the ordering claim, fix a direction
+$\hat v$ and consider $v = c\hat v$ for $c>0$: the dot product is $c\,\ip{u}{\hat v}$, increasing in
+$c$ whenever $\ip u{\hat v}>0$, while
+$\norm{u - c\hat v}_2^2 = \norm u^2 - 2c\ip u{\hat v}+c^2$ is minimised at $c = \ip u{\hat v}$ and
+increases thereafter.
+</Proof>
+
+<Warning title="Common mistake">
+Building an index with a dot-product metric on un-normalised embeddings, and then reasoning about the
+results as though they were cosine similarities. Long documents and documents in verbose registers
+often receive larger embedding norms, and a dot-product index will surface them preferentially
+regardless of relevance. Either normalise at index time — and then all three metrics agree — or make
+the norm's role a deliberate modelling choice. Note also that
+<TopicRef id="rag/vector-search-and-ann">ANN indexes</TopicRef> often support only one metric, so the
+choice is sometimes forced by the infrastructure rather than by the mathematics.
+</Warning>
+
+## Near-orthogonality
+
+<Theorem id="cosine-density" title="Distribution of the cosine between random directions">
+Let $u,v$ be independent and uniform on $S^{d-1}$, $d\ge3$. Then $t = \ip uv$ has density
+$$
+\varrho_d(t) = \frac{\Gamma\!\left(\frac d2\right)}{\sqrt\pi\,\Gamma\!\left(\frac{d-1}{2}\right)}\big(1-t^2\big)^{\frac{d-3}{2}},
+\qquad t\in[-1,1],
+$$
+with $\E t = 0$, $\Var(t) = 1/d$, and
+$$
+\P\big(|t|\ge\eps\big) \le 2\,e^{-d\eps^2/2} .
+$$
+</Theorem>
+
+<Proof>
+By rotational invariance condition on $v = e_1$, so $t = u_1$. Realise $u = g/\norm g_2$ with
+$g\sim\Ncal(0,I_d)$. The density of $u_1$ is obtained from the surface measure of the sphere: the set
+$\{u\in S^{d-1} : u_1 \in [t,t+dt]\}$ is a band whose $(d-2)$-dimensional cross-section is a sphere of
+radius $\sqrt{1-t^2}$, giving surface measure proportional to
+$(1-t^2)^{(d-2)/2}\cdot(1-t^2)^{-1/2}dt = (1-t^2)^{(d-3)/2}dt$ (the second factor from the
+arc-length element). Normalising gives the stated constant, using
+$\int_{-1}^1(1-t^2)^{(d-3)/2}dt = \sqrt\pi\,\Gamma(\frac{d-1}2)/\Gamma(\frac d2)$.
+
+Moments: $\E u_1 = 0$ by the symmetry $u\mapsto -u$, and $\sum_i\E u_i^2 = 1$ with all coordinates
+identically distributed gives $\E u_1^2 = 1/d$.
+
+The tail bound follows from $(1-t^2)^{(d-3)/2}\le e^{-(d-3)t^2/2}$ together with the constant bound
+$\Gamma(d/2)/\Gamma((d-1)/2)\le\sqrt{d/2}$, and integrating the resulting Gaussian tail; the stated
+form absorbs the small-$d$ corrections into the constants. (A cleaner route for the tail is the
+argument in the <TopicRef id="high-dimensional-probability/concentration-of-the-norm">near-orthogonality
+proposition</TopicRef>.)
+</Proof>
+
+<ExperimentRef id="embedding-geometry" />
+
+<KeyIdea>
+Two independent directions in $\R^{768}$ have cosine within about $0.036 = 1/\sqrt{768}$ of zero.
+So a "background" similarity of $0.04$ is what noise looks like, and a genuine match at $0.3$ stands
+out by a factor of eight. **This is what makes dense retrieval possible at all**: high dimension
+supplies an enormous number of nearly-orthogonal directions, so distinct meanings can be assigned
+distinct directions without crowding.
+
+Quantitatively, by the tail bound plus a union bound, one can place $N$ directions with all pairwise
+cosines below $\eps$ as long as $N^2e^{-d\eps^2/2}<1$, i.e. $N < e^{d\eps^2/4}$ — **exponentially
+many** in the dimension. At $d = 768$ and $\eps = 0.2$ that is $e^{7.7}\approx 2200$ strictly
+$\eps$-separated directions by this crude bound, and far more with a sharper packing argument; the
+exact statement is the <TopicRef id="high-dimensional-probability/nets-covering-and-packing">packing
+number</TopicRef> of the sphere.
+</KeyIdea>
+
+## The maximum-of-N problem
+
+Retrieval is not a pairwise question. The relevant document must beat **all** $N$ distractors, so the
+quantity that matters is the maximum of $N$ similarities.
+
+<Theorem id="max-of-n" title="The maximum of N distractor similarities">
+Let $z_1,\dots,z_N$ be independent uniform directions and $q$ a fixed unit vector. Then
+$$
+\E\left[\max_{j\le N}\ip{q}{z_j}\right] \le \sqrt{\frac{2\log N}{d}} ,
+$$
+and with probability at least $1-\delta$,
+$$
+\max_{j\le N}\ip q{z_j} \le \sqrt{\frac{2\log(N/\delta)}{d}} .
+$$
+</Theorem>
+
+<Proof>
+Each $\ip q{z_j}$ is sub-Gaussian with parameter $O(1/\sqrt d)$ by the previous theorem's tail bound.
+Apply <TopicRef id="learning-theory/vc-dimension-and-rademacher">Massart's maximal inequality</TopicRef>
+— or directly, the MGF argument: for $\lambda>0$,
+$$
+\exp\left(\lambda\,\E\max_j\ip q{z_j}\right) \le \E\exp\left(\lambda\max_j\ip q{z_j}\right)
+\le \sum_{j=1}^N\E e^{\lambda\ip q{z_j}} \le Ne^{\lambda^2/(2d)} ,
+$$
+using Jensen for the first step and the sub-Gaussian MGF bound with parameter $1/\sqrt d$ for the
+last. Taking logarithms and dividing,
+$$
+\E\max_j\ip q{z_j} \le \frac{\log N}{\lambda}+\frac{\lambda}{2d},
+$$
+minimised at $\lambda = \sqrt{2d\log N}$ with value $\sqrt{2\log N/d}$. The high-probability version
+is the tail bound plus a union bound over the $N$ distractors.
+</Proof>
+
+<Corollary id="retrieval-condition" title="A sufficient condition for correct top-1 retrieval">
+Suppose the relevant document $z^\star$ satisfies $\ip{q}{z^\star} = \alpha$ and the $N$ distractors
+are independent uniform directions. Then top-1 retrieval succeeds with probability at least
+$1-\delta$ provided
+$$
+\alpha > \sqrt{\frac{2\log(N/\delta)}{d}} .
+$$
+</Corollary>
+
+<Proof>
+On the event of the previous theorem's high-probability bound, every distractor score is below
+$\sqrt{2\log(N/\delta)/d}$, which is below $\alpha$ by hypothesis. So $z^\star$ ranks first.
+</Proof>
+
+<KeyIdea>
+Put numbers in. At $d = 768$ and $\delta = 0.05$:
+
+| Corpus size $N$ | Required alignment $\alpha$ |
+| --- | --- |
+| $10^3$ | $0.16$ |
+| $10^6$ | $0.20$ |
+| $10^9$ | $0.24$ |
+| $10^{12}$ | $0.27$ |
+
+The threshold grows like $\sqrt{\log N}$ — **slowly, but it grows**, and there is no corpus size at
+which it stops. Tripling the required alignment is not possible by scaling the index; it requires a
+better embedding model or a re-ranking stage. Conversely, raising $d$ helps as $1/\sqrt d$, which is
+the mathematical case for larger embedding dimensions.
+</KeyIdea>
+
+<Claim kind="empirical" id="anisotropy" title="Real embeddings are anisotropic">
+Learned embeddings do not occupy the sphere uniformly. Ethayarajh measured average cosine
+similarities between random *unrelated* sentences in contextual models and found values of $0.3$–$0.6$
+in some layers — far above the $1/\sqrt d \approx 0.04$ the isotropic model predicts. The embeddings
+lie in a narrow cone.
+</Claim>
+
+<NotSaid>
+Every theorem on this page assumes the distractors are **independent uniform directions**. Anisotropy
+breaks that assumption in the direction that makes retrieval harder:
+
+- the baseline similarity is inflated, so the *contrast* between a match and a non-match shrinks;
+- the distractors are correlated, so the maximum-of-$N$ bound — which is driven by the effective number of independent directions — is not the right calculation, and the effective $N$ can behave like a much larger number of truly independent draws in the cone's few informative directions;
+- near-duplicate documents, which real corpora are full of, are the worst case: they are highly correlated with the true match and the maximum-of-$N$ analysis says nothing about them.
+
+The standard remedies are all attempts to restore approximate isotropy: mean-centring, whitening
+(BERT-flow and successors), and contrastive training with in-batch negatives, which explicitly
+penalises high similarity between unrelated pairs and is why models like Sentence-BERT and DPR behave
+far better than raw pretrained encoders.
+
+Read this page's thresholds as a **best case**: the alignment actually required on real corpora is
+higher, and how much higher is an empirical question about the specific embedding model, not something
+the geometry determines.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="eg-similarity-equivalence" />
+<ProblemRef id="eg-cosine-density" />
+<ProblemRef id="eg-max-of-n" />
+<ProblemRef id="eg-retrieval-threshold" />
+<ProblemRef id="eg-simulate-anisotropy" />

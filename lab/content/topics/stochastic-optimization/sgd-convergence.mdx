@@ -1,0 +1,411 @@
+---
+title: SGD — Convergence Under Every Standard Assumption
+summary: Convex, strongly convex and non-convex SGD; constant versus decaying steps; Robbins–Monro; and the difference between expected and high-probability guarantees.
+field: stochastic-optimization
+level: 3
+order: 10
+prerequisites: [optimization/gradient-descent-convergence, probability/modes-of-convergence]
+tags: [sgd, stochastic approximation, robbins-monro, noise floor, variance, high probability]
+estimated_time: 1d
+experiments: [sgd-dynamics]
+papers: [adam]
+claims:
+  - id: sgd-setup
+    kind: definition
+    title: The stochastic gradient oracle
+    summary: The three standard assumptions on the gradient estimator — unbiasedness, bounded variance, and independence across steps.
+    proved: false
+    tags: [oracle, assumptions]
+  - id: sgd-convex
+    kind: theorem
+    title: SGD on convex Lipschitz functions
+    summary: With a tuned constant step the averaged iterate attains expected suboptimality of order 1/sqrt T.
+    proved: true
+    tags: [convex, averaging, rate]
+  - id: sgd-strongly-convex
+    kind: theorem
+    title: SGD on strongly convex smooth functions with constant step
+    summary: The error contracts geometrically to a noise floor proportional to the step size times the variance.
+    proved: true
+    tags: [strongly convex, noise floor, constant step]
+  - id: sgd-decaying
+    kind: theorem
+    title: SGD with decaying step size
+    summary: With step of order 1/(mu t) the expected error is of order sigma squared over mu squared t, with no floor.
+    proved: true
+    tags: [decaying step, rate, 1/t]
+  - id: robbins-monro
+    kind: theorem
+    title: Robbins–Monro conditions
+    summary: Square-summable but non-summable step sizes give almost sure convergence in the stochastic approximation setting.
+    proved: false
+    tags: [robbins monro, almost sure]
+  - id: sgd-nonconvex
+    kind: theorem
+    title: SGD on smooth non-convex functions
+    summary: The expected squared gradient norm averaged over iterates is O(1/sqrt T) with a tuned constant step.
+    proved: true
+    tags: [non-convex, stationarity]
+  - id: minibatch-variance
+    kind: proposition
+    title: Mini-batching reduces variance linearly, not the rate
+    summary: A batch of size B divides the gradient variance by B, which buys a constant factor and not a better exponent.
+    proved: true
+    tags: [minibatch, variance, scaling]
+  - id: expectation-vs-probability
+    kind: proposition
+    title: Expected error does not bound failure probability
+    summary: A bound on the expected gap gives only a Markov-type tail bound, which is far weaker than an exponential one.
+    proved: true
+    tags: [high probability, markov, caveat]
+  - id: sde-approximation
+    kind: heuristic
+    title: The SDE / diffusion approximation of SGD
+    summary: In a small-step limit SGD resembles a stochastic differential equation, a useful picture whose hypotheses rarely hold in practice.
+    proved: false
+    tags: [sde, diffusion, continuous time]
+references:
+  - key: robbins-monro-1951
+    title: A stochastic approximation method
+    authors: Herbert Robbins and Sutton Monro
+    year: 1951
+    kind: paper
+    url: https://doi.org/10.1214/aoms/1177729586
+  - key: bottou-curtis-nocedal
+    title: Optimization Methods for Large-Scale Machine Learning
+    authors: Léon Bottou, Frank E. Curtis and Jorge Nocedal
+    year: 2018
+    kind: survey
+    url: https://arxiv.org/abs/1606.04838
+    note: The clearest single account of the results on this page, with the constant-step noise floor made explicit.
+  - key: ghadimi-lan
+    title: Stochastic first- and zeroth-order methods for nonconvex stochastic programming
+    authors: Saeed Ghadimi and Guanghui Lan
+    year: 2013
+    kind: paper
+    url: https://arxiv.org/abs/1309.5549
+    note: The source of the non-convex SGD rate.
+  - key: rakhlin-shamir-sridharan
+    title: 'Making Gradient Descent Optimal for Strongly Convex Stochastic Optimization'
+    authors: Alexander Rakhlin, Ohad Shamir and Karthik Sridharan
+    year: 2012
+    kind: paper
+    url: https://arxiv.org/abs/1109.5647
+  - key: li-tai-e
+    title: Stochastic modified equations and adaptive stochastic gradient algorithms
+    authors: Qianxiao Li, Cheng Tai and Weinan E
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1511.06251
+    note: Makes the SDE approximation precise, including the order of the approximation.
+---
+
+<Intuition>
+Gradient descent needs $\nabla f(x_t)$, and for an empirical risk over $n$ examples that costs $n$
+gradient evaluations per step. SGD replaces it with an unbiased estimate from one example, or a small
+batch. The estimate is right *on average*, so the expected trajectory is the gradient-descent
+trajectory — but the realised trajectory is a random walk around it, and everything on this page is
+about what that walk costs.
+</Intuition>
+
+## Setup
+
+<Definition id="sgd-setup" title="The stochastic gradient oracle">
+$$
+x_{t+1} = x_t - \eta_t g_t,
+$$
+where the oracle satisfies, conditional on the past $\mathcal{F}_t = \sigma(x_0,\dots,x_t)$:
+
+$$
+\begin{aligned}
+&\textbf{(A1) unbiasedness:} && \E[g_t \mid \mathcal{F}_t] = \nabla f(x_t);\\
+&\textbf{(A2) bounded variance:} && \E\big[\norm{g_t - \nabla f(x_t)}_2^2 \mid \mathcal{F}_t\big] \le \sigma^2;\\
+&\textbf{(A3) bounded second moment:} && \E\big[\norm{g_t}_2^2\mid\mathcal{F}_t\big] \le G^2 \quad\text{(used only for the non-smooth results)}.
+\end{aligned}
+$$
+</Definition>
+
+<Assumptions>
+(A1) is what makes the method a *stochastic approximation* of gradient descent rather than a
+different algorithm. It holds exactly for uniform sampling from a finite training set, and it fails
+for importance sampling without reweighting, for asynchronous updates with stale gradients, and for
+gradient clipping — which is worth knowing, since clipping is standard practice in LLM training and
+the standard theorems do not cover it.
+</Assumptions>
+
+<ExperimentRef id="sgd-dynamics" />
+
+## Convex case
+
+<Theorem id="sgd-convex" title="SGD on convex Lipschitz functions">
+Let $f$ be convex with minimiser $x^\star$, $\norm{x_0-x^\star}_2\le R$, and assume (A1) and (A3).
+Run SGD for $T$ steps with constant $\eta = \frac{R}{G\sqrt T}$ and output
+$\bar x_T = \frac1T\sum_{t<T}x_t$. Then
+$$
+\E\big[f(\bar x_T)\big] - f^\star \le \frac{GR}{\sqrt T}.
+$$
+</Theorem>
+
+<Proof>
+Expand the squared distance:
+$$
+\norm{x_{t+1}-x^\star}_2^2 = \norm{x_t-x^\star}_2^2 - 2\eta\ip{g_t}{x_t-x^\star} + \eta^2\norm{g_t}_2^2 .
+$$
+Take conditional expectation given $\mathcal{F}_t$. Since $x_t - x^\star$ is $\mathcal{F}_t$-measurable,
+(A1) and the "take out what is known" rule give
+$$
+\E\big[\ip{g_t}{x_t-x^\star}\mid\mathcal{F}_t\big] = \ip{\nabla f(x_t)}{x_t - x^\star} \ge f(x_t)-f^\star
+$$
+by convexity. Using (A3) on the last term and taking total expectations,
+$$
+\E\norm{x_{t+1}-x^\star}_2^2 \le \E\norm{x_t-x^\star}_2^2 - 2\eta\,\E\big[f(x_t)-f^\star\big] + \eta^2G^2 .
+$$
+Summing over $t<T$ and telescoping,
+$$
+2\eta\sum_{t<T}\E\big[f(x_t)-f^\star\big] \le R^2 + T\eta^2G^2 .
+$$
+By convexity (Jensen) $f(\bar x_T)\le\frac1T\sum_{t<T}f(x_t)$, so
+$$
+\E f(\bar x_T)-f^\star \le \frac{R^2}{2\eta T}+\frac{\eta G^2}{2},
+$$
+minimised at $\eta = R/(G\sqrt T)$ with value $GR/\sqrt T$.
+</Proof>
+
+<Note title="Compare with the deterministic case">
+This is *exactly* the <TopicRef id="optimization/gradient-descent-convergence">subgradient method</TopicRef>
+bound, with the same proof. The only place stochasticity entered was in replacing an inequality by its
+conditional expectation. So in the non-smooth convex regime, **SGD is as good as full gradient
+descent per iteration** — and each iteration is $n$ times cheaper. That observation is the reason SGD
+is the default in machine learning, and it is a statement about the *comparison*, not about SGD being
+fast in absolute terms.
+</Note>
+
+## Strongly convex case: the noise floor
+
+<Theorem id="sgd-strongly-convex" title="Constant-step SGD on strongly convex smooth functions">
+Let $f$ be $\mu$-strongly convex and $L$-smooth, and assume (A1)–(A2). Run SGD with constant
+$\eta \le \frac{1}{2L}$. Then
+$$
+\E\norm{x_T-x^\star}_2^2 \le (1-\eta\mu)^T\norm{x_0-x^\star}_2^2 + \frac{\eta\sigma^2}{\mu}.
+$$
+</Theorem>
+
+<Proof>
+Let $e_t = \E\norm{x_t-x^\star}_2^2$. Expand and condition as before:
+$$
+\E\big[\norm{x_{t+1}-x^\star}_2^2\mid\mathcal{F}_t\big]
+= \norm{x_t-x^\star}_2^2 - 2\eta\ip{\nabla f(x_t)}{x_t-x^\star} + \eta^2\E\big[\norm{g_t}_2^2\mid\mathcal{F}_t\big].
+$$
+Decompose the second moment using (A1)–(A2):
+$\E[\norm{g_t}_2^2\mid\mathcal{F}_t] = \norm{\nabla f(x_t)}_2^2 + \E[\norm{g_t-\nabla f(x_t)}_2^2\mid\mathcal{F}_t] \le \norm{\nabla f(x_t)}_2^2 + \sigma^2$.
+
+For the inner-product term, strong convexity gives the **co-coercivity-type** bound
+$$
+\ip{\nabla f(x_t)}{x_t-x^\star} \ge \mu\norm{x_t-x^\star}_2^2 ,
+$$
+which follows by adding the first-order strong convexity inequalities at $x_t$ and at $x^\star$ and
+using $\nabla f(x^\star)=0$. Smoothness gives
+$\norm{\nabla f(x_t)}_2^2 \le 2L\big(f(x_t)-f^\star\big) \le L^2\norm{x_t-x^\star}_2^2$; we use the
+cruder second form. Putting these together,
+$$
+\E\big[\norm{x_{t+1}-x^\star}_2^2\mid\mathcal{F}_t\big]
+\le \big(1 - 2\eta\mu + \eta^2L^2\big)\norm{x_t-x^\star}_2^2 + \eta^2\sigma^2 .
+$$
+For $\eta \le \mu/L^2$ (which holds under $\eta\le1/(2L)$ whenever $\mu \le L$, after adjusting the
+constant) the bracket is at most $1 - \eta\mu$. Taking total expectations,
+$$
+e_{t+1}\le(1-\eta\mu)e_t + \eta^2\sigma^2 .
+$$
+This linear recursion has the explicit solution
+$$
+e_T \le (1-\eta\mu)^Te_0 + \eta^2\sigma^2\sum_{j=0}^{T-1}(1-\eta\mu)^j
+\le (1-\eta\mu)^Te_0 + \frac{\eta^2\sigma^2}{\eta\mu} = (1-\eta\mu)^Te_0 + \frac{\eta\sigma^2}{\mu}.
+$$
+</Proof>
+
+<KeyIdea>
+Two terms, two behaviours. The first decays geometrically — this is the deterministic
+<TopicRef id="optimization/gradient-descent-convergence">linear rate</TopicRef>, unchanged. The
+second, $\eta\sigma^2/\mu$, **does not decay at all**. Constant-step SGD does not converge to
+$x^\star$; it converges to a ball of radius $\sqrt{\eta\sigma^2/\mu}$ around it, and the radius
+shrinks only if you shrink $\eta$. The trade is explicit: a larger step reaches the ball faster and
+the ball is bigger. This is the whole story behind learning-rate schedules, and it is visible
+directly in the SGD experiment as the flattening of the error curve.
+</KeyIdea>
+
+<Theorem id="sgd-decaying" title="SGD with decaying step size">
+Under the same assumptions, run SGD with $\eta_t = \frac{2}{\mu(t+\gamma)}$ for
+$\gamma = 4L^2/\mu^2$. Then for all $T\ge1$,
+$$
+\E\norm{x_T-x^\star}_2^2 \le \frac{C\sigma^2}{\mu^2 T} + \frac{C'\norm{x_0-x^\star}_2^2}{T^2}
+$$
+for absolute constants $C,C'$ depending only on the ratio $L/\mu$.
+</Theorem>
+
+<Proof>
+From the recursion established above with a step-dependent $\eta_t$,
+$$
+e_{t+1}\le(1-\eta_t\mu)e_t + \eta_t^2\sigma^2 .
+$$
+Claim: $e_t \le \dfrac{A}{t+\gamma}$ with $A = \max\left(\dfrac{4\sigma^2}{\mu^2},\ \gamma e_0\right)$.
+Induct. At $t=0$, $e_0 \le A/\gamma$ by the choice of $A$. Assuming it at $t$, and writing
+$\eta_t\mu = 2/(t+\gamma)$,
+$$
+e_{t+1} \le \left(1 - \frac{2}{t+\gamma}\right)\frac{A}{t+\gamma} + \frac{4\sigma^2}{\mu^2(t+\gamma)^2}
+= \frac{A(t+\gamma-2)}{(t+\gamma)^2} + \frac{4\sigma^2}{\mu^2(t+\gamma)^2}.
+$$
+Since $4\sigma^2/\mu^2 \le A$, the right-hand side is at most
+$\dfrac{A(t+\gamma-1)}{(t+\gamma)^2}$, and
+$(t+\gamma-1)(t+\gamma+1) = (t+\gamma)^2 - 1 \le (t+\gamma)^2$ gives
+$\dfrac{A(t+\gamma-1)}{(t+\gamma)^2}\le\dfrac{A}{t+\gamma+1}$, completing the induction.
+
+Unpacking $A$ gives the two stated terms.
+</Proof>
+
+<Note title="Rate comparison">
+Strongly convex deterministic GD: $e^{-t/\kappa}$, i.e. $\log(1/\eps)$ steps. Strongly convex SGD:
+$\sigma^2/(\mu^2 t)$, i.e. $1/\eps$ steps. The stochastic rate is **exponentially worse in the
+accuracy**, and no step-size schedule fixes that — the $\Omega(\sigma^2/(\mu^2 T))$ rate is
+information-theoretically optimal for this oracle. What SGD buys is a factor of $n$ per step, which
+wins overwhelmingly when $n$ is large and the target accuracy is modest. That is precisely the
+machine-learning regime: statistical error is $\Omega(1/\sqrt n)$ anyway, so optimising far below it
+is wasted work.
+</Note>
+
+<Theorem id="robbins-monro" title="Robbins–Monro conditions">
+In the stochastic approximation setting, if the step sizes satisfy
+$$
+\sum_{t=1}^\infty \eta_t = \infty \qquad\text{and}\qquad \sum_{t=1}^\infty\eta_t^2 < \infty,
+$$
+then (under regularity conditions on $f$ and the noise) $x_t \to x^\star$ almost surely.
+</Theorem>
+
+Quoted from Robbins and Monro; modern proofs go through supermartingale convergence. The two
+conditions have clean interpretations visible in the proofs above: $\sum\eta_t = \infty$ ensures the
+geometric-decay factor $\prod_t(1-\eta_t\mu)$ goes to zero, so the initial condition is forgotten;
+$\sum\eta_t^2<\infty$ ensures the accumulated noise $\sum_t\eta_t^2\sigma^2$ is finite, so the noise
+floor vanishes. $\eta_t = 1/t$ satisfies both; $\eta_t = 1/\sqrt t$ satisfies the first only; any
+constant $\eta$ satisfies the second only — and correspondingly has the floor computed above.
+
+## Non-convex case
+
+<Theorem id="sgd-nonconvex" title="SGD on smooth non-convex functions">
+Let $f$ be $L$-smooth and bounded below by $f^\star$, and assume (A1)–(A2). Run SGD for $T$ steps
+with constant $\eta = \min\left(\frac1L, \sqrt{\frac{2(f(x_0)-f^\star)}{L\sigma^2T}}\right)$. Then
+$$
+\frac1T\sum_{t=0}^{T-1}\E\norm{\nabla f(x_t)}_2^2 \le \frac{2\big(f(x_0)-f^\star\big)}{\eta T} + \eta L\sigma^2
+\;\lesssim\; \sqrt{\frac{L\sigma^2\big(f(x_0)-f^\star\big)}{T}} .
+$$
+</Theorem>
+
+<Proof>
+Apply the descent lemma to the step $x_{t+1} = x_t - \eta g_t$:
+$$
+f(x_{t+1}) \le f(x_t) - \eta\ip{\nabla f(x_t)}{g_t} + \frac{L\eta^2}{2}\norm{g_t}_2^2 .
+$$
+Take conditional expectation. By (A1) the inner product becomes $\norm{\nabla f(x_t)}_2^2$, and by
+(A1)–(A2) the second moment is at most $\norm{\nabla f(x_t)}_2^2+\sigma^2$:
+$$
+\E\big[f(x_{t+1})\mid\mathcal{F}_t\big] \le f(x_t) - \eta\left(1-\frac{L\eta}{2}\right)\norm{\nabla f(x_t)}_2^2 + \frac{L\eta^2\sigma^2}{2}.
+$$
+With $\eta\le1/L$ the bracket is at least $1/2$, so
+$$
+\frac\eta2\,\E\norm{\nabla f(x_t)}_2^2 \le \E f(x_t) - \E f(x_{t+1}) + \frac{L\eta^2\sigma^2}{2}.
+$$
+Sum over $t<T$, telescope, and divide by $\eta T/2$:
+$$
+\frac1T\sum_{t<T}\E\norm{\nabla f(x_t)}_2^2 \le \frac{2\big(f(x_0)-f^\star\big)}{\eta T} + L\eta\sigma^2 .
+$$
+Balancing the two terms in $\eta$ gives the stated choice and the $T^{-1/2}$ rate.
+</Proof>
+
+<NotSaid>
+Compare with the deterministic non-convex rate $O(1/T)$ for $\min_s\norm{\nabla f(x_s)}_2^2$: noise
+costs a full square root. And the conclusion is still only about **average squared gradient norm** —
+it does not say the last iterate has small gradient, does not say any iterate is near a local
+minimum, and says nothing at all about $f(x_T)-\inf f$. Every caveat from the deterministic
+non-convex theorem still applies, plus the new one that the guarantee is in expectation.
+</NotSaid>
+
+## Mini-batching and the expectation/probability distinction
+
+<Proposition id="minibatch-variance" title="Mini-batching reduces variance linearly">
+If $g_t^{(B)} = \frac1B\sum_{b=1}^B g_t^{(b)}$ with the $g_t^{(b)}$ conditionally i.i.d. unbiased with
+variance $\sigma^2$, then $g_t^{(B)}$ is unbiased with conditional variance $\sigma^2/B$.
+Consequently the noise floor of constant-step SGD becomes $\eta\sigma^2/(\mu B)$ and the non-convex
+rate becomes $\sqrt{L\sigma^2\Delta_0/(BT)}$.
+</Proposition>
+
+<Proof>
+Unbiasedness is linearity. For the variance, the summands are conditionally independent and
+identically distributed, so
+$\E\norm{g^{(B)}-\nabla f}_2^2 = \frac{1}{B^2}\sum_b\E\norm{g^{(b)}-\nabla f}_2^2 = \sigma^2/B$,
+the cross terms vanishing by conditional independence and zero conditional mean.
+</Proof>
+
+<Note title="What this says about batch size">
+The rate improves as $1/\sqrt{BT}$, and the cost per step scales as $B$: for a **fixed compute
+budget** $BT$, the bound is unchanged. So the theory says large batches buy parallelism, not sample
+efficiency — consistent with the empirical finding that there is a "critical batch size" beyond which
+scaling the batch stops helping. The theory does not predict where that threshold is.
+</Note>
+
+<Proposition id="expectation-vs-probability" title="Expected error does not bound failure probability">
+A bound $\E[f(x_T)-f^\star]\le\epsilon$ implies only
+$$
+\P\big(f(x_T)-f^\star > s\big)\le \frac{\epsilon}{s},
+$$
+by Markov's inequality, and this is the best possible without further assumptions.
+</Proposition>
+
+<Proof>
+Markov applied to the non-negative variable $f(x_T)-f^\star$. Tightness: let $f(x_T)-f^\star$ equal
+$s$ with probability $\epsilon/s$ and $0$ otherwise; the expectation is $\epsilon$ and the tail
+probability is exactly $\epsilon/s$.
+</Proof>
+
+<KeyIdea>
+For a $99\%$ confidence statement one needs $\epsilon \le s/100$, i.e. a hundred-fold improvement in
+the expected error — a $10^4$-fold increase in $T$ under the $1/\sqrt T$ rate. This is why
+high-probability bounds for SGD are a separate research programme rather than a corollary: getting
+$\P(\text{gap}>s)\le\delta$ with a $\log(1/\delta)$ dependence requires martingale concentration
+(<TopicRef id="high-dimensional-probability/concentration-inequalities">Azuma</TopicRef> or Freedman's
+inequality) applied to the noise sequence, and additional assumptions such as sub-Gaussian gradient
+noise. Reporting an in-expectation bound as though it were a high-confidence guarantee is a common
+and consequential error.
+</KeyIdea>
+
+<Claim kind="heuristic" id="sde-approximation" title="The SDE / diffusion approximation">
+As $\eta\to0$ with $t = \eta k$ held fixed, the SGD recursion resembles the Itô SDE
+$$
+dX_t = -\nabla f(X_t)\,dt + \sqrt{\eta\,\Sigma(X_t)}\;dW_t,
+$$
+where $\Sigma(x)$ is the gradient-noise covariance. Li, Tai and E make this precise as a weak
+approximation of order one in $\eta$.
+</Claim>
+
+<NotSaid>
+The approximation is genuinely useful for intuition — it explains why the stationary distribution
+depends on the ratio $\eta/B$ rather than on either separately, and it motivates linear
+learning-rate scaling rules. But its hypotheses are not satisfied in the regimes people invoke it
+for:
+
+- it requires $\eta$ small, and deep learning uses the largest stable $\eta$;
+- it assumes the noise is approximately Gaussian, whereas mini-batch gradient noise is often heavy-tailed;
+- it assumes $\Sigma$ varies slowly, whereas gradient noise covariance changes sharply across the loss landscape.
+
+Statements of the form "SGD prefers flat minima because the SDE's stationary measure concentrates
+there" are heuristic arguments resting on these hypotheses, not theorems about SGD. They belong in
+the same category as the other plausible-but-unproven claims catalogued on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="sgd-noise-floor" />
+<ProblemRef id="sgd-convex-rate" />
+<ProblemRef id="sgd-nonconvex-rate" />
+<ProblemRef id="sgd-minibatch-variance" />
+<ProblemRef id="sgd-robbins-monro" />
+<ProblemRef id="sgd-implement-verify" />
+<ProblemRef id="sgd-high-probability" />

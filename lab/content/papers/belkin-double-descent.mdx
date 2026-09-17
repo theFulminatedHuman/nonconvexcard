@@ -1,0 +1,67 @@
+---
+title: Reconciling modern machine learning practice and the bias-variance trade-off
+authors: Mikhail Belkin, Daniel Hsu, Siyuan Ma, Soumik Mandal
+year: 2019
+venue: PNAS
+url: https://arxiv.org/abs/1812.11118
+arxiv: '1812.11118'
+field: learning-theory
+tags: [double descent, interpolation, random features, smoothness]
+problem: Interpolating predictors were held to be statistically indefensible, yet they were what modern practice produced and they worked.
+contribution: Identified and named the double-descent risk curve, and demonstrated it in random-feature models, random forests and small neural networks, arguing that the interpolation regime is a distinct statistical regime rather than an aberration.
+prerequisites:
+  - learning-theory/bias-variance-and-double-descent
+  - machine-learning/kernel-methods-and-rkhs
+descendants: [deep-double-descent]
+related: [deep-double-descent, neural-tangent-kernel]
+---
+
+## What problem does this paper solve?
+
+It reconciles the classical bias–variance picture with the observation that interpolating models
+generalise, by showing the two live on different parts of the same curve.
+
+## What mathematical objects are introduced?
+
+The double-descent curve itself, and the framing of the **interpolation threshold** as the boundary
+between two regimes: the classical regime where capacity is a cost, and the modern regime where extra
+capacity buys a *smoother* interpolant.
+
+## What assumptions are made?
+
+That among the many interpolating predictors, the learning procedure selects one of small norm — which
+is the implicit-bias hypothesis made explicit. The paper's random-feature experiments use the
+minimum-norm solution directly.
+
+## What equations matter?
+
+For random-feature regression with $N$ features and $n$ samples, the risk as a function of $N/n$ has
+a pole at $N=n$ and decreases for $N>n$; the mechanism is that the minimum-norm interpolant's norm
+$\norm{\hat\beta}_2$ *decreases* as $N$ grows past $n$, because more features give more ways to
+interpolate and the cheapest one gets cheaper.
+
+## What theorem or result is important?
+
+The paper is primarily empirical and conceptual; the accompanying theory is for random Fourier
+features. The rigorous version for linear models came later (Hastie et al., Bartlett et al.).
+
+## What proof techniques are used?
+
+Explicit computation for random-feature models; otherwise experiment.
+
+## What prior mathematics is required?
+
+Kernels and random features; the pseudoinverse and minimum-norm solutions; the conditioning of random
+matrices.
+
+## Limitations
+
+The "smoother interpolant" story is a mechanism sketch. It does not say which norm is minimised for a
+neural network, and the answer is not known — see the
+<TopicRef id="deep-learning-theory/what-is-proven">implicit bias</TopicRef> discussion.
+
+## Why it mattered
+
+It supplied the vocabulary. "Double descent" and "interpolation regime" are now standard terms, and
+the paper redirected attention from *capacity* to *which solution the algorithm selects*, which is
+where the open problems now are.

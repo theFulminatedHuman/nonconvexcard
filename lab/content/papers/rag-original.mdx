@@ -1,0 +1,77 @@
+---
+title: Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks
+authors: Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, Sebastian Riedel, Douwe Kiela
+year: 2020
+venue: NeurIPS
+url: https://arxiv.org/abs/2005.11401
+arxiv: '2005.11401'
+field: rag
+tags: [rag, retrieval, latent variable, knowledge]
+problem: A parametric language model stores knowledge in its weights, which cannot be inspected, updated or attributed, and which is expensive to extend.
+contribution: Treating the retrieved document as a latent variable and marginalising over it, training the generator and the query encoder end to end through the retrieval distribution.
+prerequisites:
+  - rag/retrieval-as-latent-variable-model
+  - rag/embedding-geometry-and-similarity
+  - llm/language-modelling-and-cross-entropy
+descendants: []
+related: [dpr]
+---
+
+## What problem does this paper solve?
+
+Knowledge access and provenance. A model that has memorised a fact cannot cite it, cannot be
+corrected without retraining, and cannot be audited.
+
+## What mathematical objects are introduced?
+
+The latent-variable factorisation
+$$
+p(y\mid x) = \sum_{z\in\mathrm{top}\text{-}k}p_\eta(z\mid x)\,p_\theta(y\mid x,z),
+$$
+in two variants — **RAG-Sequence**, marginalising once per output sequence, and **RAG-Token**,
+marginalising at each token. These are
+<TopicRef id="rag/retrieval-as-latent-variable-model">different models</TopicRef>, not two
+implementations of one.
+
+## What assumptions are made?
+
+That top-$k$ truncation of the sum is adequate, and that the document encoder can be held fixed while
+the query encoder is trained (so the index need not be rebuilt during training). The second is an
+engineering compromise with a real cost: the document representations are never adapted to the task.
+
+## What equations matter?
+
+The two marginalisations, and the gradient through $p_\eta(z\mid x)$, which is what makes the
+training end-to-end: the query encoder receives a signal telling it to up-weight documents that
+improved the generation likelihood — an empirical approximation to the
+<TopicRef id="rag/retrieval-as-latent-variable-model">true posterior</TopicRef> $p(z\mid x,y)$ that
+the variational bound identifies as the right target.
+
+## What theorem or result is important?
+
+No theorem. State-of-the-art on open-domain question answering at the time, with the additional
+property that the retrieved passages provide attribution and that swapping the index changes the
+model's knowledge without retraining.
+
+## What proof techniques are used?
+
+None.
+
+## What prior mathematics is required?
+
+Marginalisation and latent-variable models; the difference between a mixture of products and a product
+of mixtures; dense retrieval geometry.
+
+## Limitations
+
+Only $k\approx5$–$10$ documents fit in context, so the marginalisation is a severe truncation; the
+document encoder is frozen; the retrieval distribution over a truncated support is not the true
+posterior; and the whole system inherits the
+<TopicRef id="rag/retrieval-as-latent-variable-model">recall ceiling</TopicRef> — the generator cannot
+use a document the retriever did not return.
+
+## Why it mattered
+
+It is the origin of the term and of the architecture, and it framed retrieval augmentation
+probabilistically rather than as a prompt-engineering trick. Almost every subsequent RAG variant is an
+intervention on one of the two factors in its central equation.

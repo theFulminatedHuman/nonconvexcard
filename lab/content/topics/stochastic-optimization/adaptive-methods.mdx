@@ -1,0 +1,316 @@
+---
+title: Adaptive Methods and Variance Reduction
+summary: AdaGrad, RMSProp, Adam and AdamW derived from their design goals, plus SVRG and SAGA and what each one actually guarantees.
+field: stochastic-optimization
+level: 3
+order: 20
+prerequisites: [stochastic-optimization/sgd-convergence]
+tags: [adagrad, rmsprop, adam, adamw, weight decay, svrg, saga, variance reduction]
+estimated_time: 3h
+papers: [adam]
+claims:
+  - id: adagrad-regret
+    kind: theorem
+    title: AdaGrad regret bound
+    summary: AdaGrad attains a regret bound that adapts to the observed gradient scale per coordinate.
+    proved: true
+    tags: [adagrad, regret, online]
+  - id: adam-def
+    kind: definition
+    title: Adam
+    summary: Exponential moving averages of the gradient and its square, with bias correction.
+    proved: false
+    tags: [adam, moments]
+  - id: adam-nonconvergence
+    kind: theorem
+    title: Adam can fail to converge
+    summary: There is a convex online problem on which Adam with standard parameters has non-vanishing average regret.
+    proved: false
+    tags: [adam, counterexample, amsgrad]
+  - id: adamw-decoupling
+    kind: proposition
+    title: L2 regularisation and weight decay differ under adaptive preconditioning
+    summary: Adding lambda times the weight to the gradient is not the same as shrinking the weight, once the update is rescaled per coordinate.
+    proved: true
+    tags: [adamw, weight decay, regularisation]
+  - id: svrg-rate
+    kind: theorem
+    title: SVRG attains a linear rate on finite sums
+    summary: Variance reduction removes the noise floor entirely for strongly convex finite-sum problems.
+    proved: false
+    tags: [svrg, variance reduction, linear rate]
+  - id: vr-deep-learning
+    kind: empirical
+    title: Variance reduction does not help deep learning in practice
+    summary: The methods that provably remove the noise floor for finite sums have not produced wall-clock gains on large neural networks.
+    proved: false
+    tags: [caveat, practice]
+references:
+  - key: duchi-hazan-singer
+    title: Adaptive subgradient methods for online learning and stochastic optimization
+    authors: John Duchi, Elad Hazan and Yoram Singer
+    year: 2011
+    kind: paper
+    note: AdaGrad.
+  - key: kingma-ba
+    title: 'Adam: A Method for Stochastic Optimization'
+    authors: Diederik P. Kingma and Jimmy Ba
+    year: 2015
+    kind: paper
+    url: https://arxiv.org/abs/1412.6980
+  - key: reddi-kale-kumar
+    title: On the Convergence of Adam and Beyond
+    authors: Sashank J. Reddi, Satyen Kale and Sanjiv Kumar
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1904.09237
+    note: The non-convergence counterexample and AMSGrad.
+  - key: loshchilov-hutter
+    title: Decoupled Weight Decay Regularization
+    authors: Ilya Loshchilov and Frank Hutter
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1711.05101
+    note: AdamW.
+  - key: johnson-zhang
+    title: Accelerating stochastic gradient descent using predictive variance reduction
+    authors: Rie Johnson and Tong Zhang
+    year: 2013
+    kind: paper
+    note: SVRG.
+  - key: defazio-bottou
+    title: On the Ineffectiveness of Variance Reduced Optimization for Deep Learning
+    authors: Aaron Defazio and Léon Bottou
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1812.04529
+---
+
+Two distinct ideas are often conflated. **Adaptive methods** rescale the step per coordinate using
+observed gradient magnitudes; they change the geometry but not the noise. **Variance reduction**
+constructs a lower-variance gradient estimator; it changes the noise but not the geometry. They
+address different terms in the SGD bound, and they have very different theoretical status.
+
+## AdaGrad
+
+<Definition id="adagrad-def" title="AdaGrad">
+With $G_t = \sum_{s\le t} g_s\odot g_s$ accumulated coordinatewise,
+$$
+x_{t+1,i} = x_{t,i} - \frac{\eta}{\sqrt{G_{t,i}}+\epsilon}\,g_{t,i}.
+$$
+</Definition>
+
+<Theorem id="adagrad-regret" title="AdaGrad regret bound">
+Let $f_1,\dots,f_T$ be convex with subgradients $g_t \in \partial f_t(x_t)$, and suppose
+$\norm{x_t - x^\star}_\infty \le D_\infty$ for all $t$. Then AdaGrad with $\eta = D_\infty/\sqrt2$
+satisfies
+$$
+\sum_{t=1}^T\big(f_t(x_t)-f_t(x^\star)\big)
+\le \sqrt2\,D_\infty\sum_{i=1}^d\sqrt{\sum_{t=1}^Tg_{t,i}^2}.
+$$
+</Theorem>
+
+<Proof>
+We give the argument for a single coordinate; the bound is a sum over coordinates because the update
+is separable. Fix $i$ and write $h_t = g_{t,i}$, $u_t = x_{t,i}$, $u^\star = x^\star_i$,
+$S_t = \sum_{s\le t}h_s^2$, and $\eta_t = \eta/\sqrt{S_t}$ (taking $\epsilon = 0$ for clarity).
+
+The standard one-step expansion gives
+$$
+(u_t - u^\star)h_t \le \frac{(u_t-u^\star)^2 - (u_{t+1}-u^\star)^2}{2\eta_t} + \frac{\eta_t h_t^2}{2}.
+$$
+Summing over $t$ and using $|u_t - u^\star|\le D_\infty$, the first group telescopes with a
+correction because $\eta_t$ varies:
+$$
+\sum_{t\le T}\frac{(u_t-u^\star)^2-(u_{t+1}-u^\star)^2}{2\eta_t}
+\le \frac{D_\infty^2}{2}\left[\frac{1}{\eta_1} + \sum_{t=2}^T\left(\frac1{\eta_t}-\frac1{\eta_{t-1}}\right)\right]
+= \frac{D_\infty^2}{2\eta_T} = \frac{D_\infty^2\sqrt{S_T}}{2\eta},
+$$
+using that $1/\eta_t$ is non-decreasing so all the bracketed terms are non-negative and telescope.
+
+For the second group, the elementary inequality
+$$
+\sum_{t=1}^T\frac{h_t^2}{\sqrt{S_t}} \le 2\sqrt{S_T}
+$$
+holds by induction: at $t=T$, $\frac{h_T^2}{\sqrt{S_T}} = \frac{S_T - S_{T-1}}{\sqrt{S_T}} \le 2(\sqrt{S_T}-\sqrt{S_{T-1}})$
+because $\sqrt{S_T}-\sqrt{S_{T-1}} = \frac{S_T-S_{T-1}}{\sqrt{S_T}+\sqrt{S_{T-1}}} \ge \frac{S_T-S_{T-1}}{2\sqrt{S_T}}$.
+So the second group is at most $\eta\sqrt{S_T}$.
+
+Adding, the per-coordinate regret is at most $\left(\frac{D_\infty^2}{2\eta}+\eta\right)\sqrt{S_T}$,
+minimised over $\eta$ at $\eta = D_\infty/\sqrt2$ with value $\sqrt2 D_\infty\sqrt{S_T}$. Summing over
+coordinates gives the theorem.
+</Proof>
+
+<KeyIdea>
+The bound involves $\sum_i\sqrt{\sum_t g_{t,i}^2}$, not $\sqrt{d\sum_{t}\norm{g_t}_2^2}$. For **sparse**
+gradients — most coordinates zero most of the time, as in bag-of-words features or embedding layers —
+the former is far smaller. That is what AdaGrad was designed for and what it provably delivers. The
+dense case gives no improvement over tuned SGD, and AdaGrad's monotonically growing $G_t$ makes the
+effective step decay like $1/\sqrt t$ whether or not that is appropriate — which is the motivation
+for the exponential averaging in RMSProp and Adam.
+</KeyIdea>
+
+## RMSProp and Adam
+
+<Definition id="adam-def" title="Adam">
+With $\beta_1 = 0.9$, $\beta_2 = 0.999$ typically,
+$$
+\begin{aligned}
+m_t &= \beta_1 m_{t-1} + (1-\beta_1)g_t, &\qquad \hat m_t &= \frac{m_t}{1-\beta_1^t},\\
+v_t &= \beta_2 v_{t-1} + (1-\beta_2)\,g_t\odot g_t, &\qquad \hat v_t &= \frac{v_t}{1-\beta_2^t},\\
+x_{t+1} &= x_t - \eta\,\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}. &&
+\end{aligned}
+$$
+RMSProp is Adam with $\beta_1 = 0$ and no bias correction.
+</Definition>
+
+<Derivation title="Why the bias correction is what it is">
+<Step why="Unroll the exponential moving average from m_0 = 0.">
+$$
+m_t = (1-\beta_1)\sum_{s=1}^t \beta_1^{t-s}g_s .
+$$
+</Step>
+<Step why="Take expectations assuming the gradient distribution is stationary with mean g.">
+$$
+\E m_t = (1-\beta_1)\,\E g\sum_{s=1}^t\beta_1^{t-s} = \E g\,\big(1-\beta_1^t\big).
+$$
+</Step>
+<Step why="The estimator is biased towards zero by exactly the factor (1 − β₁ᵗ), so dividing by it removes the bias.">
+$\E \hat m_t = \E g$. The same computation gives $\E\hat v_t = \E[g\odot g]$.
+</Step>
+<Step why="The correction matters only early: at t = 1 with β₂ = 0.999 the uncorrected v₁ is a thousand times too small, so the uncorrected step would be about thirty times too large.">
+$1-\beta_2^t \to 1$ geometrically, so the correction is negligible after a few thousand steps.
+</Step>
+</Derivation>
+
+<Intuition>
+Read the Adam update as a **signal-to-noise** step. $\hat m_t$ estimates the mean gradient and
+$\sqrt{\hat v_t}$ its root-mean-square, so the ratio is approximately
+$\text{mean}/\text{RMS} \in [-1,1]$. Coordinates whose gradient is consistent in sign get steps near
+$\pm\eta$; coordinates whose gradient fluctuates get steps near zero. The step is therefore
+scale-free in the gradient — multiplying the loss by $1000$ changes nothing — which is the practical
+property that makes Adam so robust to tuning.
+</Intuition>
+
+<Theorem id="adam-nonconvergence" title="Adam can fail to converge">
+There is a sequence of convex functions $f_t$ with bounded gradients on a bounded convex domain, and
+a choice of $\beta_1,\beta_2$ satisfying the conditions stated in the original Adam paper, for which
+Adam's average regret does not tend to zero.
+</Theorem>
+
+Quoted from Reddi, Kale and Kumar. The counterexample is a one-dimensional problem where a large
+informative gradient arrives every third step and small misleading gradients arrive in between; the
+exponential average $v_t$ forgets the large gradient before it can be acted on, so the effective step
+in the informative direction is persistently too small. The proposed fix, AMSGrad, replaces $v_t$
+with a running maximum, restoring the monotonicity that AdaGrad had and Adam gave up.
+
+<NotSaid>
+The theorem does not say Adam does not work. It says the convergence *proof* in the original paper is
+wrong, and that no such proof can exist under those hypotheses. Adam works extremely well on the
+problems it is used for; AMSGrad, which has a proof, is not noticeably better in practice. The honest
+statement is that Adam's empirical success is not currently explained by a convergence theorem, and
+convergence guarantees for it exist only under additional assumptions (bounded gradients plus
+$\beta_1 < \sqrt{\beta_2}$, or a decaying $\beta_2$ schedule).
+</NotSaid>
+
+## AdamW: why decoupling matters
+
+<Proposition id="adamw-decoupling" title="L2 regularisation and weight decay differ under adaptive preconditioning">
+Consider adding $\lambda x$ to the gradient (L2 regularisation) versus subtracting $\eta\lambda x$
+from the update (weight decay). Under SGD the two coincide. Under a diagonal preconditioner $P_t$
+they do not: the first gives
+$$
+x_{t+1} = x_t - \eta P_t\big(g_t + \lambda x_t\big),
+$$
+the second gives
+$$
+x_{t+1} = x_t - \eta P_t g_t - \eta\lambda x_t .
+$$
+The effective shrinkage in the first is $\eta\lambda P_t$, which varies by coordinate.
+</Proposition>
+
+<Proof>
+Direct substitution. With $P_t = I$ the two right-hand sides are identical. With $P_t$ diagonal and
+non-constant, the first shrinks coordinate $i$ by $\eta\lambda P_{t,ii}$ and the second by
+$\eta\lambda$; these differ unless $P_t = cI$.
+</Proof>
+
+<KeyIdea>
+Under Adam, $P_{t,ii} = 1/(\sqrt{\hat v_{t,i}}+\epsilon)$, so L2 regularisation applies *weaker*
+shrinkage to coordinates with large gradient variance — the opposite of what a regulariser is
+supposed to do, since those are exactly the parameters most at risk of overfitting noise. Decoupling
+the decay (AdamW) makes the shrinkage uniform and, empirically, substantially improves
+generalisation. This is a case where a purely mathematical observation about operator ordering had a
+large practical effect, and it is worth keeping as a reminder that "$L_2$ penalty" and
+"weight decay" are only synonyms for unpreconditioned methods.
+</KeyIdea>
+
+## Variance reduction
+
+The <TopicRef id="stochastic-optimization/sgd-convergence">noise floor</TopicRef> $\eta\sigma^2/\mu$
+comes from $\sigma^2>0$. For a **finite sum** $f = \frac1n\sum_i f_i$ the variance can be reduced to
+zero at the optimum, using a control variate.
+
+<Algorithm title="SVRG (stochastic variance reduced gradient)">
+<ol>
+<li><strong>Outer loop.</strong> At epoch $s$, set the snapshot $\tilde x = x^{(s)}$ and compute the full gradient $\tilde\mu = \nabla f(\tilde x)$ once, at cost $n$.</li>
+<li><strong>Inner loop.</strong> For $k = 1,\dots,m$: sample $i$ uniformly and take $$x_{k+1} = x_k - \eta\big(\nabla f_i(x_k) - \nabla f_i(\tilde x) + \tilde\mu\big).$$</li>
+<li><strong>Restart.</strong> Set $x^{(s+1)}$ to (an average of) the inner iterates and repeat.</li>
+</ol>
+</Algorithm>
+
+<Proposition id="svrg-unbiased" title="The SVRG estimator is unbiased with vanishing variance">
+The inner-loop direction is unbiased, and its variance is bounded by
+$$
+\E\norm{\nabla f_i(x_k)-\nabla f_i(\tilde x)+\tilde\mu - \nabla f(x_k)}_2^2
+\le 2L^2\left(\norm{x_k - x^\star}_2^2 + \norm{\tilde x - x^\star}_2^2\right),
+$$
+so it tends to zero as both the iterate and the snapshot approach $x^\star$.
+</Proposition>
+
+<Proof>
+Unbiasedness: $\E_i[\nabla f_i(x_k)] = \nabla f(x_k)$ and $\E_i[\nabla f_i(\tilde x)] = \tilde\mu$, so
+the correction has mean zero.
+
+For the variance, let $\zeta = \nabla f_i(x_k)-\nabla f_i(\tilde x)$. Then
+$\E\norm{\zeta - \E\zeta}_2^2 \le \E\norm{\zeta}_2^2$, and by $L$-smoothness of each $f_i$,
+$\norm{\zeta}_2 \le L\norm{x_k-\tilde x}_2 \le L(\norm{x_k-x^\star}_2 + \norm{\tilde x - x^\star}_2)$.
+Squaring and using $(a+b)^2\le2a^2+2b^2$ gives the bound.
+</Proof>
+
+<Theorem id="svrg-rate" title="SVRG attains a linear rate on finite sums">
+For $\mu$-strongly convex $f$ with each $f_i$ being $L$-smooth, SVRG with suitable $\eta$ and
+$m = \Theta(L/\mu)$ satisfies $\E\big[f(x^{(s)})-f^\star\big]\le \rho^s\big(f(x^{(0)})-f^\star\big)$
+for some $\rho<1$, at a total gradient cost of $O\big((n + L/\mu)\log(1/\eps)\big)$.
+</Theorem>
+
+Quoted from Johnson and Zhang. Compare the alternatives for the same problem: full gradient descent
+costs $O(n\kappa\log(1/\eps))$ and SGD costs $O(1/(\mu\eps))$. SVRG's $O((n+\kappa)\log(1/\eps))$ beats
+both — an additive rather than multiplicative dependence on $n$ and $\kappa$. SAGA achieves the same
+with a gradient table instead of periodic full passes.
+
+<Claim kind="empirical" id="vr-deep-learning" title="Variance reduction does not help deep learning in practice">
+Despite the clean theory, SVRG and SAGA have not produced wall-clock improvements on large neural
+networks, and are not used.
+</Claim>
+
+<NotSaid>
+Defazio and Bottou investigated this directly and identified several reasons, none of which is a flaw
+in the theorems:
+
+- **Data augmentation** makes the objective not a finite sum — each "example" is a distribution, so there is no fixed $\nabla f_i$ to snapshot.
+- **Batch normalisation and dropout** make $\nabla f_i$ depend on the rest of the batch and on fresh randomness, again breaking the finite-sum structure.
+- **The snapshot goes stale fast.** The theory assumes $\norm{x_k-\tilde x}_2$ stays small; in deep learning the iterate moves far within an epoch, so the control variate has little correlation with the gradient it is correcting and the variance reduction largely evaporates.
+- **Memory.** SAGA's gradient table is $O(nd)$, which is impossible at scale.
+
+This is a good example of a gap between theory and practice where the theory is correct and the
+*hypotheses* are what fail. Identifying which hypothesis fails is more useful than concluding that
+theory does not apply.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="ad-adagrad-sum-inequality" />
+<ProblemRef id="ad-adam-bias-correction" />
+<ProblemRef id="ad-adamw-difference" />
+<ProblemRef id="ad-svrg-variance" />

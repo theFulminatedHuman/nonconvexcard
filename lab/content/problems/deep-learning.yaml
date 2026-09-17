@@ -1,0 +1,776 @@
+defaults:
+  field: deep-learning
+problems:
+  - id: dl-xor-impossible
+    title: XOR is not linearly separable
+    topic: deep-learning/approximation-and-backpropagation
+    difficulty: foundation
+    type: proof
+    estimated_time: 15m
+    tags: [perceptron, xor, separability]
+    statement: |
+      Prove there is no $(w,b)$ with $\sign(\langle w,x\rangle+b)$ equal to XOR on $\{0,1\}^2$, then
+      exhibit a two-hidden-unit ReLU network that computes it exactly.
+    solution: |
+      **Impossibility.** XOR requires
+      $$
+      b<0,\quad w_1+b>0,\quad w_2+b>0,\quad w_1+w_2+b<0 .
+      $$
+      Adding the second and third: $w_1+w_2+2b>0$, so $w_1+w_2>-2b$. The fourth gives $w_1+w_2<-b$.
+      Combining, $-2b<-b$, i.e. $b>0$ — contradicting $b<0$.
+
+      (Geometrically: the two positive points $(1,0),(0,1)$ and the two negative points $(0,0),(1,1)$
+      have intersecting convex hulls — both segments pass through $(\tfrac12,\tfrac12)$ — and no
+      hyperplane separates sets with intersecting hulls.)
+
+      **A two-unit ReLU network.** Take
+      $$
+      h_1 = \rho(x_1+x_2), \qquad h_2 = \rho(x_1+x_2-1), \qquad f = h_1 - 2h_2 ,
+      $$
+      with $\rho(t)=\max(t,0)$. Evaluating:
+
+      | $x$ | $x_1+x_2$ | $h_1$ | $h_2$ | $f$ | XOR |
+      | --- | --- | --- | --- | --- | --- |
+      | $(0,0)$ | $0$ | $0$ | $0$ | $0$ | $0$ |
+      | $(1,0)$ | $1$ | $1$ | $0$ | $1$ | $1$ |
+      | $(0,1)$ | $1$ | $1$ | $0$ | $1$ | $1$ |
+      | $(1,1)$ | $2$ | $2$ | $1$ | $0$ | $0$ |
+
+      The network computes XOR exactly.
+
+      **What the hidden layer bought.** It maps the four inputs into a space where they *are* separable:
+      the two positive points both land at $(1,0)$ in $(h_1,h_2)$ coordinates while the negatives land
+      at $(0,0)$ and $(2,1)$. This is the whole idea of a learned representation, in the smallest
+      possible instance.
+
+  - id: dl-backprop-derivation
+    title: Derive the backpropagation recursion
+    topic: deep-learning/approximation-and-backpropagation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [backpropagation, chain rule, adjoint]
+    statement: |
+      For a feedforward network $z^{(\ell)} = W^{(\ell)}a^{(\ell-1)}+b^{(\ell)}$,
+      $a^{(\ell)} = \rho(z^{(\ell)})$, derive
+      $$
+      \delta^{(\ell)} = \big((W^{(\ell+1)})^\top\delta^{(\ell+1)}\big)\odot\rho'(z^{(\ell)}),
+      \qquad
+      \frac{\partial\mathcal J}{\partial W^{(\ell)}} = \delta^{(\ell)}\big(a^{(\ell-1)}\big)^\top ,
+      $$
+      and state the time and memory cost.
+    solution: |
+      **Adjoint recursion.** $z^{(\ell)}$ influences $\mathcal J$ only through
+      $a^{(\ell)} = \rho(z^{(\ell)})$ and then $z^{(\ell+1)} = W^{(\ell+1)}a^{(\ell)}+b^{(\ell+1)}$.
+      By the chain rule,
+      $$
+      \delta^{(\ell)} = \frac{\partial\mathcal J}{\partial z^{(\ell)}}
+      = \Big(\frac{\partial a^{(\ell)}}{\partial z^{(\ell)}}\Big)^\top\Big(\frac{\partial z^{(\ell+1)}}{\partial a^{(\ell)}}\Big)^\top\delta^{(\ell+1)} .
+      $$
+      Since $\rho$ acts coordinatewise, $\partial a^{(\ell)}/\partial z^{(\ell)} = \diag(\rho'(z^{(\ell)}))$,
+      and $\partial z^{(\ell+1)}/\partial a^{(\ell)} = W^{(\ell+1)}$. Substituting,
+      $$
+      \delta^{(\ell)} = \diag\big(\rho'(z^{(\ell)})\big)\big(W^{(\ell+1)}\big)^\top\delta^{(\ell+1)}
+      = \Big(\big(W^{(\ell+1)}\big)^\top\delta^{(\ell+1)}\Big)\odot\rho'\big(z^{(\ell)}\big).
+      $$
+
+      **Parameter gradients.** $z^{(\ell)}_p = \sum_qW^{(\ell)}_{pq}a^{(\ell-1)}_q+b^{(\ell)}_p$, so
+      $\partial z^{(\ell)}_p/\partial W^{(\ell)}_{pq} = a^{(\ell-1)}_q$ and
+      $$
+      \frac{\partial\mathcal J}{\partial W^{(\ell)}_{pq}} = \delta^{(\ell)}_pa^{(\ell-1)}_q
+      \quad\Longrightarrow\quad
+      \frac{\partial\mathcal J}{\partial W^{(\ell)}} = \delta^{(\ell)}\big(a^{(\ell-1)}\big)^\top ,
+      $$
+      and $\partial\mathcal J/\partial b^{(\ell)} = \delta^{(\ell)}$.
+
+      **Cost.** Each backward layer performs one matrix–vector product with $(W^{(\ell)})^\top$ and one
+      outer product — the same order as the forward matrix–vector product. So the backward pass costs
+      about twice the forward pass, and the total gradient computation is $O(1)$ forward passes
+      regardless of the number of parameters. Memory is $O(\sum_\ell\dim a^{(\ell)})$ for the stored
+      activations, which is what gradient checkpointing trades against recomputation.
+
+      **Why exact.** Every step is the chain rule, which is an identity. Backpropagation is not a
+      numerical approximation to the gradient; it is the gradient.
+
+  - id: dl-relu-network-width
+    title: Width needed to represent a piecewise linear function
+    topic: deep-learning/approximation-and-backpropagation
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [relu, expressivity, depth, piecewise linear]
+    statement: |
+      1. Show that a one-hidden-layer ReLU network with $m$ units on $\R$ computes a piecewise linear
+         function with at most $m+1$ pieces.
+      2. Show that a depth-$L$ network of width $2$ can compute a sawtooth with $2^L$ pieces.
+      3. Deduce a depth separation and state its scope carefully.
+    solution: |
+      **1. Shallow upper bound.** $f(x) = \sum_{j=1}^mc_j\rho(w_jx+b_j)+c_0$ is a sum of functions each
+      with a single kink, at $x = -b_j/w_j$. A sum of piecewise linear functions has kinks only where
+      one of the summands does, so $f$ has at most $m$ kinks, hence at most $m+1$ linear pieces.
+
+      **2. Deep sawtooth.** Let $g:[0,1]\to[0,1]$ be the tent map
+      $$
+      g(x) = 2\rho(x) - 4\rho(x-\tfrac12),
+      $$
+      which rises from $0$ to $1$ on $[0,\tfrac12]$ and falls back on $[\tfrac12,1]$: two pieces,
+      computed with two ReLU units. Composing,
+      $$
+      g^{\circ L} = \underbrace{g\circ\cdots\circ g}_{L}
+      $$
+      is a sawtooth with $2^L$ linear pieces, because each application doubles the number of monotone
+      segments. It is computed by a depth-$L$ network of width $2$, hence with $2L$ units.
+
+      **3. Separation.** To represent $g^{\circ L}$ exactly, a one-hidden-layer network needs at least
+      $2^L-1$ units, whereas depth $L$ and width $2$ needs $2L$. So there are functions computable with
+      $O(L)$ parameters at depth $L$ that require $2^{\Omega(L)}$ parameters at depth $2$.
+
+      **Scope.** The statement is about **exact representation** of a specially constructed function.
+      It does not say:
+      - that approximate representation requires exponential width (Telgarsky's results address this and still give exponential separations, but the constructions remain special);
+      - that functions arising in practice have this character;
+      - anything about **learnability** — the sawtooth is representable by a deep network but is
+        notoriously hard to learn by gradient descent, since its loss landscape is extremely rough.
+
+      Depth-separation theorems establish that depth *can* buy exponential efficiency. Whether it does
+      so on real problems is a separate and unresolved question.
+
+  - id: dl-jacobian-product
+    title: Gradient magnitude through a deep chain
+    topic: deep-learning/approximation-and-backpropagation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [vanishing gradient, jacobian, initialisation, residual]
+    statement: |
+      Show that the input-layer adjoint is a product of layer Jacobians, and that under random
+      initialisation with i.i.d. weights of variance $\sigma_w^2$, the expected squared gradient norm
+      scales like $(\sigma_w^2 n_{\text{in}}\E[\rho'^2])^{L}$. Deduce the He initialisation and explain
+      the effect of a residual connection.
+    solution: |
+      **Product form.** With $J^{(\ell)} = \diag(\rho'(z^{(\ell)}))(W^{(\ell)})^\top$, the recursion
+      $\delta^{(\ell)} = J^{(\ell)}\delta^{(\ell+1)}$ composes to
+      $$
+      \delta^{(1)} = J^{(1)}J^{(2)}\cdots J^{(L-1)}\delta^{(L)} .
+      $$
+
+      **Scaling at initialisation.** Suppose $W^{(\ell)}_{ij}$ are i.i.d. with mean $0$ and variance
+      $\sigma_w^2$, independent of the activations. Then for a fixed vector $v$,
+      $$
+      \E\big\|J^{(\ell)}v\big\|_2^2 = \E\big\|\diag(\rho')W^\top v\big\|_2^2
+      \approx n_{\text{in}}\,\sigma_w^2\,\E[\rho'^2]\;\|v\|_2^2 ,
+      $$
+      the factor $n_{\text{in}}$ coming from summing $n_{\text{in}}$ independent contributions.
+      Composing over $L-1$ layers,
+      $$
+      \E\|\delta^{(1)}\|_2^2 \approx \big(\sigma_w^2n_{\text{in}}\E[\rho'^2]\big)^{L-1}\E\|\delta^{(L)}\|_2^2 .
+      $$
+      This is exponential in $L$ with base $\sigma_w^2n_{\text{in}}\E[\rho'^2]$ — vanishing if the base
+      is below $1$, exploding if above.
+
+      **He initialisation.** For ReLU, $\rho'(t) = \one\{t>0\}$, and at initialisation the
+      pre-activations are symmetric about $0$, so $\E[\rho'^2] = \tfrac12$. Setting the base to $1$:
+      $$
+      \sigma_w^2\,n_{\text{in}}\cdot\tfrac12 = 1
+      \quad\Longrightarrow\quad
+      \sigma_w^2 = \frac{2}{n_{\text{in}}},
+      $$
+      which is exactly the He initialisation. For $\tanh$, $\E[\rho'^2]\approx1$ near zero and the
+      analogous computation gives Glorot's $\sigma_w^2 = 1/n_{\text{in}}$ (or the fan-average variant).
+
+      **Residual connections.** A residual block has Jacobian $I + \tilde J^{(\ell)}$ rather than
+      $J^{(\ell)}$. The product $\prod_\ell(I+\tilde J^{(\ell)})$ stays near $I$ when the $\tilde J$ are
+      small: expanding, it is $I + \sum_\ell\tilde J^{(\ell)} + O(\tilde J^2)$, growing at worst
+      linearly rather than exponentially in $L$. That is the mathematical content of ResNet, and the
+      reason depth beyond a few dozen layers became trainable.
+
+  - id: dl-implement-backprop
+    title: Implement backpropagation from scratch
+    topic: deep-learning/approximation-and-backpropagation
+    difficulty: intermediate
+    type: coding
+    estimated_time: 3h
+    tags: [backpropagation, implementation, gradient check]
+    statement: |
+      Implement a small MLP with forward and backward passes by hand (no autodiff), and verify it.
+
+      1. Check the analytic gradient against central finite differences.
+      2. Measure the wall-clock ratio of backward to forward passes.
+      3. Demonstrate vanishing gradients with a deep sigmoid network, and fix it with He initialisation
+         plus ReLU.
+      4. Add a residual connection and measure the gradient norm at the first layer as depth grows.
+    solution: |
+      ```python
+      import numpy as np
+
+      def forward(params, x):
+          acts, zs, a = [x], [], x
+          for W, b in params:
+              z = a @ W.T + b
+              a = np.maximum(z, 0)
+              zs.append(z); acts.append(a)
+          return acts, zs
+
+      def backward(params, acts, zs, dL_da):
+          grads, delta = [], dL_da * (zs[-1] > 0)
+          for l in range(len(params) - 1, -1, -1):
+              gW = delta.T @ acts[l]
+              gb = delta.sum(0)
+              grads.append((gW, gb))
+              if l > 0:
+                  delta = (delta @ params[l][0]) * (zs[l - 1] > 0)
+          return grads[::-1]
+      ```
+
+      **1. Gradient check.** Compare against central differences
+      $\big(\mathcal J(\theta+he_k)-\mathcal J(\theta-he_k)\big)/(2h)$ with $h\approx10^{-5}$, using the
+      **relative** error $\frac{|g_{\text{ana}}-g_{\text{num}}|}{|g_{\text{ana}}|+|g_{\text{num}}|+10^{-12}}$.
+      Expect below $10^{-7}$ in float64. Two common traps: ReLU is non-differentiable at $0$, so
+      perturbing across a kink gives a spurious mismatch (use inputs well away from kinks, or
+      $\tanh$ for the check); and float32 limits the achievable agreement to about $10^{-3}$.
+
+      **2. Timing ratio.** The backward pass should cost roughly $2\times$ the forward pass: one
+      matrix product to propagate $\delta$ and one outer product for the weight gradient, against one
+      product forward. Measuring a ratio far from $2$ usually means unnecessary copies or a
+      non-vectorised inner loop.
+
+      **3. Vanishing gradients.** With sigmoid activations, $\sigma'\le1/4$, and standard
+      $\Ncal(0,1)$ weights, the gradient norm at layer $1$ falls by orders of magnitude per layer: at
+      depth $20$ it is numerically zero. Switching to ReLU with $\sigma_w^2 = 2/n_{\text{in}}$ keeps the
+      norm within a small factor of $1$ across depth — plot $\log\|\delta^{(1)}\|$ against $L$ for both
+      and the contrast is stark.
+
+      **4. Residual connections.** Replacing $a^{(\ell)} = \rho(W a^{(\ell-1)})$ with
+      $a^{(\ell)} = a^{(\ell-1)}+\rho(Wa^{(\ell-1)})$ makes $\|\delta^{(1)}\|$ roughly flat in $L$ even
+      at depth $100$ and even with poorly-scaled initialisation. That single plot is the clearest
+      empirical statement of why residual connections matter.
+
+  - id: cn-equivariance-characterisation
+    title: Translation-equivariant linear maps are convolutions
+    topic: deep-learning/convolution-recurrence-normalisation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [convolution, equivariance, characterisation, weight sharing]
+    statement: |
+      Prove that a linear map $A$ on signals over $\Z_n$ commutes with all translations if and only if
+      it is a convolution. Deduce that the weight sharing in a CNN is forced, not chosen.
+    solution: |
+      **Convolution is equivariant.** With $(T_sx)[i] = x[i-s]$,
+      $$
+      \big(k*(T_sx)\big)[i] = \sum_jk[j]x[i-s-j] = (k*x)[i-s] = \big(T_s(k*x)\big)[i].
+      $$
+
+      **Equivariance forces convolution.** Let $A$ be linear with $AT_s = T_sA$ for all $s$. Let $e_0$
+      be the indicator of index $0$ and put $k = Ae_0$. Since $e_m = T_me_0$, equivariance gives
+      $$
+      Ae_m = AT_me_0 = T_mAe_0 = T_mk .
+      $$
+      For general $x = \sum_mx[m]e_m$, linearity gives
+      $$
+      (Ax)[i] = \sum_mx[m](T_mk)[i] = \sum_mx[m]k[i-m] = (k*x)[i].
+      $$
+
+      **Consequence for CNNs.** A designer who wants a linear layer that commutes with translation has
+      **no freedom at all** in choosing the layer beyond the kernel $k$. Weight sharing across spatial
+      positions is not a regularisation trick or a parameter-saving heuristic; it is the unique
+      solution to the equivariance constraint. The parameter count $O(k)$ instead of $O(n^2)$ is a
+      consequence, not a motivation.
+
+      **Generalisation.** The same argument applies to any group $G$ acting on the domain: the
+      $G$-equivariant linear maps are exactly the $G$-convolutions. Fixing a symmetry determines the
+      architecture's linear part. That is the organising principle of geometric deep learning.
+
+  - id: cn-convolution-theorem
+    title: Convolution diagonalises in the Fourier basis
+    topic: deep-learning/convolution-recurrence-normalisation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [fourier, convolution theorem, diagonalisation]
+    statement: |
+      Prove $\widehat{k*x} = \hat k\cdot\hat x$ for the discrete Fourier transform on $\Z_n$, and show
+      that the characters $\chi_\omega[i] = e^{2\pi i\omega i/n}$ are eigenvectors of every convolution
+      operator. State two practical consequences.
+    solution: |
+      **The theorem.**
+      $$
+      \widehat{k*x}[\omega] = \sum_i\Big(\sum_jk[j]x[i-j]\Big)e^{-2\pi\i\omega i/n}.
+      $$
+      Substitute $i = j+m$ (valid because the index runs over the whole cyclic group) and split the
+      exponential:
+      $$
+      = \sum_jk[j]e^{-2\pi\i\omega j/n}\sum_mx[m]e^{-2\pi\i\omega m/n} = \hat k[\omega]\hat x[\omega].
+      $$
+
+      **Eigenvectors.** Applying the same computation to $x = \chi_\omega$,
+      $$
+      (k*\chi_\omega)[i] = \sum_jk[j]\chi_\omega[i-j] = \chi_\omega[i]\sum_jk[j]e^{-2\pi\i\omega j/n} = \hat k[\omega]\,\chi_\omega[i].
+      $$
+      So $\chi_\omega$ is an eigenvector with eigenvalue $\hat k[\omega]$ — and this holds for **every**
+      kernel $k$ simultaneously. The Fourier basis diagonalises the whole commutative algebra of
+      convolution operators at once.
+
+      **Two consequences.**
+      1. **Fast convolution.** Computing $k*x$ directly costs $O(n^2)$ (or $O(nk)$ for a short kernel); via the FFT it is $O(n\log n)$: transform, multiply pointwise, transform back. This matters for long kernels and is the basis of FFT-based convolution in libraries.
+      2. **Interpretation of learned filters.** A filter *is* a frequency response $\hat k$. Visualising early convolutional filters shows oriented band-pass structures precisely because that is what the frequency-domain description says they are. Stacking convolutions multiplies frequency responses, so a deep stack of small filters can realise sharp selectivity that no single small filter can.
+
+  - id: cn-receptive-field
+    title: Receptive field growth with depth and dilation
+    topic: deep-learning/convolution-recurrence-normalisation
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [receptive field, dilation, stride, cnn]
+    statement: |
+      Compute the receptive field of (a) $L$ stacked $3\times3$ convolutions with stride $1$; (b) the
+      same with dilation doubling each layer; (c) $L$ layers with stride $2$. Evaluate each at $L = 10$
+      and comment on the trade-offs.
+    solution: |
+      A layer with kernel size $k$, dilation $d$ and stride $1$ extends the receptive field by
+      $d(k-1)$. A stride-$s$ layer multiplies the *effective spacing* of subsequent layers by $s$.
+
+      **(a) Stacked $3\times3$, stride 1.** Each layer adds $2$, so
+      $$
+      R = 1 + 2L .
+      $$
+      At $L=10$: $R = 21$.
+
+      **(b) Dilation $2^{\ell-1}$ at layer $\ell$.** Layer $\ell$ adds $2\cdot2^{\ell-1}$, so
+      $$
+      R = 1 + 2\sum_{\ell=1}^{L}2^{\ell-1} = 1 + 2(2^L-1) = 2^{L+1}-1 .
+      $$
+      At $L = 10$: $R = 2047$.
+
+      **(c) Stride 2 at every layer.** The spacing after $\ell$ layers is $2^\ell$, so layer $\ell$
+      contributes $2\cdot2^{\ell-1}$ in input units — the same total as dilation:
+      $$
+      R = 2^{L+1}-1 = 2047 \text{ at } L=10,
+      $$
+      but the spatial resolution has been divided by $2^{10} = 1024$.
+
+      **Trade-offs.**
+      - *Stacking:* linear growth, full resolution retained, cheapest per layer. Reaching a receptive field of $1000$ needs $500$ layers.
+      - *Dilation:* exponential growth at full resolution and unchanged parameter count — the reason dilated convolutions dominate audio models (WaveNet) and dense prediction. The cost is **gridding artefacts**: with pure powers of two, a unit at the top sees a sparse lattice of inputs, so dilation rates are usually chosen coprime or in a mixed schedule.
+      - *Stride:* exponential growth but the output resolution collapses, so it is unsuitable when per-pixel output is required without an upsampling path (hence U-Net's skip connections).
+
+  - id: cn-rnn-vanishing
+    title: The RNN gradient is a repeated matrix product
+    topic: deep-learning/convolution-recurrence-normalisation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [rnn, vanishing gradient, bptt, spectral radius]
+    statement: |
+      Derive the backpropagation-through-time gradient for a vanilla RNN and show that its norm is
+      controlled by $(\|\rho'\|_\infty\|W\|)^{T}$. Explain why the repeated use of the *same* $W$ makes
+      the situation worse than for a feedforward network of the same depth.
+    solution: |
+      **BPTT.** With $h_t = \rho(Wh_{t-1}+Ux_t+b)$ and $z_t$ the pre-activation,
+      $$
+      \frac{\partial h_t}{\partial h_{t-1}} = \diag\big(\rho'(z_t)\big)W ,
+      $$
+      so composing over the sequence,
+      $$
+      \frac{\partial\mathcal J}{\partial h_1} = \left(\prod_{t=2}^{T}\diag\big(\rho'(z_t)\big)W^\top\right)\frac{\partial\mathcal J}{\partial h_T},
+      $$
+      and by submultiplicativity
+      $$
+      \Big\|\frac{\partial\mathcal J}{\partial h_1}\Big\|_2 \le \big(\|\rho'\|_\infty\|W\|\big)^{T-1}\Big\|\frac{\partial\mathcal J}{\partial h_T}\Big\|_2 .
+      $$
+
+      **Why recurrence is worse than depth.** In a feedforward network the Jacobians
+      $J^{(\ell)} = \diag(\rho')(W^{(\ell)})^\top$ involve **different, independently initialised**
+      weight matrices. The log of the product norm is then a sum of roughly independent terms, and while
+      it still grows linearly in depth, the per-layer factors can be tuned independently and there is
+      some averaging.
+
+      In an RNN the **same** $W$ appears at every step. The growth rate is governed by the single
+      spectral quantity $\|\rho'\|_\infty\|W\|$ (more precisely by the Lyapunov exponent
+      $\lim\frac1T\log\|\prod_tJ_t\|$, which for a fixed $W$ is essentially $\log\|\rho'\|_\infty\|W\|$).
+      There is no averaging and no per-step tuning: either the factor is below $1$ and gradients die,
+      or above $1$ and they explode.
+
+      **The knife edge.** For $\tanh$, $\|\rho'\|_\infty = 1$, so stability requires $\|W\|\approx1$
+      exactly — a measure-zero condition that training does not maintain. Gradient clipping addresses
+      explosion (bounding the step at the cost of biasing the direction) but nothing in a vanilla RNN
+      addresses vanishing. That is what gating fixes.
+
+  - id: cn-lstm-jacobian
+    title: The LSTM cell-state Jacobian
+    topic: deep-learning/convolution-recurrence-normalisation
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [lstm, gating, jacobian, constant error carousel]
+    statement: |
+      Compute $\partial c_t/\partial c_{t-1}$ for the LSTM along the cell-state path, and explain why
+      replacing a product of matrices with a product of diagonal entries in $(0,1)$ makes long-range
+      gradients survivable. Relate to the GRU and to residual connections.
+    solution: |
+      **The Jacobian.** From $c_t = f_t\odot c_{t-1}+i_t\odot\tilde c_t$, treating the gates as functions
+      of $h_{t-1}$ and $x_t$ (the direct path),
+      $$
+      \frac{\partial c_t}{\partial c_{t-1}} = \diag(f_t),
+      $$
+      so composing along the cell path,
+      $$
+      \frac{\partial c_T}{\partial c_1} = \diag\Big(\prod_{t=2}^Tf_t\Big),
+      $$
+      a product of **scalars in $(0,1)$**, one per coordinate.
+
+      **Why this is survivable.** Compare with the vanilla RNN, where the product is of matrices
+      $\diag(\rho')W^\top$ whose norm is fixed by $\|W\|$ and cannot be controlled per step or per
+      coordinate. Here:
+      - the factor at each step is a **learned scalar** $f_{t,i}$ per coordinate;
+      - setting $f_{t,i}\approx1$ gives $\prod_tf_{t,i}\approx1$ for **any** $T$ — an identity path, the "constant error carousel";
+      - different coordinates can have different retention timescales, so the network can hold some information for hundreds of steps while updating others every step.
+
+      The forget gate is typically initialised with a positive bias (e.g. $b_f = 1$) precisely so that
+      $f\approx\sigma(1)\approx0.73$ at the start and information is retained by default.
+
+      **GRU.** The same move with fewer parameters: $h_t = (1-z_t)\odot h_{t-1}+z_t\odot\tilde h_t$
+      gives $\partial h_t/\partial h_{t-1} = \diag(1-z_t)$ along the state path. Input and forget gates
+      are coupled, which halves the gate parameters at little empirical cost.
+
+      **Residual connections.** A residual block is the same idea with the gate **fixed at one**:
+      $\partial(x+F(x))/\partial x = I+\partial F/\partial x$. The LSTM learns when to keep the identity
+      path open; the residual network always keeps it open. Both replace a multiplicative chain with an
+      additive one, which is the single structural idea behind trainability at depth.
+
+  - id: cn-batchnorm-scale-invariance
+    title: Normalisation makes weights scale-invariant
+    topic: deep-learning/convolution-recurrence-normalisation
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [batch norm, scale invariance, weight decay, effective learning rate]
+    statement: |
+      Show that a normalised layer satisfies $\hat z(cW) = \hat z(W)$ for $c>0$, deduce
+      $\nabla_W\mathcal J(cW) = \tfrac1c\nabla_W\mathcal J(W)$, and explain the consequence for weight
+      decay and the effective learning rate.
+    solution: |
+      **Scale invariance.** With $\hat z = (Wx-\mu)/\sigma$ where $\mu,\sigma$ are the batch mean and
+      standard deviation of $Wx$: both are homogeneous of degree $1$ in $W$, so
+      $$
+      \hat z(cW) = \frac{cWx - c\mu}{c\sigma} = \hat z(W).
+      $$
+      Hence $\mathcal J(cW) = \mathcal J(W)$ for every $c>0$.
+
+      **Gradient scaling.** Differentiating the identity $\mathcal J(cW)=\mathcal J(W)$ with respect to
+      $W$,
+      $$
+      c\,\nabla\mathcal J(cW) = \nabla\mathcal J(W)
+      \quad\Longrightarrow\quad
+      \nabla\mathcal J(cW) = \frac1c\nabla\mathcal J(W).
+      $$
+      Also, differentiating $\mathcal J(cW)=\mathcal J(W)$ along the radial direction shows
+      $\langle\nabla\mathcal J(W),W\rangle = 0$: the gradient is always **orthogonal to $W$**.
+
+      **Effective learning rate.** A gradient step moves $W$ perpendicular to itself by
+      $\eta\|\nabla\mathcal J\|$, so the **angular** change is
+      $$
+      \Delta\theta \approx \frac{\eta\|\nabla\mathcal J(W)\|}{\|W\|} \propto \frac{\eta}{\|W\|^2},
+      $$
+      using $\|\nabla\mathcal J(W)\|\propto1/\|W\|$. Since only the direction of $W$ affects the
+      function, $\eta/\|W\|^2$ is the *effective* learning rate.
+
+      **Consequence for weight decay.** In a normalised network, weight decay cannot regularise the
+      function — the function does not depend on $\|W\|$. What it does is shrink $\|W\|$, thereby
+      **increasing** the effective learning rate. So "weight decay" in a batch-normalised network is a
+      learning-rate schedule in disguise. This explains several otherwise puzzling observations: that
+      the product $\eta\lambda$ is what matters rather than either alone; that removing weight decay
+      requires a different learning-rate schedule to match; and that the equilibrium $\|W\|$ settles
+      where the decay and the gradient's radial growth balance.
+
+  - id: tf-attention-scaling
+    title: Why attention divides by the square root of d_k
+    topic: deep-learning/transformers
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [attention, scaling, variance, softmax]
+    statement: |
+      Compute the mean and variance of $\langle q,k\rangle$ for independent random $q,k\in\R^{d_k}$
+      with i.i.d. entries of variance $\sigma^2$. Deduce the scaling, and quantify the effect on the
+      softmax at $d_k = 64$ with and without it.
+    solution: |
+      **Moments.** $\langle q,k\rangle = \sum_{m=1}^{d_k}q_mk_m$ with all $2d_k$ factors independent and
+      centred.
+      $$
+      \E\langle q,k\rangle = \sum_m\E q_m\,\E k_m = 0 ,
+      $$
+      $$
+      \Var\langle q,k\rangle = \sum_m\Var(q_mk_m) = \sum_m\E q_m^2\E k_m^2 = d_k\sigma^4 ,
+      $$
+      the summands being independent with zero mean. So the standard deviation is $\sigma^2\sqrt{d_k}$,
+      **growing with the head dimension**.
+
+      **Scaling.** Dividing by $\sqrt{d_k}$ makes the standard deviation $\sigma^2$, independent of
+      $d_k$. So the softmax sees logits on a fixed scale regardless of the head dimension, and the
+      architecture can be widened without re-tuning.
+
+      **Numerically at $d_k = 64$, $\sigma = 1$.** Unscaled logits have standard deviation
+      $\sqrt{64} = 8$. Across $n$ positions the spread between the largest and a typical logit is
+      several times $8$; a gap of $16$ gives
+      $$
+      \frac{e^{16}}{e^{16}+ (n-1)} \approx 1 \text{ for } n\ \text{up to}\ 10^6,
+      $$
+      so the attention distribution is essentially one-hot. By the softmax Jacobian identity, the
+      Jacobian is then $\Var_{j\sim a}(v_j)\approx0$: **no gradient flows through the attention
+      weights**. With the scaling, the logit spread is $O(1)$ and the distribution is informative.
+
+      **Summary.** The factor is not cosmetic. Without it, attention saturates at initialisation and
+      the softmax's inputs are never learned.
+
+  - id: tf-softmax-jacobian-variance
+    title: The softmax Jacobian as a variance, and saturation
+    topic: deep-learning/transformers
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [softmax, jacobian, saturation, gradient]
+    statement: |
+      Prove $v^\top(\diag(a)-aa^\top)v = \Var_{j\sim a}(v_j)$ and deduce that the softmax Jacobian's
+      operator norm is at most $\max_ja_j(1-a_j)\le1/4$, vanishing as $a$ becomes one-hot. Relate to
+      temperature and to attention saturation.
+    solution: |
+      **The identity.**
+      $$
+      v^\top\big(\diag(a)-aa^\top\big)v = \sum_ja_jv_j^2 - \Big(\sum_ja_jv_j\Big)^2
+      = \E_{j\sim a}[v_j^2] - \big(\E_{j\sim a}[v_j]\big)^2 = \Var_{j\sim a}(v_j).
+      $$
+
+      **Operator norm.** The matrix is PSD, so its norm is
+      $\max_{\|v\|_2=1}\Var_{j\sim a}(v_j)$. Taking $v = e_j$ gives $a_j(1-a_j)$, and one can check the
+      maximum over the unit sphere is attained at a two-point configuration with value at most
+      $\max_j a_j(1-a_j)\le1/4$ (the maximum of $u(1-u)$).
+
+      **Saturation.** If $a\to e_{j_0}$ then $a_{j_0}(1-a_{j_0})\to0$ and every other
+      $a_j(1-a_j)\to0$, so the Jacobian tends to the zero matrix: the softmax becomes locally constant
+      and no gradient passes to the logits. The variance reading makes this transparent — a degenerate
+      distribution has zero variance.
+
+      **Temperature.** With $a = \operatorname{softmax}(z/\tau)$, the Jacobian with respect to $z$ picks
+      up a factor $1/\tau$, so it is $\frac1\tau(\diag(a)-aa^\top)$. Lowering $\tau$ sharpens $a$
+      (reducing the variance) while multiplying by $1/\tau$; the net effect is that the gradient
+      vanishes once the distribution is concentrated, regardless of the prefactor.
+
+      **Attention.** This is exactly why the $1/\sqrt{d_k}$ scaling matters: it keeps the attention
+      distribution away from one-hot at initialisation, hence keeps the Jacobian away from zero, hence
+      keeps the query and key projections learnable. It is also why the fused softmax-cross-entropy
+      operation is used in the output layer: there the $1/a_{v^\star}$ from the logarithm cancels the
+      Jacobian's degeneracy exactly, and the gradient is the clean $q - e_{v^\star}$.
+
+  - id: tf-permutation-equivariance
+    title: Attention is permutation equivariant
+    topic: deep-learning/transformers
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [attention, permutation, positional encoding]
+    statement: |
+      Prove that $\operatorname{Attention}$ applied to permuted inputs returns the permuted output, and
+      deduce that a transformer without positional information computes a function of the input
+      multiset. Verify that the MLP and normalisation sublayers do not break the symmetry.
+    solution: |
+      **Attention.** Let $P$ be a permutation matrix acting on rows. Then $Q\mapsto PQ$, $K\mapsto PK$,
+      $V\mapsto PV$, so the logits become
+      $$
+      \frac{(PQ)(PK)^\top}{\sqrt{d_k}} = P\frac{QK^\top}{\sqrt{d_k}}P^\top .
+      $$
+      The row-wise softmax commutes with a simultaneous row-and-column permutation: permuting the rows
+      reorders which row is which, and permuting the columns reorders the entries within each row,
+      which softmax handles because it is permutation equivariant within a row. Hence
+      $\operatorname{softmax}(PSP^\top) = P\operatorname{softmax}(S)P^\top$, and
+      $$
+      \big(PAP^\top\big)(PV) = PAV ,
+      $$
+      using $P^\top P = I$. So the output is $P\cdot\operatorname{Attention}(Q,K,V)$.
+
+      **The other sublayers.** The position-wise MLP applies the same function to each row
+      independently, so it commutes with row permutations. Layer normalisation likewise acts per row.
+      Residual connections are elementwise additions of two equivariant maps. Hence **every** sublayer
+      is permutation equivariant, and so is the whole stack.
+
+      **Consequence.** A transformer without positional information cannot distinguish
+      $(\text{dog}, \text{bites}, \text{man})$ from $(\text{man}, \text{bites}, \text{dog})$: its
+      output on the second is the permuted output on the first, and any permutation-invariant readout
+      (such as pooling) gives an identical answer. Positional encodings are therefore **required**, not
+      an optional refinement — and they must break the symmetry, which is why they are added to the
+      token representations rather than applied as an equivariant transformation.
+
+  - id: tf-multihead-rank
+    title: Multi-head attention is a sum of low-rank maps
+    topic: deep-learning/transformers
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [multi-head, rank, lora, circuits]
+    statement: |
+      Show that multi-head attention equals $\sum_m A^mXW_V^mW_O^m$ with each $W_V^mW_O^m$ of rank at
+      most $d/h$, and that head $m$'s logits depend on $W_Q^m(W_K^m)^\top$ only. Discuss the
+      consequences for interpretability and for LoRA.
+    solution: |
+      **Decomposition.** Concatenation followed by $W_O$ is a sum over the output blocks:
+      $$
+      \operatorname{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_h)W_O = \sum_{m=1}^h\mathrm{head}_mW_O^m ,
+      $$
+      where $W_O^m\in\R^{d_v\times d}$ is the $m$-th row block of $W_O$. Substituting
+      $\mathrm{head}_m = A^mXW_V^m$,
+      $$
+      \operatorname{MHA}(X) = \sum_{m=1}^h A^m\,X\,W_V^mW_O^m .
+      $$
+      Since $W_V^m\in\R^{d\times d_v}$ with $d_v = d/h$, the product $W_V^mW_O^m\in\R^{d\times d}$ has
+      rank at most $d/h$.
+
+      **Logits.** The $m$-th attention pattern is
+      $$
+      A^m = \operatorname{softmax}\left(\frac{XW_Q^m(W_K^m)^\top X^\top}{\sqrt{d_k}}\right),
+      $$
+      which depends on $W_Q^m$ and $W_K^m$ only through the product
+      $W_{QK}^m := W_Q^m(W_K^m)^\top\in\R^{d\times d}$, also of rank at most $d_k = d/h$.
+
+      **Consequences.**
+      1. **Interpretability.** A head is fully specified by two low-rank $d\times d$ matrices, $W_{QK}^m$ (which positions attend to which) and $W_{VO}^m$ (what is written to the residual stream). The individual factorisation into $W_Q,W_K$ is not identifiable — any $W_Q\to W_QM$, $W_K\to W_K M^{-\top}$ leaves the head unchanged — so analyses that inspect $W_Q$ alone are examining a gauge-dependent quantity. This is the starting point of the circuits framework.
+      2. **Rank allocation.** $h$ heads of rank $d/h$ each, rather than one map of rank $d$: the parameter count is identical, and what changes is that each head must attend according to a single low-dimensional similarity structure. Heads can then specialise.
+      3. **LoRA.** If the operative objects are already low rank, a low-rank *update* is a natural parameterisation rather than an approximation. This is the best available argument for why $r\ll d$ suffices — though it is an argument, not a theorem.
+
+  - id: tf-rope-relative
+    title: Rotary embeddings encode relative position exactly
+    topic: deep-learning/transformers
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [rope, relative position, rotation, extrapolation]
+    statement: |
+      Prove that $\langle R_pq, R_{p'}k\rangle = \langle q, R_{p'-p}k\rangle$ for the block-diagonal
+      rotation $R_p$ of RoPE, and contrast with additive sinusoidal encodings, where relative position
+      is only *linearly recoverable*.
+    solution: |
+      **The identity.** $R_p$ is block diagonal with $2\times2$ rotation blocks by angles $\theta_mp$.
+      Rotations are orthogonal, so $R_p^\top = R_p^{-1} = R_{-p}$; and since the angles add blockwise,
+      $R_pR_{p'} = R_{p+p'}$. Therefore
+      $$
+      \langle R_pq, R_{p'}k\rangle = q^\top R_p^\top R_{p'}k = q^\top R_{p'-p}k = \langle q, R_{p'-p}k\rangle .
+      $$
+      The attention logit depends on the two positions **only through their difference**.
+
+      **Contrast with additive sinusoids.** There the representation is $x_p + \mathrm{PE}(p)$, and the
+      logit expands as
+      $$
+      \langle W_Q(x_p+\mathrm{PE}(p)),\ W_K(x_{p'}+\mathrm{PE}(p'))\rangle,
+      $$
+      which contains content–content, content–position, position–content and position–position terms.
+      The last is a function of $(p,p')$ but not of $p'-p$ alone; what is true is the weaker statement
+      that $\mathrm{PE}(p+\Delta)$ is a **fixed linear function** of $\mathrm{PE}(p)$ (the rotation by
+      $\omega\Delta$ on each frequency pair), so relative position is linearly *recoverable* by the
+      model if it learns to do so. Nothing forces it to.
+
+      **Why RoPE extrapolates better.** Because the dependence on $p'-p$ is exact and built in, a model
+      trained on sequences of length $n$ has, in principle, seen every relative offset up to $n$ and the
+      mechanism is unchanged at larger absolute positions. (In practice extrapolation beyond the
+      trained range still degrades, because the *distribution* of offsets changes and the high-frequency
+      components alias — which is what interpolation and NTK-aware scaling schemes address.)
+
+  - id: tf-complexity-crossover
+    title: When does attention dominate the MLP?
+    topic: deep-learning/transformers
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [complexity, flops, long context, memory]
+    statement: |
+      For a transformer layer with width $d$, sequence length $n$, $h$ heads and MLP expansion $4$:
+
+      1. Write the FLOP counts for the attention and MLP sublayers.
+      2. Find the $n$ at which they are equal.
+      3. Evaluate for $d = 4096$ at $n = 2048$ and $n = 128{,}000$.
+      4. Compute the attention matrix memory in both cases and comment.
+    solution: |
+      **1. FLOP counts** (a product $\R^{a\times b}\times\R^{b\times c}$ costs $2abc$):
+      - $Q,K,V$ projections: $3\cdot2nd^2 = 6nd^2$
+      - logits $QK^\top$: $2n^2d$
+      - $AV$: $2n^2d$
+      - output projection: $2nd^2$
+      - MLP: two products of size $nd\times4d$: $16nd^2$
+
+      Attention total $\approx 8nd^2 + 4n^2d$; MLP total $\approx16nd^2$.
+
+      **2. Crossover.** Comparing the quadratic part with the MLP: $4n^2d = 16nd^2$ gives
+      $$
+      n = 4d .
+      $$
+      (Comparing total attention with MLP gives $n = 2d$; both are the same statement that the
+      crossover is at $n$ of order $d$.)
+
+      **3. At $d = 4096$.**
+      - $n = 2048$: MLP $= 16\cdot2048\cdot4096^2 \approx 5.5\times10^{11}$; attention quadratic part $= 4\cdot2048^2\cdot4096\approx6.9\times10^{10}$. The MLP dominates by about $8\times$; attention is not the bottleneck.
+      - $n = 128{,}000$: MLP $\approx3.4\times10^{13}$; attention quadratic part $=4\cdot(1.28\times10^5)^2\cdot4096\approx2.7\times10^{14}$. Attention dominates by about $8\times$.
+
+      **4. Memory.** The attention matrix is $hn^2$ entries.
+      - $n = 2048$, $h=32$: $32\times2048^2 \approx 1.3\times10^8$ entries $\approx 268$ MB in fp16 — significant but manageable.
+      - $n = 128{,}000$: $32\times(1.28\times10^5)^2\approx5.2\times10^{11}$ entries $\approx 1$ PB. Impossible.
+
+      **Comment.** Memory, not FLOPs, is the binding constraint at long context. FlashAttention's
+      contribution is to compute **exact** attention without ever materialising the $n\times n$ matrix,
+      by tiling the computation and recomputing what is needed in the backward pass — reducing memory
+      to $O(n)$ at the cost of some extra arithmetic. That is why it was an engineering breakthrough
+      rather than an approximation.
+
+  - id: tf-implement-attention
+    title: Implement multi-head attention from scratch
+    topic: deep-learning/transformers
+    difficulty: intermediate
+    type: coding
+    estimated_time: 3h
+    tags: [attention, implementation, causal mask, numerical stability]
+    statement: |
+      Implement multi-head self-attention with a causal mask, and verify the mathematics.
+
+      1. Check that the attention matrix rows sum to one and that the causal mask is respected.
+      2. Verify permutation equivariance numerically when the positional encoding is removed.
+      3. Demonstrate softmax saturation by removing the $1/\sqrt{d_k}$ scaling.
+      4. Verify that rotary embeddings make the logits depend only on the position difference.
+    solution: |
+      ```python
+      import numpy as np
+
+      def softmax(z, axis=-1):
+          z = z - z.max(axis=axis, keepdims=True)      # numerical stability
+          e = np.exp(z)
+          return e / e.sum(axis=axis, keepdims=True)
+
+      def mha(X, Wq, Wk, Wv, Wo, h, causal=True, scale=True):
+          n, d = X.shape
+          dk = d // h
+          Q, K, V = X @ Wq, X @ Wk, X @ Wv
+          Q, K, V = (M.reshape(n, h, dk).transpose(1, 0, 2) for M in (Q, K, V))
+          S = Q @ K.transpose(0, 2, 1)
+          if scale:
+              S = S / np.sqrt(dk)
+          if causal:
+              S = np.where(np.tril(np.ones((n, n), bool)), S, -np.inf)
+          A = softmax(S)
+          out = (A @ V).transpose(1, 0, 2).reshape(n, d)
+          return out @ Wo, A
+      ```
+
+      **1. Row sums and mask.** Assert `np.allclose(A.sum(-1), 1)` and that `A[..., i, j] == 0` for
+      $j>i$. Subtracting the row max before exponentiating is essential: without it, logits of magnitude
+      a few hundred overflow to `inf` and the softmax returns `nan`.
+
+      **2. Permutation equivariance.** Apply a random permutation $P$ to the rows of $X$ and check
+      `np.allclose(mha(P @ X)[0], P @ mha(X)[0])`. It holds exactly. Adding a positional encoding breaks
+      it — which is the point.
+
+      **3. Saturation.** With `scale=False` and $d_k = 64$, inspect the maximum entry of each row of
+      $A$: it will be within $10^{-6}$ of $1$, i.e. the attention is one-hot. Compute the Jacobian
+      $\diag(a)-aa^\top$ and observe its norm is around $10^{-6}$ — the gradient has vanished. With
+      scaling, the rows are diffuse and the Jacobian norm is $O(1/n)$.
+
+      **4. RoPE.** Implement $R_p$ as a rotation of coordinate pairs by $\theta_mp$ and verify
+      numerically that $\langle R_pq,R_{p'}k\rangle$ depends on $p,p'$ only through $p'-p$: compute it
+      for several $(p,p')$ pairs with the same difference and check they agree to machine precision.
+      A mismatch usually means the pairing of coordinates $(2m,2m+1)$ is inconsistent between $q$ and
+      $k$.

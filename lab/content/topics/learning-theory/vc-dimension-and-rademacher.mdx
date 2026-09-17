@@ -1,0 +1,383 @@
+---
+title: VC Dimension, Sauer's Lemma and Rademacher Complexity
+summary: The two standard measures of a hypothesis class's capacity, with complete proofs of Sauer's lemma and the Rademacher generalisation bound.
+field: learning-theory
+level: 3
+order: 20
+prerequisites: [learning-theory/erm-and-uniform-convergence]
+tags: [vc dimension, sauer lemma, rademacher complexity, growth function, margin bounds, pac-bayes]
+estimated_time: 1d
+claims:
+  - id: vc-def
+    kind: definition
+    title: Shattering, growth function and VC dimension
+    summary: The combinatorial capacity of a binary hypothesis class.
+    proved: false
+    tags: [vc dimension, shattering]
+  - id: sauer
+    kind: theorem
+    title: Sauer–Shelah lemma
+    summary: A class of VC dimension d produces at most order n^d labellings on n points — polynomial, not exponential.
+    proved: true
+    tags: [sauer, growth function, polynomial]
+  - id: vc-bound
+    kind: theorem
+    title: VC generalisation bound
+    summary: The uniform deviation is of order the square root of (d log n) over n for a class of VC dimension d.
+    proved: false
+    tags: [vc bound, generalisation]
+  - id: halfspace-vc
+    kind: proposition
+    title: VC dimension of linear classifiers
+    summary: Homogeneous halfspaces in d dimensions have VC dimension exactly d.
+    proved: true
+    tags: [halfspace, vc dimension]
+  - id: rademacher-def
+    kind: definition
+    title: Rademacher complexity
+    summary: The expected best correlation of the class with random signs.
+    proved: false
+    tags: [rademacher, complexity]
+  - id: rademacher-bound
+    kind: theorem
+    title: Rademacher generalisation bound
+    summary: The uniform deviation is bounded by twice the Rademacher complexity plus a concentration term.
+    proved: true
+    tags: [rademacher, mcdiarmid, generalisation]
+  - id: massart
+    kind: lemma
+    title: Massart's finite lemma
+    summary: The Rademacher complexity of a finite set grows like the square root of log cardinality.
+    proved: true
+    tags: [massart, finite class]
+  - id: linear-rademacher
+    kind: proposition
+    title: Rademacher complexity of a norm-bounded linear class
+    summary: Bounded linear predictors have Rademacher complexity BR over the square root of n, with no dimension dependence.
+    proved: true
+    tags: [linear class, margin, dimension free]
+  - id: contraction
+    kind: lemma
+    title: Talagrand contraction
+    summary: Composing a class with a Lipschitz function multiplies its Rademacher complexity by the Lipschitz constant.
+    proved: false
+    tags: [contraction, lipschitz]
+references:
+  - key: shalev-shwartz-ben-david-2
+    title: 'Understanding Machine Learning: From Theory to Algorithms'
+    authors: Shai Shalev-Shwartz and Shai Ben-David
+    year: 2014
+    kind: book
+    url: https://www.cs.huji.ac.il/~shais/UnderstandingMachineLearning/
+  - key: mohri-2
+    title: Foundations of Machine Learning
+    authors: Mehryar Mohri, Afshin Rostamizadeh and Ameet Talwalkar
+    year: 2018
+    kind: book
+    url: https://cs.nyu.edu/~mohri/mlbook/
+  - key: bartlett-mendelson
+    title: "Rademacher and Gaussian Complexities: Risk Bounds and Structural Results"
+    authors: Peter L. Bartlett and Shahar Mendelson
+    year: 2002
+    kind: paper
+  - key: mcallester-pacbayes
+    title: Some PAC-Bayesian Theorems
+    authors: David A. McAllester
+    year: 1999
+    kind: paper
+  - key: bousquet-elisseeff
+    title: Stability and Generalization
+    authors: Olivier Bousquet and André Elisseeff
+    year: 2002
+    kind: paper
+---
+
+## VC dimension
+
+<Definition id="vc-def" title="Shattering, growth function, VC dimension">
+Let $\Hcal\subseteq\{\pm1\}^\Xcal$. For $C = \{x_1,\dots,x_n\}\subseteq\Xcal$ write
+$$
+\Hcal|_C = \big\{(h(x_1),\dots,h(x_n)) : h\in\Hcal\big\}\subseteq\{\pm1\}^n .
+$$
+$\Hcal$ **shatters** $C$ if $|\Hcal|_C| = 2^n$. The **growth function** is
+$\Pi_\Hcal(n) = \max_{|C|=n}|\Hcal|_C|$, and the **VC dimension** is
+$$
+\mathrm{VC}(\Hcal) = \sup\{n : \Pi_\Hcal(n)=2^n\} .
+$$
+</Definition>
+
+<Theorem id="sauer" title="Sauer–Shelah lemma">
+If $\mathrm{VC}(\Hcal)=d<\infty$ then for every $n$,
+$$
+\Pi_\Hcal(n) \le \sum_{k=0}^d\binom nk \le \left(\frac{en}{d}\right)^d \quad (n \ge d).
+$$
+</Theorem>
+
+<Proof>
+It suffices to show: for any finite $C$ with $|C|=n$ and any set family
+$\mathcal{F}\subseteq\{\pm1\}^C$ that shatters no subset of size $d+1$,
+$|\mathcal{F}| \le \sum_{k\le d}\binom nk$. We prove the stronger statement
+
+$$
+|\mathcal{F}| \le \big|\{B\subseteq C : \mathcal{F}\text{ shatters }B\}\big| ,
+$$
+
+from which the lemma follows, since a family shattering no set of size $>d$ can shatter at most
+$\sum_{k\le d}\binom nk$ subsets.
+
+Induct on $n$. For $n=0$ both sides are $1$. For $n\ge1$ pick $x\in C$ and set $C' = C\setminus\{x\}$.
+Split $\mathcal{F}$ by its behaviour on $x$: let
+$$
+\mathcal{F}_0 = \{f|_{C'} : f\in\mathcal{F}\},
+\qquad
+\mathcal{F}_1 = \{f|_{C'} : \text{both extensions of } f|_{C'} \text{ to } x \text{ lie in }\mathcal{F}\}.
+$$
+Then $|\mathcal{F}| = |\mathcal{F}_0| + |\mathcal{F}_1|$: each element of $\mathcal{F}_0$ accounts for
+at least one $f\in\mathcal{F}$, and those restrictions realised twice are counted once more by
+$\mathcal{F}_1$.
+
+Apply the inductive hypothesis to both families on $C'$:
+$$
+|\mathcal{F}_0| \le \#\{B\subseteq C' : \mathcal{F}_0\text{ shatters }B\},
+\qquad
+|\mathcal{F}_1| \le \#\{B\subseteq C' : \mathcal{F}_1\text{ shatters }B\} .
+$$
+Now observe two facts. If $\mathcal{F}_0$ shatters $B\subseteq C'$ then so does $\mathcal{F}$
+(restriction cannot create labellings). And if $\mathcal{F}_1$ shatters $B\subseteq C'$ then
+$\mathcal{F}$ shatters $B\cup\{x\}$ — by definition of $\mathcal{F}_1$, every labelling of $B$
+achievable in $\mathcal{F}_1$ is achievable in $\mathcal{F}$ with *both* values at $x$.
+
+The two collections of shattered sets produced this way are disjoint (the second all contain $x$, the
+first none do) and both consist of sets shattered by $\mathcal{F}$. Hence
+$|\mathcal{F}|\le\#\{B\subseteq C : \mathcal{F}\text{ shatters }B\}$, completing the induction.
+
+For the numerical bound, when $n\ge d$,
+$$
+\sum_{k=0}^d\binom nk \le \left(\frac nd\right)^d\sum_{k=0}^d\binom nk\left(\frac dn\right)^k
+\le \left(\frac nd\right)^d\left(1+\frac dn\right)^n \le \left(\frac nd\right)^de^d ,
+$$
+using $(d/n)^{k-d}\ge1$ for $k \le d$, the binomial theorem, and $1+u\le e^u$.
+</Proof>
+
+<KeyIdea>
+Sauer's lemma is a **phase transition**: the growth function is exactly $2^n$ up to $n=d$ and then
+switches to polynomial $n^d$ forever after. There is no intermediate behaviour. This is what makes VC
+theory work: substituting $\log\Pi_\Hcal(n) = O(d\log n)$ for $\log N$ in the
+<TopicRef id="learning-theory/erm-and-uniform-convergence">finite-class bound</TopicRef> gives a
+useful result, whereas $\log2^n = n$ would give nothing at all.
+</KeyIdea>
+
+<Theorem id="vc-bound" title="VC generalisation bound">
+Let $\mathrm{VC}(\Hcal)=d$ and let $\ell$ be the zero-one loss. With probability at least $1-\delta$,
+$$
+\sup_{h\in\Hcal}\big|R(h)-\hat R_n(h)\big| \le C\sqrt{\frac{d\log(n/d)+\log(1/\delta)}{n}} .
+$$
+</Theorem>
+
+The derivation combines symmetrisation, Sauer's lemma applied to the (at most $\Pi_\Hcal(2n)$)
+labellings on the doubled sample, and Massart's lemma below; it is carried out in the references and
+the structure is exactly the one reproduced for the Rademacher bound in the next section.
+
+<Proposition id="halfspace-vc" title="VC dimension of linear classifiers">
+Let $\Hcal = \{x\mapsto\sign(\ip{w}{x}) : w\in\R^d\}$ be the homogeneous halfspaces. Then
+$\mathrm{VC}(\Hcal)=d$. With a bias term, $\mathrm{VC}=d+1$.
+</Proposition>
+
+<Proof>
+**Lower bound.** The standard basis $e_1,\dots,e_d$ is shattered: for any target labelling
+$y\in\{\pm1\}^d$, take $w = y$, and then $\sign(\ip{w}{e_i}) = \sign(y_i) = y_i$.
+
+**Upper bound.** Let $x_1,\dots,x_{d+1}\in\R^d$ be any $d+1$ points. Being $d+1$ vectors in a
+$d$-dimensional space they are linearly dependent: there are coefficients $a_i$, not all zero, with
+$\sum_i a_ix_i=0$. Split the index set into $P = \{i : a_i>0\}$ and $N = \{i:a_i<0\}$; at least one is
+non-empty, and we may assume both are (if $N=\emptyset$ then $\sum_{i\in P}a_ix_i = 0$ with positive
+coefficients, and the argument below runs with $N$ empty and the second sum zero).
+
+Consider the labelling $y_i = +1$ for $i \in P$ and $y_i=-1$ for $i\in N$ (arbitrary elsewhere).
+Suppose some $w$ realises it. Then
+$$
+0 = \ip{w}{\textstyle\sum_i a_ix_i} = \sum_{i\in P}a_i\ip{w}{x_i} + \sum_{i\in N}a_i\ip{w}{x_i}.
+$$
+Every term in the first sum has $a_i>0$ and $\ip{w}{x_i}>0$, so it is positive; every term in the
+second has $a_i<0$ and $\ip{w}{x_i}<0$, so it too is positive. A sum of strictly positive terms
+cannot be zero — contradiction. Hence no $d+1$ points are shattered.
+</Proof>
+
+<Note title="Parameter counting is a heuristic, not a theorem">
+For halfspaces, $\mathrm{VC} = $ number of parameters. That coincidence makes "VC dimension counts
+parameters" tempting, and it is false. The one-parameter class
+$\{x\mapsto\sign(\sin(\omega x)) : \omega\in\R\}$ has **infinite** VC dimension, and a
+$k$-parameter class can have VC dimension anywhere from $0$ to $\infty$. Capacity is about the
+richness of the realisable labellings, not the number of knobs.
+</Note>
+
+## Rademacher complexity
+
+<Definition id="rademacher-def" title="Rademacher complexity">
+For a class $\mathcal{G}$ of functions $\Xcal\to\R$ and a sample $S = (x_1,\dots,x_n)$, the
+**empirical Rademacher complexity** is
+$$
+\hat{\mathfrak{R}}_S(\mathcal{G}) = \E_\eps\left[\sup_{g\in\mathcal{G}}\frac1n\sum_{i=1}^n\eps_ig(x_i)\right],
+$$
+with $\eps_i$ i.i.d. Rademacher, and the **Rademacher complexity** is
+$\mathfrak{R}_n(\mathcal{G}) = \E_S\hat{\mathfrak{R}}_S(\mathcal{G})$.
+</Definition>
+
+<Intuition>
+$\hat{\mathfrak{R}}_S$ measures how well the class can correlate with **pure noise** on the given
+sample. A class that can fit any random labelling has complexity near its maximum; a class that
+cannot has small complexity. It is a direct measure of the capacity to overfit, evaluated on the
+actual data — which is why it is scale-sensitive and data-dependent in a way VC dimension is not.
+</Intuition>
+
+<Theorem id="rademacher-bound" title="Rademacher generalisation bound">
+Let $\mathcal{G}$ be a class of functions $\Xcal\to[0,1]$. With probability at least $1-\delta$ over
+the sample, simultaneously for all $g\in\mathcal{G}$,
+$$
+\E g \le \frac1n\sum_{i=1}^ng(x_i) + 2\mathfrak{R}_n(\mathcal{G}) + \sqrt{\frac{\log(1/\delta)}{2n}} .
+$$
+</Theorem>
+
+<Proof>
+Let $\Phi(S) = \sup_{g\in\mathcal{G}}\big(\E g - \frac1n\sum_ig(x_i)\big)$.
+
+**Step 1: concentration.** Changing one sample point $x_i$ changes each empirical average by at most
+$1/n$ (since $g\in[0,1]$), and the supremum is $1$-Lipschitz in the uniform norm by the
+<TopicRef id="foundations/analysis-prerequisites">supremum inequality</TopicRef>. So $\Phi$ has
+bounded differences with $c_i = 1/n$, and
+<TopicRef id="high-dimensional-probability/concentration-inequalities">McDiarmid's inequality</TopicRef>
+gives, with probability at least $1-\delta$,
+$$
+\Phi(S) \le \E\Phi + \sqrt{\frac{\log(1/\delta)}{2n}} .
+$$
+
+**Step 2: symmetrisation.** By the
+<TopicRef id="learning-theory/erm-and-uniform-convergence">symmetrisation lemma</TopicRef>,
+$\E\Phi \le 2\mathfrak{R}_n(\mathcal{G})$.
+
+Combining, and unpacking the definition of $\Phi$ as a supremum (so that the bound holds for every
+$g$ simultaneously) gives the statement.
+</Proof>
+
+<KeyIdea>
+Two ingredients, each from an earlier page: McDiarmid to concentrate the uniform deviation around its
+mean, and symmetrisation to bound that mean. The decomposition is worth remembering because it
+localises the difficulty: the concentration step is universal and cheap, and *all* the class-specific
+work is in bounding $\mathfrak{R}_n$.
+</KeyIdea>
+
+<Lemma id="massart" title="Massart's finite lemma">
+Let $A\subseteq\R^n$ be finite with $\norm{a}_2\le r$ for all $a\in A$. Then
+$$
+\E_\eps\left[\max_{a\in A}\ip{\eps}{a}\right] \le r\sqrt{2\log|A|} .
+$$
+</Lemma>
+
+<Proof>
+This is the maximal inequality for sub-Gaussian variables. For each fixed $a$, $\ip{\eps}{a}$ is a
+sum of independent Rademacher terms with coefficients $a_i$, hence sub-Gaussian with parameter
+$\norm{a}_2\le r$:
+$\E e^{\lambda\ip{\eps}{a}} \le e^{\lambda^2r^2/2}$ by
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">Hoeffding's lemma</TopicRef>
+applied coordinatewise.
+
+Then for any $\lambda>0$, by Jensen and the union over $A$,
+$$
+\exp\left(\lambda\,\E\max_a\ip{\eps}{a}\right)
+\le \E\exp\left(\lambda\max_a\ip{\eps}{a}\right)
+= \E\max_a e^{\lambda\ip{\eps}{a}}
+\le \sum_{a\in A}\E e^{\lambda\ip{\eps}{a}} \le |A|e^{\lambda^2r^2/2}.
+$$
+Taking logarithms and dividing by $\lambda$,
+$$
+\E\max_a\ip{\eps}{a} \le \frac{\log|A|}{\lambda}+\frac{\lambda r^2}{2},
+$$
+minimised at $\lambda = \sqrt{2\log|A|}/r$ with value $r\sqrt{2\log|A|}$.
+</Proof>
+
+Applying Massart with $A = \Hcal|_S \subseteq\{\pm1\}^n$, so $r = \sqrt n$ and
+$|A| \le \Pi_\Hcal(n) \le (en/d)^d$, gives
+$$
+\hat{\mathfrak{R}}_S(\Hcal) \le \frac{\sqrt n\sqrt{2d\log(en/d)}}{n} = \sqrt{\frac{2d\log(en/d)}{n}},
+$$
+which recovers the VC bound. So the Rademacher route subsumes the combinatorial one.
+
+<Proposition id="linear-rademacher" title="Rademacher complexity of a norm-bounded linear class">
+Let $\mathcal{G} = \{x\mapsto\ip{w}{x} : \norm{w}_2\le B\}$ and suppose $\norm{x_i}_2\le R$. Then
+$$
+\hat{\mathfrak{R}}_S(\mathcal{G}) \le \frac{BR}{\sqrt n} .
+$$
+The bound does not depend on the dimension of $x$.
+</Proposition>
+
+<Proof>
+$$
+\hat{\mathfrak{R}}_S(\mathcal{G})
+= \E_\eps\sup_{\norm w_2\le B}\frac1n\sum_i\eps_i\ip{w}{x_i}
+= \E_\eps\sup_{\norm w_2\le B}\left\langle w,\ \frac1n\sum_i\eps_ix_i\right\rangle
+= \frac Bn\,\E_\eps\norm{\sum_i\eps_ix_i}_2 ,
+$$
+the last step because $\sup_{\norm w_2\le B}\ip{w}{v} = B\norm{v}_2$. By Jensen (concavity of
+$\sqrt{\cdot}$) and independence of the signs,
+$$
+\E_\eps\norm{\sum_i\eps_ix_i}_2 \le \sqrt{\E_\eps\norm{\sum_i\eps_ix_i}_2^2}
+= \sqrt{\sum_{i}\norm{x_i}_2^2} \le R\sqrt n ,
+$$
+the cross terms vanishing because $\E[\eps_i\eps_j]=0$ for $i\ne j$. Hence
+$\hat{\mathfrak{R}}_S \le BR\sqrt n/n = BR/\sqrt n$.
+</Proof>
+
+<KeyIdea>
+This is the single most important capacity bound in the subject, and the reason margin-based methods
+work in high dimension. The complexity is controlled by $\norm{w}_2\norm{x}_2$, **not** by the
+dimension. So a linear classifier in $\R^{10^6}$ with small norm is a low-capacity object, while the
+VC dimension of the unconstrained class is $10^6$. The <TopicRef id="machine-learning/support-vector-machines">SVM</TopicRef>
+margin bound is this proposition plus the contraction lemma, and the same mechanism is what
+norm-based bounds for neural networks attempt to exploit.
+</KeyIdea>
+
+<Lemma id="contraction" title="Talagrand contraction">
+If $\phi:\R\to\R$ is $K$-Lipschitz then
+$\hat{\mathfrak{R}}_S(\phi\circ\mathcal{G}) \le K\,\hat{\mathfrak{R}}_S(\mathcal{G})$.
+</Lemma>
+
+Quoted from Ledoux–Talagrand via the references. It is the tool that converts a bound on the
+complexity of the *predictor* class into a bound on the complexity of the *loss* class: the hinge
+loss is $1$-Lipschitz, the logistic loss is $1$-Lipschitz, and a ramp surrogate for the zero-one
+loss at margin $\gamma$ is $1/\gamma$-Lipschitz — whence the $1/\gamma$ in every margin bound.
+
+## Two other routes to generalisation
+
+<Definition id="stability-def" title="Uniform stability">
+An algorithm $\mathcal{A}$ is **$\beta$-uniformly stable** if for every pair of samples $S, S'$
+differing in one point, and every $(x,y)$,
+$$
+\big|\ell(\mathcal{A}(S)(x),y) - \ell(\mathcal{A}(S')(x),y)\big| \le \beta .
+$$
+Bousquet and Elisseeff show that such an algorithm satisfies
+$\E[R(\mathcal{A}(S)) - \hat R_n(\mathcal{A}(S))]\le\beta$, and that regularised ERM with a
+$\lambda$-strongly convex regulariser is $O(1/(\lambda n))$-stable.
+</Definition>
+
+<Definition id="pac-bayes-def" title="PAC-Bayes bound">
+For a prior $P$ over hypotheses fixed before seeing the data and any posterior $Q$ (possibly
+data-dependent), with probability at least $1-\delta$,
+$$
+\E_{h\sim Q}R(h) \le \E_{h\sim Q}\hat R_n(h) + \sqrt{\frac{\mathrm{KL}(Q\,\|\,P) + \log(2\sqrt n/\delta)}{2n}} .
+$$
+</Definition>
+
+Both are **algorithm-dependent**, which is what makes them candidates for explaining deep learning
+where uniform convergence fails: stability speaks about what the optimiser does, and PAC-Bayes
+charges only for the information the posterior adds to the prior. Neither has yet produced a
+non-vacuous bound for a state-of-the-art network trained on a standard benchmark, which is the
+honest state of the art.
+
+## Problems
+
+<ProblemRef id="vc-sauer-proof" />
+<ProblemRef id="vc-halfspace-dimension" />
+<ProblemRef id="vc-sine-infinite" />
+<ProblemRef id="vc-massart-lemma" />
+<ProblemRef id="vc-linear-rademacher" />
+<ProblemRef id="vc-margin-bound" />

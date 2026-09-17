@@ -1,0 +1,72 @@
+---
+title: 'LoRA: Low-Rank Adaptation of Large Language Models'
+authors: Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen
+year: 2021
+venue: ICLR 2022
+url: https://arxiv.org/abs/2106.09685
+arxiv: '2106.09685'
+field: llm
+also: [deep-learning]
+tags: [lora, fine-tuning, low rank, parameter efficiency]
+problem: Full fine-tuning of a large model produces a full-size copy of the weights per task, which is prohibitive for storage and for serving many tasks.
+contribution: Freezing the pretrained weights and training a low-rank additive update, reducing trainable parameters by orders of magnitude with no inference-time cost after the update is merged.
+prerequisites:
+  - llm/scaling-and-in-context-learning
+  - deep-learning/transformers
+  - foundations/linear-algebra
+descendants: []
+related: [attention-is-all-you-need, instructgpt]
+---
+
+## What problem does this paper solve?
+
+Multi-task serving and fine-tuning cost. A $175$B-parameter model fine-tuned for $100$ tasks is
+$17.5$T parameters of storage under full fine-tuning.
+
+## What mathematical objects are introduced?
+
+The parameterisation
+$$
+W = W_0 + \frac{\alpha}{r}BA,\qquad B\in\R^{d\times r},\ A\in\R^{r\times k},\ r\ll\min(d,k),
+$$
+with $W_0$ frozen, $A$ Gaussian-initialised and $B$ zero-initialised.
+
+## What assumptions are made?
+
+That the fine-tuning update is approximately low rank. The paper offers an intrinsic-dimension
+argument and measurements of the effective rank of full fine-tuning updates as evidence; it is not
+proved.
+
+## What equations matter?
+
+The parameter count $r(d+k)$ against $dk$, and the fact that $B=0$ at initialisation makes
+$W = W_0$ exactly, so training begins from the pretrained function. The merge $W\leftarrow W_0+\frac\alpha rBA$
+is what makes inference cost identical to the base model — unlike adapter layers, which add depth.
+
+## What theorem or result is important?
+
+No theorem. Empirically, $r\in\{1,\dots,64\}$ matches or exceeds full fine-tuning on GLUE and on
+GPT-3 tasks, with $10^{-4}$ of the trainable parameters in the extreme case.
+
+## What proof techniques are used?
+
+None; ablations over rank, over which matrices to adapt ($W_Q,W_V$ best), and over $\alpha$.
+
+## What prior mathematics is required?
+
+Rank and the SVD; the
+<TopicRef id="deep-learning/transformers">low-rank structure of attention heads</TopicRef>, which is
+the best available explanation for why low rank suffices.
+
+## Limitations
+
+There is no theory establishing that the optimal update is low rank, and tasks requiring substantial
+new factual knowledge show a gap against full fine-tuning. The choice of $r$ and of which matrices to
+adapt is empirical. Quantised variants (QLoRA) change the numerics in ways that interact with the
+rank choice.
+
+## Why it mattered
+
+It made fine-tuning large models accessible outside well-resourced labs, and it is the default method
+for task adaptation. It is also a clean example of a mathematically trivial reparameterisation with
+very large practical consequences — the whole content is $r(d+k) \ll dk$.
