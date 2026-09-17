@@ -1,0 +1,219 @@
+---
+title: Probability Spaces and Random Variables
+summary: The measure-theoretic setup, stated once and precisely, so that later statements about independence, conditioning and convergence have something to mean.
+field: probability
+level: 0
+order: 10
+prerequisites: [foundations/analysis-prerequisites]
+tags: [probability space, sigma algebra, random variable, distribution, independence]
+estimated_time: 1h
+claims:
+  - id: monotonicity
+    kind: proposition
+    title: Elementary consequences of the axioms
+    summary: Monotonicity, finite additivity, complements, continuity along monotone sequences and the union bound, all from the three axioms.
+    proved: true
+    tags: [axioms, union bound]
+  - id: union-bound
+    kind: lemma
+    title: Union bound
+    summary: The probability of a union is at most the sum of the probabilities.
+    proved: true
+    tags: [union bound, boole]
+  - id: pushforward
+    kind: proposition
+    title: The distribution of a random variable
+    summary: A random variable induces a probability measure on the real line, and only that measure matters for its law.
+    proved: true
+    tags: [distribution, pushforward]
+  - id: borel-cantelli
+    kind: theorem
+    title: Borel–Cantelli lemmas
+    summary: Summable probabilities imply almost surely finitely many occurrences; for independent events the converse holds.
+    proved: true
+    tags: [almost sure, borel cantelli]
+references:
+  - key: durrett-2
+    title: 'Probability: Theory and Examples'
+    authors: Rick Durrett
+    year: 2019
+    kind: book
+    url: https://services.math.duke.edu/~rtd/PTE/pte.html
+  - key: williams
+    title: Probability with Martingales
+    authors: David Williams
+    year: 1991
+    kind: book
+    note: Short, sharp, and the standard route into martingales used later for Azuma's inequality.
+---
+
+<Intuition>
+Almost nothing in machine learning needs measure theory — until it does. The moment you write
+"with probability at least $1-\delta$ over the draw of the training set, for all $f$ in the class",
+you are quantifying over an uncountable family of events, and whether that statement even parses
+depends on the setup below. This page exists so that later pages can be precise cheaply.
+</Intuition>
+
+## The three axioms
+
+<Definition id="prob-space" title="Probability space">
+A **probability space** is a triple $(\Omega, \mathcal{A}, \P)$ where
+
+- $\Omega$ is a set of outcomes;
+- $\mathcal{A}$ is a **$\sigma$-algebra** on $\Omega$: a collection of subsets containing $\Omega$ and closed under complement and countable union;
+- $\P : \mathcal{A} \to [0,1]$ is a **probability measure**: $\P(\Omega) = 1$ and, for pairwise disjoint $A_1, A_2, \dots \in \mathcal{A}$, $\P\left(\bigcup_i A_i\right) = \sum_i \P(A_i)$ (countable additivity).
+
+Members of $\mathcal{A}$ are **events**.
+</Definition>
+
+The $\sigma$-algebra is the part that is easy to dismiss and occasionally essential. It is the
+collection of sets to which a probability *can* be assigned; on $\Omega = \R$ the standard choice is
+the **Borel** $\sigma$-algebra $\mathcal{B}(\R)$, the smallest $\sigma$-algebra containing all open
+intervals.
+
+<Proposition id="monotonicity" title="Elementary consequences of the axioms">
+Let $(\Omega,\mathcal{A},\P)$ be a probability space and $A, B, A_1, A_2, \dots \in \mathcal{A}$. Then
+
+1. $\P(A^c) = 1 - \P(A)$ and $\P(\emptyset) = 0$;
+2. if $A \subseteq B$ then $\P(A) \le \P(B)$ (monotonicity);
+3. $\P(A \cup B) = \P(A) + \P(B) - \P(A\cap B)$;
+4. if $A_1 \subseteq A_2 \subseteq \cdots$ then $\P(A_n) \uparrow \P\left(\bigcup_n A_n\right)$.
+</Proposition>
+
+<Proof>
+(1) $\Omega = A \cup A^c$ disjointly, so $1 = \P(A) + \P(A^c)$. Taking $A = \Omega$ gives
+$\P(\emptyset)=0$.
+
+(2) $B = A \cup (B \setminus A)$ disjointly, so $\P(B) = \P(A) + \P(B\setminus A) \ge \P(A)$ since
+probabilities are non-negative.
+
+(3) Decompose $A \cup B = (A\setminus B) \cup (A \cap B) \cup (B \setminus A)$ disjointly and add;
+then note $\P(A) = \P(A\setminus B) + \P(A\cap B)$ and similarly for $B$.
+
+(4) Set $D_1 = A_1$ and $D_n = A_n \setminus A_{n-1}$ for $n \ge 2$. The $D_n$ are disjoint with
+$\bigcup_{k\le n} D_k = A_n$ and $\bigcup_k D_k = \bigcup_n A_n$. Countable additivity gives
+$\P\left(\bigcup_n A_n\right) = \sum_k \P(D_k) = \lim_n \sum_{k \le n}\P(D_k) = \lim_n \P(A_n)$, and the
+partial sums increase.
+</Proof>
+
+<Lemma id="union-bound" title="Union bound (Boole's inequality)">
+For any events $A_1, A_2, \dots$,
+$$
+\P\left(\bigcup_{i} A_i\right) \le \sum_i \P(A_i) .
+$$
+</Lemma>
+
+<Proof>
+Let $B_1 = A_1$ and $B_i = A_i \setminus \bigcup_{j<i}A_j$. The $B_i$ are disjoint with the same
+union, and $B_i \subseteq A_i$, so by countable additivity and monotonicity
+$\P(\bigcup_i A_i) = \sum_i \P(B_i) \le \sum_i \P(A_i)$.
+</Proof>
+
+<KeyIdea>
+The union bound is three lines to prove and it is the workhorse of this entire laboratory. It is how
+a bound for one random variable becomes a bound for the maximum of many; it is the source of the
+$\log N$ in <TopicRef id="high-dimensional-probability/johnson-lindenstrauss">Johnson–Lindenstrauss</TopicRef>,
+of the $\log|\Fcal|$ in finite-class generalisation bounds, and of the covering-number factors in
+<TopicRef id="high-dimensional-probability/nets-covering-and-packing">net arguments</TopicRef>. It is
+also lossy: it ignores all dependence, and much of high-dimensional probability is about recovering
+what it throws away.
+</KeyIdea>
+
+## Random variables and distributions
+
+<Definition id="rv-def" title="Random variable">
+A **random variable** is a measurable map $X : \Omega \to \R$, meaning
+$X^{-1}(B) \in \mathcal{A}$ for every $B \in \mathcal{B}(\R)$. We write
+$\{X \in B\}$ for $X^{-1}(B)$ and $\P(X \in B)$ for $\P(X^{-1}(B))$. A **random vector** is a
+measurable map into $\R^d$, equivalently a $d$-tuple of random variables.
+</Definition>
+
+<Proposition id="pushforward" title="The distribution of a random variable">
+The map $\mu_X(B) := \P(X \in B)$ defines a probability measure on $(\R, \mathcal{B}(\R))$, the
+**distribution** or **law** of $X$. It is determined by the **cumulative distribution function**
+$F_X(t) = \P(X \le t)$, which is non-decreasing, right-continuous, with limits $0$ at $-\infty$ and
+$1$ at $+\infty$.
+</Proposition>
+
+<Proof>
+$\mu_X(\R) = \P(\Omega) = 1$. For disjoint $B_1, B_2, \dots$, the preimages $X^{-1}(B_i)$ are disjoint
+events, so countable additivity of $\P$ transfers to $\mu_X$. Right-continuity of $F_X$ follows from
+part (4) of the previous proposition applied to the decreasing sets $\{X \le t + 1/n\}$; the limits at
+$\pm\infty$ follow from continuity along monotone sequences likewise. That $F_X$ determines $\mu_X$ is
+the uniqueness statement for measures agreeing on the generating class of half-lines
+$\{(-\infty,t]\}$, which is a standard $\pi$–$\lambda$ argument and is not repeated here.
+</Proof>
+
+<Note title="Two random variables, same law">
+Nothing in a distribution remembers the underlying $\Omega$. $X$ and $-X$ for a symmetric $X$ have
+the same law but are different functions on $\Omega$; independence, conditioning and coupling are all
+statements about the functions, not the laws. This is why "identically distributed" and
+"independent" are separate hypotheses.
+</Note>
+
+## Independence
+
+<Definition id="independence" title="Independence">
+Events $A_1,\dots,A_n$ are **independent** if for every subset $S \subseteq \{1,\dots,n\}$
+$$
+\P\left(\bigcap_{i\in S} A_i\right) = \prod_{i \in S}\P(A_i) .
+$$
+Random variables $X_1,\dots,X_n$ are independent if the events $\{X_i \in B_i\}$ are independent for
+all Borel $B_i$, equivalently if the joint law is the product of the marginals.
+</Definition>
+
+<Warning title="Common mistake">
+Pairwise independence is strictly weaker than independence. Let $X_1, X_2$ be independent Rademacher
+signs and $X_3 = X_1X_2$. Any two of the three are independent, but
+$\P(X_1 = X_2 = X_3 = 1) = 1/4 \neq 1/8$. The distinction is not pedantic: Chebyshev-type bounds need
+only pairwise independence, while the Chernoff method on the
+<TopicRef id="high-dimensional-probability/concentration-inequalities">concentration</TopicRef> page
+needs full independence, because it factorises a moment generating function over *all* the variables
+at once.
+</Warning>
+
+## Almost sure events and Borel–Cantelli
+
+<Definition id="as-def" title="Almost surely">
+An event $A$ holds **almost surely** (a.s.) if $\P(A) = 1$. A statement holds a.s. if the set of
+outcomes where it holds is an event of probability one.
+</Definition>
+
+<Theorem id="borel-cantelli" title="Borel–Cantelli lemmas">
+Let $A_1, A_2, \dots$ be events and let
+$\{A_n \text{ i.o.}\} = \bigcap_{n\ge1}\bigcup_{k \ge n} A_k$ be the event that infinitely many occur.
+
+1. If $\sum_n \P(A_n) < \infty$ then $\P(A_n \text{ i.o.}) = 0$.
+2. If the $A_n$ are independent and $\sum_n \P(A_n) = \infty$ then $\P(A_n \text{ i.o.}) = 1$.
+</Theorem>
+
+<Proof>
+(1) For every $n$, monotonicity and the union bound give
+$$
+\P(A_k \text{ i.o.}) \le \P\left(\bigcup_{k\ge n}A_k\right) \le \sum_{k \ge n}\P(A_k) .
+$$
+The right side is the tail of a convergent series, so it tends to $0$ as $n \to \infty$, while the
+left side does not depend on $n$. Hence it is $0$.
+
+(2) Fix $n \le m$. By independence and $1 - p \le e^{-p}$,
+$$
+\P\left(\bigcap_{k=n}^{m} A_k^c\right) = \prod_{k=n}^m \big(1 - \P(A_k)\big)
+\le \exp\left(-\sum_{k=n}^m \P(A_k)\right) \xrightarrow[m\to\infty]{} 0 ,
+$$
+because the series diverges. So $\P\left(\bigcup_{k \ge n}A_k\right) = 1$ for every $n$, and an
+intersection of countably many probability-one events has probability one.
+</Proof>
+
+<KeyIdea>
+Borel–Cantelli is the standard route from a *quantitative* tail bound to an *almost sure* statement.
+If a concentration inequality gives $\P(|Z_n - z| > \eps_n) \le \delta_n$ with $\sum_n \delta_n < \infty$,
+then $Z_n \to z$ almost surely. That is exactly how the strong law is upgraded from the weak law, and
+how almost-sure convergence of SGD is obtained from its expected-error bounds on the
+<TopicRef id="stochastic-optimization/sgd-convergence">SGD</TopicRef> page.
+</KeyIdea>
+
+## Problems
+
+<ProblemRef id="pr-union-bound-tight" />
+<ProblemRef id="pr-pairwise-not-independent" />
+<ProblemRef id="pr-borel-cantelli-application" />

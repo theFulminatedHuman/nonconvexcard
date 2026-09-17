@@ -1,0 +1,371 @@
+---
+title: The Mathematics of Transformers
+summary: Attention derived from scratch, why the scaling is 1/sqrt(d_k), multi-head as a low-rank sum, positional encodings, residual and normalisation placement, and the exact complexity.
+field: deep-learning
+level: 3
+order: 30
+prerequisites: [deep-learning/convolution-recurrence-normalisation, foundations/matrix-calculus]
+tags: [transformer, attention, softmax, multi-head, positional encoding, rope, complexity]
+estimated_time: 1d
+papers: [attention-is-all-you-need, lora]
+claims:
+  - id: attention-def
+    kind: definition
+    title: Scaled dot-product attention
+    summary: A row-stochastic mixing of value vectors with weights given by a softmax over scaled query-key inner products.
+    proved: false
+    tags: [attention, softmax]
+  - id: sqrt-dk-scaling
+    kind: proposition
+    title: Why the scaling is 1 over the square root of d_k
+    summary: At random initialisation the logits have variance d_k, so dividing by its square root makes their scale independent of the head dimension.
+    proved: true
+    tags: [scaling, variance, initialisation]
+  - id: softmax-saturation
+    kind: proposition
+    title: Softmax saturation kills the gradient
+    summary: The attention Jacobian is a variance under the attention distribution, which vanishes when the distribution is concentrated.
+    proved: true
+    tags: [softmax, gradient, saturation]
+  - id: attention-permutation
+    kind: proposition
+    title: Attention is permutation equivariant
+    summary: Without positional information a transformer cannot distinguish orderings of its input, which is why positional encodings are required rather than optional.
+    proved: true
+    tags: [permutation, equivariance, positional]
+  - id: multihead-lowrank
+    kind: proposition
+    title: Multi-head attention is a sum of low-rank attention maps
+    summary: Each head has rank at most d_k, so h heads give an attention operator that is a sum of h low-rank pieces rather than one full-rank piece.
+    proved: true
+    tags: [multi-head, rank, capacity]
+  - id: rope-property
+    kind: proposition
+    title: Rotary embeddings make the logit depend only on relative position
+    summary: Rotating queries and keys by position-dependent angles makes their inner product a function of the position difference.
+    proved: true
+    tags: [rope, relative position]
+  - id: attention-complexity
+    kind: proposition
+    title: Complexity of a transformer layer
+    summary: Attention costs n^2 d and the MLP costs n d^2, so the crossover is at sequence length comparable to the model width.
+    proved: true
+    tags: [complexity, flops, memory]
+  - id: attention-kernel-view
+    kind: heuristic
+    title: Attention as a kernel smoother
+    summary: Softmax attention has the form of a Nadaraya-Watson estimator with an exponential kernel, a useful but incomplete analogy.
+    proved: false
+    tags: [kernel, nadaraya-watson, analogy]
+  - id: prenorm-postnorm
+    kind: empirical
+    title: Pre-norm versus post-norm
+    summary: Placing layer normalisation before the sublayer makes deep transformers trainable without warmup; the reasons are partly understood.
+    proved: false
+    tags: [pre-norm, residual, training stability]
+references:
+  - key: vaswani-et-al
+    title: Attention Is All You Need
+    authors: Ashish Vaswani and collaborators
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1706.03762
+  - key: su-rope
+    title: 'RoFormer: Enhanced Transformer with Rotary Position Embedding'
+    authors: Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen and Yunfeng Liu
+    year: 2021
+    kind: paper
+    url: https://arxiv.org/abs/2104.09864
+  - key: xiong-et-al
+    title: On Layer Normalization in the Transformer Architecture
+    authors: Ruibin Xiong and collaborators
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2002.04745
+  - key: dao-flashattention
+    title: 'FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness'
+    authors: Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra and Christopher Ré
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2205.14135
+  - key: elhage-mathematical-framework
+    title: A Mathematical Framework for Transformer Circuits
+    authors: Nelson Elhage and collaborators
+    year: 2021
+    kind: survey
+    url: https://transformer-circuits.pub/2021/framework/index.html
+---
+
+## Attention
+
+Let $X\in\R^{n\times d}$ hold $n$ token representations as rows.
+
+<Definition id="attention-def" title="Scaled dot-product attention">
+$$
+Q = XW_Q,\quad K = XW_K,\quad V = XW_V,
+\qquad W_Q,W_K\in\R^{d\times d_k},\ W_V\in\R^{d\times d_v},
+$$
+$$
+\operatorname{Attention}(Q,K,V) = \underbrace{\operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)}_{A\ \in\ \R^{n\times n}}V ,
+$$
+with the softmax applied **row-wise**. $A$ is row-stochastic: $A_{ij}\ge0$ and
+$\sum_jA_{ij}=1$, so row $i$ of the output is a convex combination of the value vectors.
+</Definition>
+
+<Intuition>
+Each token emits a **query** describing what it is looking for and a **key** describing what it
+offers. The logit $\ip{q_i}{k_j}$ scores how well token $j$ answers token $i$'s query, the softmax
+turns the scores into a probability distribution over positions, and the output is the corresponding
+average of value vectors. The operation is *content-based lookup with soft weights*, and it is
+differentiable precisely because the lookup is soft.
+</Intuition>
+
+<Proposition id="sqrt-dk-scaling" title="Why the scaling is 1/sqrt(d_k)">
+Suppose the entries of $q_i$ and $k_j$ are independent with mean $0$ and variance $\sigma^2$, as at
+standard initialisation. Then
+$$
+\E\ip{q_i}{k_j} = 0, \qquad \Var\big(\ip{q_i}{k_j}\big) = d_k\sigma^4 ,
+$$
+so $\ip{q_i}{k_j}$ has standard deviation $\sigma^2\sqrt{d_k}$, growing with $d_k$. Dividing by
+$\sqrt{d_k}$ makes the standard deviation $\sigma^2$, independent of the head dimension.
+</Proposition>
+
+<Proof>
+$\ip{q}{k} = \sum_{m=1}^{d_k}q_mk_m$ with all $2d_k$ factors independent and centred. The mean is
+$\sum_m\E q_m\E k_m = 0$. For the variance, the summands $q_mk_m$ are independent with
+$\E[q_mk_m]=0$ and $\E[(q_mk_m)^2] = \E q_m^2\E k_m^2 = \sigma^4$, so the variance of the sum is
+$d_k\sigma^4$.
+</Proof>
+
+<Proposition id="softmax-saturation" title="Softmax saturation kills the gradient">
+Let $a = \operatorname{softmax}(s)$ for logits $s\in\R^n$. Then
+$$
+\frac{\partial a}{\partial s} = \diag(a) - aa^\top ,
+$$
+and for any $v$, $v^\top\big(\diag(a)-aa^\top\big)v = \Var_{j\sim a}(v_j)$. Hence if $a$ concentrates
+on one index, the Jacobian is approximately zero.
+</Proposition>
+
+<Proof>
+The Jacobian is computed in the
+<TopicRef id="foundations/matrix-calculus">softmax derivation</TopicRef>. For the quadratic form,
+$$
+v^\top(\diag(a)-aa^\top)v = \sum_ja_jv_j^2 - \Big(\sum_ja_jv_j\Big)^2
+= \E_{j\sim a}[v_j^2] - \big(\E_{j\sim a}[v_j]\big)^2 = \Var_{j\sim a}(v_j).
+$$
+If $a \to e_{j_0}$ then the distribution is degenerate and its variance is $0$.
+</Proof>
+
+<KeyIdea>
+Combine the two propositions. Without the $1/\sqrt{d_k}$ factor, logits would have standard deviation
+growing like $\sqrt{d_k}$; with $d_k = 64$ and $\sigma^2=1$ that is a spread of $8$ across positions,
+which after softmax is near-one-hot. The Jacobian is then a variance of a near-degenerate
+distribution, i.e. near zero, and no gradient flows through the attention weights. The scaling is not
+cosmetic: it is what keeps the softmax in its informative regime at initialisation.
+</KeyIdea>
+
+<Proposition id="attention-permutation" title="Attention is permutation equivariant">
+Let $P$ be an $n\times n$ permutation matrix. Then
+$$
+\operatorname{Attention}\big((PX)W_Q,(PX)W_K,(PX)W_V\big) = P\cdot\operatorname{Attention}(Q,K,V).
+$$
+Consequently a transformer without positional information computes a function of the input
+**multiset**, not the sequence.
+</Proposition>
+
+<Proof>
+Permuting rows of $X$ permutes rows of $Q,K,V$: $Q\mapsto PQ$ etc. Then
+$QK^\top\mapsto PQK^\top P^\top$, and the row-wise softmax commutes with the simultaneous row and
+column permutation (each row's entries are permuted, and softmax is permutation equivariant within a
+row):
+$\operatorname{softmax}(PSP^\top) = P\operatorname{softmax}(S)P^\top$. Finally
+$P A P^\top\cdot PV = PAV$ since $P^\top P = I$.
+</Proof>
+
+This is why positional encodings are **required**, not an enhancement. The MLP and normalisation
+sublayers act position-wise and are therefore also permutation equivariant, so nothing else in the
+architecture breaks the symmetry.
+
+## Multi-head attention
+
+$$
+\operatorname{MHA}(X) = \operatorname{Concat}\big(\mathrm{head}_1,\dots,\mathrm{head}_h\big)W_O,
+\qquad
+\mathrm{head}_m = \operatorname{Attention}(XW_Q^m, XW_K^m, XW_V^m),
+$$
+with $d_k = d_v = d/h$ so that the total parameter count matches a single head of full width.
+
+<Proposition id="multihead-lowrank" title="Multi-head attention is a sum of low-rank attention maps">
+Partition $W_O$ into blocks $W_O^m\in\R^{d_v\times d}$. Then
+$$
+\operatorname{MHA}(X) = \sum_{m=1}^h A^m X\,\underbrace{W_V^mW_O^m}_{\text{rank}\ \le\ d_v = d/h},
+$$
+where $A^m = \operatorname{softmax}\big(XW_Q^m(W_K^m)^\top X^\top/\sqrt{d_k}\big)$. Each head
+contributes an attention pattern $A^m$ composed with a rank-$\le d/h$ value transformation, and
+each logit matrix is determined by the rank-$\le d/h$ matrix $W_Q^m(W_K^m)^\top$.
+</Proposition>
+
+<Proof>
+Concatenation followed by $W_O$ is the same as summing the blockwise products:
+$\operatorname{Concat}(\dots)W_O = \sum_m \mathrm{head}_mW_O^m$. Substituting
+$\mathrm{head}_m = A^mXW_V^m$ gives the display. The rank bound is
+$\rank(W_V^mW_O^m)\le\min(d,d_v,d) = d_v$, and similarly $\rank(W_Q^m(W_K^m)^\top)\le d_k$.
+</Proof>
+
+<KeyIdea>
+The interesting quantity is not $W_Q$ and $W_K$ separately but their product
+$W_{QK}^m = W_Q^m(W_K^m)^\top\in\R^{d\times d}$, of rank at most $d/h$ — and likewise
+$W_{VO}^m = W_V^mW_O^m$. A head is fully specified by these two low-rank matrices, which is the
+observation underlying the circuit-level analyses in the interpretability literature, and also the
+observation that makes <TopicRef id="llm/scaling-and-in-context-learning">LoRA</TopicRef> natural: if
+the operative objects are already low rank, a low-rank update is an appropriate parameterisation.
+
+Multiple heads are therefore a *rank allocation* choice: $h$ heads of rank $d/h$ each rather than one
+map of rank $d$. The total parameter count is the same; what changes is that each head is forced to
+attend according to a single low-dimensional similarity structure, and different heads can specialise.
+</KeyIdea>
+
+## Positional information
+
+<Definition id="sinusoidal" title="Sinusoidal positional encoding">
+$$
+\mathrm{PE}(p)_{2m} = \sin\!\left(\frac{p}{10000^{2m/d}}\right),
+\qquad
+\mathrm{PE}(p)_{2m+1} = \cos\!\left(\frac{p}{10000^{2m/d}}\right),
+$$
+added to the token embedding at position $p$. Because
+$$
+\begin{pmatrix}\sin(\omega(p+\Delta))\\\cos(\omega(p+\Delta))\end{pmatrix}
+= \begin{pmatrix}\cos\omega\Delta & \sin\omega\Delta\\ -\sin\omega\Delta & \cos\omega\Delta\end{pmatrix}
+\begin{pmatrix}\sin\omega p\\\cos\omega p\end{pmatrix},
+$$
+a shift by $\Delta$ acts as a fixed linear map on each frequency pair — so relative position is
+linearly available to the model.
+</Definition>
+
+<Proposition id="rope-property" title="Rotary embeddings make the logit depend only on relative position">
+Let $R_p$ be the block-diagonal rotation acting on coordinate pairs $(2m,2m+1)$ by angle
+$\theta_mp$, and define $\tilde q_p = R_pq_p$, $\tilde k_{p'} = R_{p'}k_{p'}$. Then
+$$
+\ip{\tilde q_p}{\tilde k_{p'}} = \ip{q_p}{R_{p'-p}\,k_{p'}} ,
+$$
+so the attention logit depends on $p$ and $p'$ only through $p'-p$.
+</Proposition>
+
+<Proof>
+Rotations are orthogonal, so $R_p^\top = R_p^{-1} = R_{-p}$, and $R_pR_{p'} = R_{p+p'}$ because the
+angles add blockwise. Hence
+$$
+\ip{R_pq}{R_{p'}k} = q^\top R_p^\top R_{p'}k = q^\top R_{p'-p}k .
+$$
+</Proof>
+
+This is why rotary embeddings (RoPE) are now standard: relative position is built into the inner
+product exactly, rather than being linearly recoverable as with additive sinusoids, and the
+construction extends to unseen positions.
+
+## Residual stream, normalisation and the MLP block
+
+A pre-norm transformer layer is
+$$
+X \leftarrow X + \operatorname{MHA}\big(\operatorname{LN}(X)\big),
+\qquad
+X \leftarrow X + \operatorname{MLP}\big(\operatorname{LN}(X)\big),
+$$
+with $\operatorname{MLP}(x) = W_2\,\rho(W_1x)$, $W_1\in\R^{4d\times d}$, $W_2\in\R^{d\times4d}$.
+
+The additive form means $X$ is a **residual stream** that every sublayer reads from and writes to,
+with Jacobian $I + \partial F/\partial X$ — the same identity-path mechanism as the
+<TopicRef id="deep-learning/convolution-recurrence-normalisation">LSTM cell state</TopicRef>, with the
+gate fixed at one.
+
+<Claim kind="empirical" id="prenorm-postnorm" title="Pre-norm versus post-norm">
+The original transformer used post-norm, $X\leftarrow\operatorname{LN}(X+F(X))$, and required a
+learning-rate warmup to train at all beyond a modest depth. Pre-norm trains stably without warmup and
+is now universal for large models.
+</Claim>
+
+<NotSaid>
+Xiong et al. give a partial account: in post-norm the expected gradient norm at initialisation grows
+with depth, so the first steps are too large and destroy the initialisation; warmup masks this by
+starting small. In pre-norm the gradient norm is roughly depth-independent. Their analysis is at
+initialisation and under simplifying assumptions, so it explains the need for warmup rather than
+everything about the two variants' behaviour throughout training. The practical choice is settled;
+the theory is suggestive rather than complete.
+</NotSaid>
+
+<Claim kind="heuristic" id="attention-kernel-view" title="Attention as a kernel smoother">
+Write the attention output for query $i$ as
+$$
+o_i = \sum_j \frac{\exp\big(\ip{q_i}{k_j}/\sqrt{d_k}\big)}{\sum_{j'}\exp\big(\ip{q_i}{k_{j'}}/\sqrt{d_k}\big)}\,v_j
+= \frac{\sum_j \kappa(q_i,k_j)v_j}{\sum_j\kappa(q_i,k_j)},
+\qquad \kappa(q,k) = e^{\ip qk/\sqrt{d_k}} .
+$$
+This is exactly a Nadaraya–Watson kernel-weighted average with kernel $\kappa$.
+</Claim>
+
+<NotSaid>
+The analogy is genuinely useful: it explains why attention is a smoother, why temperature (the
+$1/\sqrt{d_k}$) controls bandwidth, and it motivates the linear-attention family, which replaces
+$\kappa$ by a factorisable $\ip{\phi(q)}{\phi(k)}$ and thereby reduces the cost from $O(n^2d)$ to
+$O(nd^2)$.
+
+But $\kappa(q,k) = e^{\ip qk/\sqrt{d_k}}$ is **not symmetric in the sense a kernel smoother assumes**
+— queries and keys come from different projections of the same input, so $\kappa$ is a similarity
+between two different representations of tokens, not a distance-based kernel on a single space. It is
+positive definite as a function of $(q,k)$ pairs via the exponential of a linear kernel, but the
+Nadaraya–Watson theory that gives rates for kernel smoothers assumes a fixed kernel and i.i.d. data,
+neither of which holds. Treat the analogy as a source of architectural ideas, not as a route to
+guarantees.
+</NotSaid>
+
+## Complexity
+
+<Proposition id="attention-complexity" title="Complexity of a transformer layer">
+For sequence length $n$, model width $d$, and MLP expansion factor $4$:
+
+| Component | FLOPs | Memory (activations) |
+| --- | --- | --- |
+| $Q,K,V$ projections | $3nd^2$ | $3nd$ |
+| Logits $QK^\top$ | $n^2d$ | $n^2$ (per head, $hn^2$ total) |
+| $AV$ | $n^2d$ | $nd$ |
+| Output projection | $nd^2$ | $nd$ |
+| MLP | $8nd^2$ | $4nd$ |
+| **Total** | $\Theta(nd^2 + n^2d)$ | $\Theta(nd + hn^2)$ |
+
+Attention dominates the MLP when $n \gtrsim d$.
+</Proposition>
+
+<Proof>
+Each matrix product $\R^{a\times b}\times\R^{b\times c}$ costs $2abc$ FLOPs. $XW_Q$ is
+$(n\times d)(d\times d_k)$ per head, $h$ heads, so $hnd\,d_k = nd^2$ per projection and $3nd^2$ for
+three. $QK^\top$ is $(n\times d_k)(d_k\times n)$ per head: $hn^2d_k = n^2d$. $AV$ likewise. The MLP
+is two products of size $nd\times4d$: $8nd^2$. Summing gives the total.
+</Proof>
+
+<KeyIdea>
+The crossover at $n\approx d$ is worth internalising. For a model with $d = 4096$ and context
+$n = 2048$, the MLP dominates and attention is not the bottleneck. At $n = 128{,}000$ attention
+dominates by a factor of $30$. This is why long-context work is about attention specifically, and why
+the $O(n^2)$ *memory* for the attention matrix is often the harder constraint than the FLOPs —
+FlashAttention's contribution is to compute exact attention without ever materialising the
+$n\times n$ matrix, by tiling and recomputation, reducing memory to $O(n)$ at no accuracy cost.
+</KeyIdea>
+
+<Note title="Causal masking">
+For autoregressive models the logits are masked: $S_{ij}\leftarrow-\infty$ for $j>i$ before the
+softmax, so $A$ is lower triangular. This halves the FLOPs but does not change the asymptotics, and
+it is what makes the <TopicRef id="llm/language-modelling-and-cross-entropy">autoregressive
+factorisation</TopicRef> valid — each position's output depends only on positions at or before it,
+which is exactly the conditional structure the loss assumes.
+</Note>
+
+## Problems
+
+<ProblemRef id="tf-attention-scaling" />
+<ProblemRef id="tf-softmax-jacobian-variance" />
+<ProblemRef id="tf-permutation-equivariance" />
+<ProblemRef id="tf-multihead-rank" />
+<ProblemRef id="tf-rope-relative" />
+<ProblemRef id="tf-complexity-crossover" />
+<ProblemRef id="tf-implement-attention" />

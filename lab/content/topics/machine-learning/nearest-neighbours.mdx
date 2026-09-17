@@ -1,0 +1,199 @@
+---
+title: Nearest Neighbours and the Curse of Dimensionality
+summary: Consistency of k-NN, the exact rate under smoothness, and the concentration argument that explains why it fails in high dimension.
+field: machine-learning
+level: 2
+order: 50
+prerequisites: [high-dimensional-probability/concentration-of-the-norm, learning-theory/erm-and-uniform-convergence]
+tags: [knn, metric space, consistency, curse of dimensionality, nonparametric rates]
+estimated_time: 3h
+claims:
+  - id: cover-hart
+    kind: theorem
+    title: Cover–Hart inequality for 1-NN
+    summary: The asymptotic risk of the 1-nearest-neighbour rule is at most twice the Bayes risk.
+    proved: false
+    tags: [1-nn, asymptotic risk, cover-hart]
+  - id: knn-consistency
+    kind: theorem
+    title: Universal consistency of k-NN
+    summary: With k growing and k/n going to zero, the k-NN risk converges to the Bayes risk for every distribution.
+    proved: false
+    tags: [consistency, stone]
+  - id: knn-rate
+    kind: theorem
+    title: Nonparametric rate for k-NN regression
+    summary: Under Lipschitz smoothness the excess risk is of order n to the minus two over d plus two.
+    proved: true
+    tags: [rate, lipschitz, minimax]
+  - id: distance-concentration
+    kind: proposition
+    title: Distance contrast vanishes in high dimension
+    summary: The ratio of the farthest to the nearest distance among n random points tends to one as the dimension grows.
+    proved: true
+    tags: [concentration, contrast, curse]
+  - id: intrinsic-dimension
+    kind: empirical
+    title: Nearest neighbours work better than the theory predicts
+    summary: Real data concentrates near low-dimensional structure, so the relevant exponent is the intrinsic dimension.
+    proved: false
+    tags: [intrinsic dimension, manifold, practice]
+references:
+  - key: cover-hart-1967
+    title: Nearest neighbor pattern classification
+    authors: Thomas M. Cover and Peter E. Hart
+    year: 1967
+    kind: paper
+  - key: stone-1977
+    title: Consistent nonparametric regression
+    authors: Charles J. Stone
+    year: 1977
+    kind: paper
+  - key: gyorfi-et-al
+    title: A Distribution-Free Theory of Nonparametric Regression
+    authors: László Györfi, Michael Kohler, Adam Krzyżak and Harro Walk
+    year: 2002
+    kind: book
+  - key: beyer-et-al
+    title: When Is Nearest Neighbor Meaningful?
+    authors: Kevin Beyer, Jonathan Goldstein, Raghu Ramakrishnan and Uri Shaft
+    year: 1999
+    kind: paper
+---
+
+## The rule and its asymptotics
+
+Given $(x_i,y_i)_{i=1}^n$ and a query $x$, order the training points by distance to $x$ and average
+the labels of the $k$ closest.
+
+<Theorem id="cover-hart" title="Cover–Hart inequality">
+For the zero-one loss with $\Ycal=\{0,1\}$, the asymptotic risk $R_{1\text{NN}}$ of the
+$1$-nearest-neighbour rule satisfies
+$$
+R^\star \le R_{1\text{NN}} \le 2R^\star\big(1 - R^\star\big) \le 2R^\star ,
+$$
+where $R^\star$ is the Bayes risk.
+</Theorem>
+
+<Theorem id="knn-consistency" title="Universal consistency of k-NN (Stone)">
+If $k = k_n \to\infty$ and $k_n/n\to0$, then the $k$-NN rule is **universally consistent**: its risk
+converges to the Bayes risk for every distribution on $\R^d\times\{0,1\}$, with no smoothness or
+density assumptions whatsoever.
+</Theorem>
+
+Both are quoted from the references. Stone's theorem is a remarkable statement — there is a fully
+distribution-free learning rule — and it is worth pausing on why it does not contradict
+<TopicRef id="learning-theory/erm-and-uniform-convergence">no free lunch</TopicRef>. The resolution is
+that consistency is an **asymptotic** statement with no rate: for every distribution the risk
+eventually converges, but the sample size at which it becomes small depends on the distribution, and
+no free lunch says that dependence cannot be bounded uniformly.
+
+<Theorem id="knn-rate" title="Nonparametric rate for k-NN regression">
+Let $y = f(x)+\varepsilon$ with $f$ being $\Lambda$-Lipschitz on $[0,1]^d$, $\Var(\varepsilon)=\sigma^2$,
+and $x$ having a density bounded above and below on $[0,1]^d$. Then the $k$-NN regression estimate
+satisfies, at a fixed interior point,
+$$
+\E\big(\hat f(x)-f(x)\big)^2 \;\lesssim\; \underbrace{\Lambda^2\left(\frac kn\right)^{2/d}}_{\text{bias}^2} + \underbrace{\frac{\sigma^2}{k}}_{\text{variance}},
+$$
+which is minimised at $k \asymp n^{2/(d+2)}$, giving
+$$
+\E\big(\hat f(x)-f(x)\big)^2 \;\lesssim\; n^{-2/(d+2)} .
+$$
+</Theorem>
+
+<Proof>
+**Variance.** $\hat f(x) = \frac1k\sum_{j=1}^ky_{(j)}$ averages $k$ labels, whose noise terms are
+independent with variance $\sigma^2$, giving a variance contribution $\sigma^2/k$.
+
+**Bias.** The bias is at most $\Lambda$ times the average distance to the $k$-th nearest neighbour.
+Because the density is bounded below by some $c>0$, a ball of radius $r$ around $x$ has probability
+mass at least $c\,v_dr^d$ where $v_d$ is the volume of the unit ball. For the ball to contain
+about $k$ of the $n$ points we need $c\,v_dr^dn \asymp k$, i.e.
+$$
+r_k \asymp \left(\frac{k}{n}\right)^{1/d}.
+$$
+(Formally: $\P(\norm{X-x}_2 > r) \le 1 - cv_dr^d$, so the probability that fewer than $k$ of $n$
+points land in the ball of radius $r_k$ with $cv_dr_k^dn = 2k$ is exponentially small by
+<TopicRef id="high-dimensional-probability/concentration-inequalities">Chernoff</TopicRef>.) Lipschitzness
+then gives $|\E\hat f(x)-f(x)| \lesssim \Lambda r_k \asymp \Lambda(k/n)^{1/d}$.
+
+**Balance.** Adding bias$^2$ and variance and optimising: differentiating
+$\Lambda^2(k/n)^{2/d} + \sigma^2/k$ in $k$ and setting to zero gives
+$k \asymp (\sigma^2/\Lambda^2)^{d/(d+2)}n^{2/(d+2)}$, at which both terms are of order
+$n^{-2/(d+2)}$.
+</Proof>
+
+<KeyIdea>
+The exponent $2/(d+2)$ is the curse of dimensionality written as a number. To reach accuracy $\eps$
+one needs $n \asymp \eps^{-(d+2)/2}$ samples — **exponential in $d$**. At $d = 10$ and $\eps = 0.1$
+that is $10^6$ samples; at $d=100$ it is $10^{51}$. And this rate is *minimax optimal* over the
+Lipschitz class, so no method does better: the problem is hard, not the algorithm.
+
+Contrast this with the $O(p/n)$ sample complexity of
+<TopicRef id="high-dimensional-statistics/covariance-estimation">covariance estimation</TopicRef>. Both
+are called "the curse of dimensionality" and they differ by an exponential. The difference is
+parametric versus nonparametric: assuming a parametric form is what converts $\eps^{-d}$ into
+$d/\eps^2$.
+</KeyIdea>
+
+## Why distances stop being informative
+
+<Proposition id="distance-concentration" title="Distance contrast vanishes">
+Let $x, x_1,\dots,x_n$ be i.i.d. with independent coordinates of unit variance and bounded
+$\psi_2$ norm in $\R^d$. Then
+$$
+\frac{\max_i\norm{x_i-x}_2}{\min_i\norm{x_i-x}_2} \xrightarrow[d\to\infty]{\P} 1
+$$
+for fixed $n$, and more quantitatively, with probability at least $1-\delta$,
+$$
+\max_i\norm{x_i - x}_2 - \min_i\norm{x_i-x}_2 \;\lesssim\; \sqrt{\log(n/\delta)} ,
+$$
+while both are of order $\sqrt{2d}$.
+</Proposition>
+
+<Proof>
+By the <TopicRef id="high-dimensional-probability/concentration-of-the-norm">norm concentration
+theorem</TopicRef> applied to $x_i - x$, whose coordinates are independent with variance $2$,
+$$
+\P\Big(\big|\norm{x_i-x}_2 - \sqrt{2d}\big| \ge t\Big) \le 2e^{-ct^2}
+$$
+with $c$ depending only on the $\psi_2$ bound. Union bounding over the $n$ points and setting
+$2ne^{-ct^2}=\delta$ gives $t \asymp\sqrt{\log(n/\delta)}$: with probability $1-\delta$ **all** $n$
+distances lie in the window $\sqrt{2d}\pm t$. Hence the max and the min differ by at most $2t$, and
+their ratio is at most $(\sqrt{2d}+t)/(\sqrt{2d}-t)\to1$ as $d\to\infty$ with $n$ fixed.
+</Proof>
+
+<NotSaid>
+Read the hypotheses. The coordinates are assumed **independent and identically scaled**. That is the
+worst case for nearest neighbours and it is not what real data looks like. The proposition says: if
+your data is isotropic noise, distances carry no information. It does **not** say nearest-neighbour
+search is meaningless on real high-dimensional data, and interpreting it that way is a misreading that
+was common for years after Beyer et al. raised the question.
+</NotSaid>
+
+<Claim kind="empirical" id="intrinsic-dimension" title="Nearest neighbours work better than the theory predicts">
+$k$-NN and approximate nearest-neighbour search perform far better on real high-dimensional data —
+image embeddings, text embeddings, audio features — than the $n^{-2/(d+2)}$ rate with $d$ the ambient
+dimension would allow.
+</Claim>
+
+<NotSaid>
+The standard explanation is that the data concentrates near a low-dimensional structure, so the
+relevant exponent involves the **intrinsic** dimension $d_0 \ll d$ rather than the ambient one. There
+are theorems supporting this: under a manifold assumption the $k$-NN rate becomes
+$n^{-2/(d_0+2)}$, and doubling-dimension conditions give similar results.
+
+But this is not a complete explanation of practice, for two reasons. Estimating $d_0$ for real data
+is itself hard and the estimates are unstable. And the manifold hypothesis is an assumption about
+data that is rarely tested in the settings where it is invoked. The honest position: the gap between
+the isotropic worst case and observed performance is real, low intrinsic dimension is the best
+available explanation, and it has not been verified quantitatively for the embeddings used in
+production <TopicRef id="rag/vector-search-and-ann">retrieval systems</TopicRef>.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="nn-knn-rate" />
+<ProblemRef id="nn-distance-contrast" />
+<ProblemRef id="nn-curse-arithmetic" />
+<ProblemRef id="nn-simulate-contrast" />

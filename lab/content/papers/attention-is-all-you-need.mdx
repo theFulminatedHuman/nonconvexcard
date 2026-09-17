@@ -1,0 +1,82 @@
+---
+title: Attention Is All You Need
+authors: Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin
+year: 2017
+venue: NeurIPS
+url: https://arxiv.org/abs/1706.03762
+arxiv: '1706.03762'
+field: deep-learning
+also: [llm]
+tags: [transformer, attention, sequence modelling, parallelism]
+problem: Sequence models based on recurrence cannot be parallelised across time, which caps training throughput and makes long-range dependencies hard to learn.
+contribution: An architecture built only from attention and position-wise feedforward layers, removing recurrence entirely and making the computation over a sequence fully parallel.
+prerequisites:
+  - deep-learning/transformers
+  - foundations/matrix-calculus
+  - deep-learning/convolution-recurrence-normalisation
+descendants: [scaling-laws, lora, mixture-of-experts]
+related: [resnet, batchnorm]
+---
+
+## What problem does this paper solve?
+
+An RNN computes $h_t$ from $h_{t-1}$, so the $T$ steps of a sequence must be executed in order. On
+hardware whose throughput comes from parallelism this is a hard constraint, and it interacts badly
+with the <TopicRef id="deep-learning/convolution-recurrence-normalisation">vanishing-gradient
+product</TopicRef>: information from position $1$ to position $T$ traverses $T$ multiplications.
+Convolutional sequence models parallelise but need $O(\log_k T)$ stacked layers to connect distant
+positions.
+
+## What mathematical objects are introduced?
+
+Scaled dot-product attention as a primitive,
+$$
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V,
+$$
+multi-head attention as $h$ parallel low-rank instances of it, and sinusoidal positional encodings to
+restore the order information that attention's
+<TopicRef id="deep-learning/transformers">permutation equivariance</TopicRef> destroys.
+
+## What assumptions are made?
+
+That the required interactions between positions can be expressed as a small number of
+content-addressed soft lookups per layer, and that $O(T^2)$ compute in the sequence length is
+acceptable. The second assumption is what long-context work has since had to revisit.
+
+## What equations matter?
+
+The attention formula above, the $1/\sqrt{d_k}$ scaling (justified in the paper by exactly the
+variance argument on the
+<TopicRef id="deep-learning/transformers">transformers page</TopicRef>), and the complexity table
+comparing $O(T^2d)$ for self-attention against $O(Td^2)$ for recurrence — the paper's central
+engineering claim is that the former has $O(1)$ sequential operations while the latter has $O(T)$.
+
+## What theorem or result is important?
+
+There is no theorem. The paper's results are empirical: state-of-the-art BLEU on WMT translation at a
+fraction of the training cost, plus ablations on head count, key dimension and positional encoding
+scheme. It is worth being clear that the transformer's justification was, and largely remains,
+experimental.
+
+## What proof techniques are used?
+
+None. The only analysis is the variance calculation motivating the scaling factor.
+
+## What prior mathematics is required?
+
+Linear algebra for the low-rank structure of heads, softmax calculus for the gradient behaviour, and
+the <TopicRef id="deep-learning/approximation-and-backpropagation">Jacobian-product</TopicRef> view of
+depth to see why the residual connections are load-bearing.
+
+## Limitations
+
+Quadratic cost in sequence length; no theory for why attention is the right inductive bias; the
+original post-norm placement needed learning-rate warmup and was later replaced by pre-norm; absolute
+sinusoidal encodings extrapolate poorly and have been superseded by relative and rotary schemes.
+
+## Why it mattered
+
+Every large language model in use descends from this architecture. The specific reason is the one the
+paper emphasised least: making the per-layer computation a dense matrix multiplication over the whole
+sequence turned sequence modelling into a problem that scales with hardware, which is the
+precondition for the <TopicRef id="deep-learning-theory/what-is-proven">scaling-law</TopicRef> regime.

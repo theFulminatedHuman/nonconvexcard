@@ -1,0 +1,218 @@
+---
+title: Newton, Quasi-Newton and Conjugate Gradient
+summary: Local quadratic convergence, the BFGS update, L-BFGS memory, and why second-order methods are rare in deep learning.
+field: advanced-optimization
+level: 3
+order: 40
+prerequisites: [optimization/gradient-descent-convergence, foundations/linear-algebra]
+tags: [newton, quasi-newton, bfgs, lbfgs, conjugate gradient, trust region]
+estimated_time: 3h
+claims:
+  - id: newton-quadratic
+    kind: theorem
+    title: Local quadratic convergence of Newton's method
+    summary: Near a nondegenerate minimiser, Newton's method squares the error at each step.
+    proved: true
+    tags: [newton, quadratic convergence]
+  - id: newton-affine-invariance
+    kind: proposition
+    title: Newton's method is affine invariant
+    summary: The Newton iterates commute with invertible linear reparameterisation, so no step size tuning is needed and no condition number appears.
+    proved: true
+    tags: [affine invariance, newton]
+  - id: secant-condition
+    kind: proposition
+    title: The secant condition and the BFGS update
+    summary: BFGS is the minimum-change symmetric positive definite update satisfying the secant equation.
+    proved: false
+    tags: [bfgs, secant, quasi-newton]
+  - id: cg-optimality
+    kind: theorem
+    title: Conjugate gradient minimises over Krylov subspaces
+    summary: The t-th CG iterate is optimal over the Krylov subspace, giving the Chebyshev rate and exact termination in d steps.
+    proved: false
+    tags: [conjugate gradient, krylov]
+  - id: second-order-deep-learning
+    kind: empirical
+    title: Second-order methods are rarely used at scale
+    summary: The reasons are cost per step, stochastic curvature estimates and the absence of the local regime the theorems require.
+    proved: false
+    tags: [deep learning, practice]
+references:
+  - key: nocedal-wright
+    title: Numerical Optimization
+    authors: Jorge Nocedal and Stephen J. Wright
+    year: 2006
+    kind: book
+    note: The standard reference for everything on this page, with full proofs of the quasi-Newton and trust-region theory.
+  - key: boyd-vandenberghe-5
+    title: Convex Optimization
+    authors: Stephen Boyd and Lieven Vandenberghe
+    year: 2004
+    kind: book
+    url: https://web.stanford.edu/~boyd/cvxbook/
+    note: Chapters 9–11 for Newton's method, self-concordance and interior-point methods.
+  - key: martens-hf
+    title: Deep learning via Hessian-free optimization
+    authors: James Martens
+    year: 2010
+    kind: paper
+---
+
+## Newton's method
+
+<Definition id="newton-def" title="Newton's method">
+$$
+x_{t+1} = x_t - \big[\nabla^2f(x_t)\big]^{-1}\nabla f(x_t).
+$$
+Equivalently: minimise the *second-order* Taylor model of $f$ at $x_t$ exactly, rather than the
+quadratic upper bound of the descent lemma.
+</Definition>
+
+<Theorem id="newton-quadratic" title="Local quadratic convergence">
+Let $f$ be twice differentiable with $\nabla^2f$ being $M$-Lipschitz, and let $x^\star$ satisfy
+$\nabla f(x^\star)=0$ and $\nabla^2f(x^\star)\succeq\mu I$ with $\mu>0$. Then there is
+$r>0$ such that whenever $\norm{x_t-x^\star}_2\le r$,
+$$
+\norm{x_{t+1}-x^\star}_2 \le \frac{M}{\mu}\norm{x_t-x^\star}_2^2 .
+$$
+</Theorem>
+
+<Proof>
+Write $H_t = \nabla^2f(x_t)$ and $e_t = x_t - x^\star$. By the fundamental theorem of calculus applied
+to $\nabla f$ along the segment from $x^\star$ to $x_t$, and $\nabla f(x^\star)=0$,
+$$
+\nabla f(x_t) = \int_0^1 \nabla^2f\big(x^\star + s e_t\big)e_t\,ds .
+$$
+Therefore
+$$
+e_{t+1} = e_t - H_t^{-1}\nabla f(x_t)
+= H_t^{-1}\left[H_te_t - \int_0^1\nabla^2f(x^\star+se_t)e_t\,ds\right]
+= H_t^{-1}\int_0^1\big[H_t - \nabla^2f(x^\star+se_t)\big]e_t\,ds .
+$$
+By Lipschitzness of the Hessian, $\norm{H_t - \nabla^2f(x^\star+se_t)} \le M\norm{x_t - x^\star - se_t}_2 = M(1-s)\norm{e_t}_2$,
+so
+$$
+\norm{e_{t+1}}_2 \le \norm{H_t^{-1}}\,\norm{e_t}_2^2 \int_0^1 M(1-s)\,ds = \frac{M}{2}\norm{H_t^{-1}}\norm{e_t}_2^2 .
+$$
+Finally, by continuity of $\nabla^2 f$ there is $r>0$ with $\nabla^2f(x)\succeq\tfrac\mu2 I$ for
+$\norm{x-x^\star}_2\le r$, hence $\norm{H_t^{-1}}\le 2/\mu$, giving the constant $M/\mu$.
+</Proof>
+
+<KeyIdea>
+Quadratic convergence means the number of correct digits **doubles** each step: $10^{-2}$, $10^{-4}$,
+$10^{-8}$, $10^{-16}$. In the local regime Newton's method essentially terminates in five or six
+iterations regardless of conditioning. The hypotheses are what cost: the theorem is *local*, requires
+a nondegenerate Hessian, and says nothing about how to reach the neighbourhood.
+</KeyIdea>
+
+<Proposition id="newton-affine-invariance" title="Affine invariance">
+Let $T$ be invertible and $\tilde f(z) = f(Tz)$. If $\tilde x_t = T^{-1}x_t$ then the Newton iterates
+of $\tilde f$ from $\tilde x_0$ satisfy $\tilde x_t = T^{-1}x_t$ for all $t$. No such statement holds
+for gradient descent.
+</Proposition>
+
+<Proof>
+$\nabla\tilde f(z) = T^\top\nabla f(Tz)$ and $\nabla^2\tilde f(z) = T^\top\nabla^2f(Tz)T$. Hence
+$$
+\big[\nabla^2\tilde f(z)\big]^{-1}\nabla\tilde f(z)
+= T^{-1}\big[\nabla^2f(Tz)\big]^{-1}T^{-\top}T^\top\nabla f(Tz)
+= T^{-1}\big[\nabla^2f(Tz)\big]^{-1}\nabla f(Tz),
+$$
+so the Newton step transforms as $T^{-1}$ times the original step. Induction gives the claim. For
+gradient descent the step is $T^\top\nabla f(Tz)$, which does not transform as $T^{-1}$ times
+$\nabla f(Tz)$ unless $T$ is orthogonal.
+</Proof>
+
+This is why no condition number appears in the Newton rate and no step size needs tuning: the method
+does not see the coordinate system. Everything a rescaling could break, it is immune to.
+
+## Quasi-Newton: BFGS and L-BFGS
+
+Newton's method needs $\nabla^2 f$ ($O(d^2)$ memory) and a solve ($O(d^3)$ time). Quasi-Newton methods
+build an approximation $B_t \approx \nabla^2f(x_t)^{-1}$ from gradient differences alone.
+
+<Definition id="secant-def" title="Secant condition">
+Let $s_t = x_{t+1}-x_t$ and $g_t = \nabla f(x_{t+1})-\nabla f(x_t)$. A curvature approximation
+$H_{t+1}\approx\nabla^2f$ should satisfy the **secant condition** $H_{t+1}s_t = g_t$, which is the
+exact relation for a quadratic.
+</Definition>
+
+<Proposition id="secant-condition" title="The BFGS update">
+The BFGS update to the inverse approximation $B_t \approx H_t^{-1}$ is
+$$
+B_{t+1} = \left(I - \frac{s_tg_t^\top}{g_t^\top s_t}\right)B_t\left(I-\frac{g_ts_t^\top}{g_t^\top s_t}\right) + \frac{s_ts_t^\top}{g_t^\top s_t}.
+$$
+It satisfies $B_{t+1}g_t = s_t$ (the secant condition in inverse form), preserves positive
+definiteness when $g_t^\top s_t>0$, and is the solution of
+$\min_B \norm{B - B_t}_W$ subject to $B = B^\top$ and $Bg_t = s_t$ for a particular weighted
+Frobenius norm.
+</Proposition>
+
+The variational characterisation is proved in Nocedal–Wright and is quoted here. Two consequences
+matter:
+
+- $g_t^\top s_t > 0$ is a **curvature condition**; it holds automatically for strongly convex $f$ and must be enforced by a line search otherwise. If it fails, the update is skipped — a detail that matters in practice.
+- Each update is a rank-two modification, so applying $B_t$ costs $O(d^2)$ rather than $O(d^3)$.
+
+<Algorithm title="L-BFGS two-loop recursion">
+<ol>
+<li><strong>State.</strong> The last $m$ pairs $(s_i, g_i)$, typically $m \in [5,20]$. Never form $B_t$.</li>
+<li><strong>First loop</strong> (newest to oldest): $q \leftarrow \nabla f(x_t)$; for each $i$, set $\alpha_i = \rho_i s_i^\top q$ with $\rho_i = 1/(g_i^\top s_i)$, then $q \leftarrow q - \alpha_i g_i$.</li>
+<li><strong>Scale.</strong> $r \leftarrow \gamma q$ with $\gamma = (s_{\text{last}}^\top g_{\text{last}})/(g_{\text{last}}^\top g_{\text{last}})$.</li>
+<li><strong>Second loop</strong> (oldest to newest): $\beta = \rho_i g_i^\top r$, then $r \leftarrow r + (\alpha_i - \beta)s_i$.</li>
+<li><strong>Return</strong> $-r$ as the search direction; take a line search along it.</li>
+</ol>
+</Algorithm>
+
+Cost per iteration: $O(md)$ time and memory. That is the whole reason L-BFGS is the default
+general-purpose optimiser for smooth deterministic problems of moderate size.
+
+## Conjugate gradient
+
+<Theorem id="cg-optimality" title="Conjugate gradient minimises over Krylov subspaces">
+For $f(x) = \tfrac12x^\top Ax - b^\top x$ with $A\succ0$, the conjugate gradient iterates satisfy
+$$
+x_t = \argmin\Big\{f(x) : x \in x_0 + \operatorname{span}\{r_0, Ar_0,\dots,A^{t-1}r_0\}\Big\},
+\qquad r_0 = b - Ax_0,
+$$
+and consequently
+$$
+\frac{\norm{x_t-x^\star}_A}{\norm{x_0-x^\star}_A} \le 2\left(\frac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^t ,
+$$
+with exact termination at $t = d$ in exact arithmetic, and at $t = $ (number of distinct eigenvalues)
+in general.
+</Theorem>
+
+Quoted from Nocedal–Wright / Trefethen–Bau. Note the rate is the same $\sqrt\kappa$ as
+<TopicRef id="advanced-optimization/acceleration">acceleration</TopicRef> — and for good reason: CG
+solves the optimal-polynomial problem exactly, adaptively, and acceleration solves it with a fixed
+schedule. CG is the accelerated method for quadratics; Nesterov's contribution was extending the
+rate to general convex functions.
+
+## Why these are rare in deep learning
+
+<Claim kind="empirical" id="second-order-deep-learning" title="Second-order methods are rarely used at scale">
+Adam and SGD with momentum dominate deep learning; L-BFGS and Newton-type methods do not, despite
+their superior rates on the problems where those rates apply.
+</Claim>
+
+<NotSaid>
+The reasons are specific, and none of them is "second-order methods do not work":
+
+1. **Cost.** $d \sim 10^9$ makes $O(d^2)$ memory impossible. L-BFGS's $O(md)$ is affordable, so cost alone is not decisive.
+2. **Stochasticity.** L-BFGS's curvature pairs $(s_t, g_t)$ are built from gradient *differences*. With mini-batch gradients, the difference of two noisy gradients is dominated by noise unless the batch is large, and the secant condition becomes meaningless. This is the binding obstacle.
+3. **The local regime never arrives.** Newton's quadratic convergence is a statement about a neighbourhood of a nondegenerate minimiser. Deep networks are trained for a fixed budget and stopped far from any such point; the Hessian at the stopping point is typically singular, with a large number of near-zero eigenvalues.
+4. **Non-convexity.** Where the Hessian is indefinite the Newton step can point uphill. Trust-region and cubic-regularised variants fix this in theory and are the subject of active research; they are not yet competitive at scale.
+
+Hessian-free and Kronecker-factored (K-FAC) methods are serious attempts to get second-order
+information cheaply, and they do help on some problems. The honest summary is that the question is
+open in practice and the theory does not currently favour either side.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="so-newton-quadratic-rate" />
+<ProblemRef id="so-affine-invariance" />
+<ProblemRef id="so-cg-krylov" />
+<ProblemRef id="so-bfgs-secant" />

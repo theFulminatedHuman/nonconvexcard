@@ -1,0 +1,74 @@
+---
+title: 'BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding'
+authors: Jacob Devlin, Ming-Wei Chang, Kenton Lee, Kristina Toutanova
+year: 2019
+venue: NAACL
+url: https://arxiv.org/abs/1810.04805
+arxiv: '1810.04805'
+field: llm
+tags: [bert, masked language modelling, pretraining, bidirectional, transfer learning]
+problem: Autoregressive pretraining conditions each token only on its left context, which is a handicap for tasks where the whole sentence is available at inference time.
+contribution: Masked language modelling, which lets every token attend to both directions during pretraining, plus the pretrain-then-fine-tune recipe that became standard for understanding tasks.
+prerequisites:
+  - llm/language-modelling-and-cross-entropy
+  - deep-learning/transformers
+descendants: [dpr]
+related: [attention-is-all-you-need, dpr]
+---
+
+## What problem does this paper solve?
+
+Representation learning for tasks where the full input is available — classification, tagging,
+retrieval, question answering over a given passage.
+
+## What mathematical objects are introduced?
+
+The masked language modelling objective: replace a random $15\%$ of tokens with `[MASK]` and predict
+them,
+$$
+\mathcal{L}_{\text{MLM}} = -\E\left[\sum_{t\in M}\log q_\theta\big(x_t\mid x_{\setminus M}\big)\right],
+$$
+where $M$ is the mask set. Unlike the
+<TopicRef id="llm/language-modelling-and-cross-entropy">autoregressive factorisation</TopicRef>, this
+is **not** a valid factorisation of the joint: the masked positions are predicted independently given
+the context, so the model does not define a distribution over sequences.
+
+## What assumptions are made?
+
+That conditional independence of the masked positions given the unmasked ones is an acceptable
+approximation — it is, for representation learning, and it is not, for generation, which is why BERT
+cannot generate text.
+
+## What equations matter?
+
+The comparison with the autoregressive objective is the substantive point. Autoregressive:
+$\log p(x) = \sum_t\log p(x_t\mid x_{<t})$, exact. MLM: an objective that trains a good encoder but
+is a pseudo-likelihood, not a likelihood.
+
+## What theorem or result is important?
+
+No theorem. State-of-the-art on eleven NLP benchmarks, with the important observation that a single
+pretrained model plus a light task-specific head beat task-specific architectures across the board.
+
+## What proof techniques are used?
+
+None.
+
+## What prior mathematics is required?
+
+Cross-entropy and conditional independence; the transformer architecture; the distinction between a
+likelihood and a pseudo-likelihood.
+
+## Limitations
+
+Cannot generate. The `[MASK]` token appears in pretraining and never at fine-tuning time, a
+train/test mismatch that later models addressed. Only $15\%$ of tokens supply a training signal per
+example, making pretraining less sample-efficient per token than autoregressive training. And the
+next-sentence-prediction auxiliary task was later shown to be unhelpful.
+
+## Why it mattered
+
+It established pretrain-then-fine-tune as the dominant paradigm and made transfer learning routine in
+NLP. Its encoders remain the basis of most
+<TopicRef id="rag/embedding-geometry-and-similarity">retrieval embedding models</TopicRef>, where
+bidirectional context is exactly what is wanted.

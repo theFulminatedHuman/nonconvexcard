@@ -1,0 +1,345 @@
+---
+title: Gradient Descent and Its Convergence Rates
+summary: Four complete convergence proofs — convex, strongly convex, non-smooth and non-convex — with the exact assumptions each one needs.
+field: optimization
+level: 2
+order: 20
+prerequisites: [optimization/convex-sets-and-functions]
+tags: [gradient descent, convergence rate, subgradient, non-convex, lower bound]
+estimated_time: 1d
+experiments: [sgd-dynamics]
+claims:
+  - id: gd-descent
+    kind: lemma
+    title: One step of gradient descent decreases the objective
+    summary: With step size at most 1/L each gradient step reduces f by at least half the step times the squared gradient norm.
+    proved: true
+    tags: [descent, smoothness]
+  - id: gd-convex
+    kind: theorem
+    title: Gradient descent on convex smooth functions
+    summary: With step 1/L the suboptimality after t steps is at most L times the initial squared distance over 2t.
+    proved: true
+    tags: [convex, rate, o(1/t)]
+  - id: gd-strongly-convex
+    kind: theorem
+    title: Gradient descent on smooth strongly convex functions
+    summary: With step 1/L the iterates converge geometrically at rate (1 - 1/kappa).
+    proved: true
+    tags: [strongly convex, linear rate, condition number]
+  - id: gd-nonconvex
+    kind: theorem
+    title: Gradient descent on smooth non-convex functions
+    summary: The smallest gradient norm among the first t iterates is O(1/sqrt t); no statement about minima is possible.
+    proved: true
+    tags: [non-convex, stationary point]
+  - id: subgradient-method
+    kind: theorem
+    title: Subgradient method on non-smooth convex functions
+    summary: With a fixed horizon and tuned step the averaged iterate attains O(1/sqrt t) suboptimality.
+    proved: true
+    tags: [subgradient, non-smooth, averaging]
+  - id: gd-lower-bound
+    kind: theorem
+    title: Lower bound for first-order methods
+    summary: No method that only queries gradients can beat O(1/t^2) on convex smooth problems or (1 - 1/sqrt kappa)^t on strongly convex ones.
+    proved: false
+    tags: [lower bound, optimality, acceleration]
+  - id: gd-step-threshold
+    kind: proposition
+    title: Divergence above the step-size threshold
+    summary: On a quadratic, gradient descent diverges precisely when the step exceeds 2/L.
+    proved: true
+    tags: [step size, stability, divergence]
+references:
+  - key: nesterov-lectures-2
+    title: Lectures on Convex Optimization
+    authors: Yurii Nesterov
+    year: 2018
+    kind: book
+    note: The source of the complexity framework and of the lower bounds quoted here.
+  - key: bubeck-survey-2
+    title: 'Convex Optimization: Algorithms and Complexity'
+    authors: Sébastien Bubeck
+    year: 2015
+    kind: survey
+    url: https://arxiv.org/abs/1405.4980
+  - key: boyd-vandenberghe-3
+    title: Convex Optimization
+    authors: Stephen Boyd and Lieven Vandenberghe
+    year: 2004
+    kind: book
+    url: https://web.stanford.edu/~boyd/cvxbook/
+---
+
+The algorithm is
+$$
+x_{t+1} = x_t - \eta\,\nabla f(x_t),
+$$
+and the question is how fast $f(x_t) - f^\star$ goes to zero. The answer depends entirely on which
+assumptions hold, and the four theorems below give four qualitatively different answers. The table is
+the summary.
+
+| Assumptions | Quantity bounded | Rate | Steps for $\eps$ |
+| --- | --- | --- | --- |
+| convex, $L$-smooth | $f(x_t)-f^\star$ | $\dfrac{L\norm{x_0-x^\star}^2}{2t}$ | $O(1/\eps)$ |
+| $\mu$-strongly convex, $L$-smooth | $f(x_t)-f^\star$ | $\left(1-\tfrac1\kappa\right)^{t}\big(f(x_0)-f^\star\big)$ | $O(\kappa\log(1/\eps))$ |
+| convex, $G$-Lipschitz (non-smooth) | $f(\bar x_t)-f^\star$ | $\dfrac{G\norm{x_0-x^\star}}{\sqrt t}$ | $O(1/\eps^2)$ |
+| $L$-smooth only | $\min_{s\le t}\norm{\nabla f(x_s)}$ | $\sqrt{\dfrac{2L(f(x_0)-f^\star)}{t}}$ | $O(1/\eps^2)$ |
+
+<ExperimentRef id="sgd-dynamics" />
+
+## The descent lemma applied
+
+<Lemma id="gd-descent" title="One step decreases the objective">
+Let $f$ be $L$-smooth and let $x^+ = x - \eta\nabla f(x)$ with $0 < \eta \le 1/L$. Then
+$$
+f(x^+) \le f(x) - \frac{\eta}{2}\norm{\nabla f(x)}_2^2 .
+$$
+</Lemma>
+
+<Proof>
+By the <TopicRef id="foundations/matrix-calculus">descent lemma</TopicRef> with $y = x^+$ and
+$y - x = -\eta\nabla f(x)$,
+$$
+f(x^+) \le f(x) - \eta\norm{\nabla f(x)}_2^2 + \frac{L\eta^2}{2}\norm{\nabla f(x)}_2^2
+= f(x) - \eta\left(1 - \frac{L\eta}{2}\right)\norm{\nabla f(x)}_2^2 .
+$$
+For $\eta\le1/L$ we have $L\eta/2 \le 1/2$, so the bracket is at least $1/2$.
+</Proof>
+
+<Assumptions>
+$L$-smoothness only. No convexity is used, which is why this lemma is the starting point of the
+non-convex analysis as well. The step-size restriction $\eta \le 1/L$ is essential and is not a
+technical convenience — see the divergence proposition at the end of the page.
+</Assumptions>
+
+## Convex and smooth: the $O(1/t)$ rate
+
+<Theorem id="gd-convex" title="Gradient descent on convex smooth functions">
+Let $f$ be convex, $L$-smooth, with a minimiser $x^\star$. Run gradient descent with $\eta = 1/L$.
+Then for all $t\ge1$,
+$$
+f(x_t) - f^\star \le \frac{L\norm{x_0-x^\star}_2^2}{2t}.
+$$
+</Theorem>
+
+<Proof>
+**Step 1: the distance to the optimum is non-increasing, quantitatively.** Expand
+$$
+\norm{x_{t+1}-x^\star}_2^2 = \norm{x_t - x^\star}_2^2 - 2\eta\ip{\nabla f(x_t)}{x_t-x^\star} + \eta^2\norm{\nabla f(x_t)}_2^2 .
+$$
+By convexity (the tangent-plane inequality at $x_t$ evaluated at $x^\star$),
+$$
+\ip{\nabla f(x_t)}{x_t - x^\star} \ge f(x_t) - f^\star .
+$$
+By the descent lemma above, $\tfrac\eta2\norm{\nabla f(x_t)}_2^2 \le f(x_t) - f(x_{t+1})$, so
+$\eta^2\norm{\nabla f(x_t)}_2^2 \le 2\eta\big(f(x_t)-f(x_{t+1})\big)$. Substituting both,
+$$
+\norm{x_{t+1}-x^\star}_2^2 \le \norm{x_t-x^\star}_2^2 - 2\eta\big(f(x_t)-f^\star\big) + 2\eta\big(f(x_t)-f(x_{t+1})\big),
+$$
+that is,
+$$
+2\eta\big(f(x_{t+1}) - f^\star\big) \le \norm{x_t-x^\star}_2^2 - \norm{x_{t+1}-x^\star}_2^2 .
+$$
+
+**Step 2: telescope.** Summing for $s = 0,\dots,t-1$, the right side telescopes:
+$$
+2\eta\sum_{s=1}^{t}\big(f(x_s)-f^\star\big) \le \norm{x_0-x^\star}_2^2 - \norm{x_t-x^\star}_2^2 \le \norm{x_0-x^\star}_2^2 .
+$$
+
+**Step 3: use monotonicity.** The descent lemma makes $f(x_s)$ non-increasing, so
+$f(x_t)-f^\star \le \frac1t\sum_{s=1}^t(f(x_s)-f^\star)$. Combining with Step 2 and $\eta = 1/L$,
+$$
+f(x_t) - f^\star \le \frac{\norm{x_0-x^\star}_2^2}{2\eta t} = \frac{L\norm{x_0-x^\star}_2^2}{2t}.
+$$
+</Proof>
+
+<KeyIdea>
+Step 1 is the move to internalise: the squared distance to the optimum acts as a **potential
+function** (a Lyapunov function), and each step decreases it by an amount proportional to the
+suboptimality. Telescoping then converts a per-step decrease into a rate. Every convergence proof in
+this section — including the momentum and stochastic ones — is an instance of the same template with
+a cleverer potential.
+</KeyIdea>
+
+<NotSaid>
+The $O(1/t)$ rate is sublinear: reaching $\eps$ takes $\Theta(1/\eps)$ steps, so three more digits of
+accuracy costs a thousand times more work. There is no contradiction with the linear rate below; the
+difference is entirely the presence of strong convexity. Also note that the bound depends on
+$\norm{x_0-x^\star}_2$, so it is not scale-free, and it says nothing about $\norm{x_t-x^\star}$ — a
+convex smooth function can have a flat valley of near-minimisers far apart from each other.
+</NotSaid>
+
+## Strongly convex and smooth: the linear rate
+
+<Theorem id="gd-strongly-convex" title="Gradient descent on smooth strongly convex functions">
+Let $f$ be $\mu$-strongly convex and $L$-smooth, $\kappa = L/\mu$, and run gradient descent with
+$\eta = 1/L$. Then
+$$
+f(x_t) - f^\star \le \left(1-\frac1\kappa\right)^t\big(f(x_0)-f^\star\big),
+$$
+and consequently, by quadratic growth,
+$\norm{x_t-x^\star}_2^2 \le \frac2\mu\left(1-\frac1\kappa\right)^t\big(f(x_0)-f^\star\big)$.
+</Theorem>
+
+<Proof>
+Combine the descent lemma with the
+<TopicRef id="optimization/convex-sets-and-functions">PL inequality</TopicRef>. Let
+$\Delta_t = f(x_t) - f^\star$. The descent lemma with $\eta = 1/L$ gives
+$$
+\Delta_{t+1} \le \Delta_t - \frac{1}{2L}\norm{\nabla f(x_t)}_2^2 ,
+$$
+and PL gives $\norm{\nabla f(x_t)}_2^2 \ge 2\mu\Delta_t$. Therefore
+$$
+\Delta_{t+1} \le \Delta_t - \frac{2\mu\Delta_t}{2L} = \left(1-\frac\mu L\right)\Delta_t
+= \left(1-\frac1\kappa\right)\Delta_t .
+$$
+Iterating gives the claim. The distance bound follows from quadratic growth,
+$\tfrac\mu2\norm{x_t-x^\star}_2^2 \le \Delta_t$.
+</Proof>
+
+<Note title="Reading the rate">
+$(1-1/\kappa)^t \le e^{-t/\kappa}$, so $O(\kappa\log(1/\eps))$ steps suffice. The dependence on
+accuracy is logarithmic — excellent — and the dependence on conditioning is linear — the problem. For
+$\kappa = 10^4$, which is unremarkable for a real quadratic, that is $10^4$ iterations per digit.
+<TopicRef id="advanced-optimization/acceleration">Acceleration</TopicRef> improves the $\kappa$ to
+$\sqrt\kappa$, and the lower bound below says that is the best possible for a first-order method.
+</Note>
+
+## Non-convex and smooth: stationarity only
+
+<Theorem id="gd-nonconvex" title="Gradient descent on smooth non-convex functions">
+Let $f$ be $L$-smooth and bounded below by $f^\star$, and run gradient descent with $\eta = 1/L$.
+Then
+$$
+\min_{0\le s < t}\norm{\nabla f(x_s)}_2 \le \sqrt{\frac{2L\big(f(x_0)-f^\star\big)}{t}} .
+$$
+</Theorem>
+
+<Proof>
+Sum the descent lemma over $s = 0,\dots,t-1$ with $\eta = 1/L$:
+$$
+\frac{1}{2L}\sum_{s=0}^{t-1}\norm{\nabla f(x_s)}_2^2 \le \sum_{s=0}^{t-1}\big(f(x_s)-f(x_{s+1})\big)
+= f(x_0)-f(x_t) \le f(x_0)-f^\star .
+$$
+The minimum of the summands is at most their average, so
+$$
+\min_{s<t}\norm{\nabla f(x_s)}_2^2 \le \frac1t\sum_{s<t}\norm{\nabla f(x_s)}_2^2
+\le \frac{2L\big(f(x_0)-f^\star\big)}{t} .
+$$
+Taking square roots completes the proof.
+</Proof>
+
+<NotSaid>
+Read the conclusion very carefully. It says: **some** iterate among the first $t$ has small gradient.
+It does **not** say
+
+- that the last iterate has small gradient (though the monotonicity of $f$ makes it plausible),
+- that any iterate is near a local minimum — a saddle point also has zero gradient,
+- that $f(x_t)$ is close to $\inf f$ — the iterates may converge to a strictly suboptimal stationary point,
+- that anything converges at all, in the sense of the iterates having a limit.
+
+This is the strongest general statement available for smooth non-convex optimisation with a
+first-order method, and the gap between it and what practitioners want is the subject of the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page. A concrete
+example of the gap: $f(x) = x^3 - 3x$ on $\R$ has a local minimum at $x=1$ and a local maximum at
+$x=-1$; started at $x_0 = -1$, gradient descent stays there forever, satisfying the theorem exactly
+and finding nothing.
+</NotSaid>
+
+## Non-smooth convex: the subgradient method
+
+<Definition id="subgradient" title="Subgradient">
+$g$ is a **subgradient** of a convex $f$ at $x$ if $f(y)\ge f(x)+\ip{g}{y-x}$ for all $y$. The set of
+subgradients is the **subdifferential** $\partial f(x)$, which is non-empty for convex $f$ on the
+interior of its domain and equals $\{\nabla f(x)\}$ where $f$ is differentiable.
+</Definition>
+
+<Theorem id="subgradient-method" title="Subgradient method">
+Let $f$ be convex and $G$-Lipschitz (equivalently, $\norm{g}_2\le G$ for all $g\in\partial f(x)$ and
+all $x$), with minimiser $x^\star$ and $\norm{x_0-x^\star}_2\le R$. Run
+$x_{t+1} = x_t - \eta g_t$ with $g_t\in\partial f(x_t)$ and fixed $\eta = \frac{R}{G\sqrt T}$ for a
+horizon $T$. Then the average iterate $\bar x_T = \frac1T\sum_{t<T}x_t$ satisfies
+$$
+f(\bar x_T) - f^\star \le \frac{GR}{\sqrt T}.
+$$
+</Theorem>
+
+<Proof>
+Expand as before, now with a subgradient in place of the gradient:
+$$
+\norm{x_{t+1}-x^\star}_2^2 = \norm{x_t-x^\star}_2^2 - 2\eta\ip{g_t}{x_t-x^\star}+\eta^2\norm{g_t}_2^2 .
+$$
+The defining property of a subgradient gives $\ip{g_t}{x_t - x^\star}\ge f(x_t)-f^\star$, and
+$\norm{g_t}_2\le G$, so
+$$
+2\eta\big(f(x_t)-f^\star\big) \le \norm{x_t-x^\star}_2^2 - \norm{x_{t+1}-x^\star}_2^2 + \eta^2G^2 .
+$$
+Sum over $t = 0,\dots,T-1$ and telescope:
+$$
+2\eta\sum_{t<T}\big(f(x_t)-f^\star\big) \le R^2 + T\eta^2G^2 .
+$$
+By convexity $f(\bar x_T)\le\frac1T\sum_{t<T}f(x_t)$ (Jensen), so
+$$
+f(\bar x_T)-f^\star \le \frac{R^2}{2\eta T} + \frac{\eta G^2}{2} .
+$$
+This is minimised over $\eta$ at $\eta = R/(G\sqrt T)$, where its value is $GR/\sqrt T$.
+</Proof>
+
+<Warning title="Common mistake">
+The subgradient method has **no descent lemma**: $f(x_{t+1})$ can exceed $f(x_t)$, so the last iterate
+carries no guarantee and the averaging is not cosmetic. Also note the step size depends on the horizon
+$T$: this is a *fixed-horizon* algorithm, and a diminishing schedule $\eta_t \propto 1/\sqrt t$ is
+needed for an anytime guarantee. Both features reappear in
+<TopicRef id="stochastic-optimization/sgd-convergence">SGD</TopicRef>, for exactly the same reason —
+in both cases the search direction is not a descent direction.
+</Warning>
+
+## Step size and lower bounds
+
+<Proposition id="gd-step-threshold" title="Divergence above the threshold">
+Let $f(x) = \tfrac{L}{2}x^2$ on $\R$, so $f$ is $L$-smooth and $L$-strongly convex. Gradient descent
+with step $\eta$ satisfies $x_{t} = (1-\eta L)^tx_0$, hence converges if and only if
+$0<\eta<2/L$, is stationary if $\eta = 2/L$, and diverges if $\eta>2/L$.
+</Proposition>
+
+<Proof>
+$x_{t+1} = x_t - \eta L x_t = (1-\eta L)x_t$, so $x_t = (1-\eta L)^t x_0$. This tends to $0$ iff
+$|1-\eta L|<1$, i.e. $0<\eta<2/L$; equals $\pm x_0$ alternately when $\eta = 2/L$; and grows
+geometrically when $\eta>2/L$.
+</Proof>
+
+<KeyIdea>
+The threshold $2/L$ is exact, not an artefact. It is also the reason "learning rate too high" produces
+*divergence* rather than slow progress: past the threshold the dynamics are unstable, and the failure
+is qualitative. In deep learning the empirical counterpart is the "edge of stability" phenomenon,
+where training settles at a sharpness $L \approx 2/\eta$ — the largest value compatible with
+stability. That is an empirical observation, discussed as such on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page.
+</KeyIdea>
+
+<Theorem id="gd-lower-bound" title="Lower bound for first-order methods">
+Consider any method that, at step $t$, outputs a point in the affine span of
+$x_0,\nabla f(x_0),\dots,\nabla f(x_{t-1})$.
+
+- For convex $L$-smooth $f$ in dimension $d > t$, there is an instance with $f(x_t)-f^\star \gtrsim \dfrac{L\norm{x_0-x^\star}_2^2}{(t+1)^2}$.
+- For $\mu$-strongly convex $L$-smooth $f$, there is an instance with $f(x_t)-f^\star \gtrsim \left(\dfrac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^{2t}\big(f(x_0)-f^\star\big)$.
+</Theorem>
+
+Quoted from Nesterov's lectures; the instances are quadratics built from a tridiagonal matrix that
+"reveals" only one new coordinate per gradient query. The consequences are important:
+
+- Plain gradient descent's $O(1/t)$ is **not optimal**; $O(1/t^2)$ is achievable and is attained by <TopicRef id="advanced-optimization/acceleration">Nesterov acceleration</TopicRef>.
+- The $\sqrt\kappa$ in the strongly convex lower bound is also achieved by acceleration, so the gap between $\kappa$ and $\sqrt\kappa$ closes exactly.
+- No first-order method can do better. Beating these rates requires a stronger oracle — second-order information, as in <TopicRef id="advanced-optimization/second-order-methods">Newton's method</TopicRef>, or structure beyond smoothness and convexity.
+
+## Problems
+
+<ProblemRef id="gd-convex-rate" />
+<ProblemRef id="gd-strongly-convex-rate" />
+<ProblemRef id="gd-nonconvex-stationary" />
+<ProblemRef id="gd-step-threshold-quadratic" />
+<ProblemRef id="gd-subgradient-averaging" />
+<ProblemRef id="gd-implement-verify" />
+<ProblemRef id="gd-exact-line-search" />

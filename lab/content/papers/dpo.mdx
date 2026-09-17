@@ -1,0 +1,75 @@
+---
+title: 'Direct Preference Optimization: Your Language Model is Secretly a Reward Model'
+authors: Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, Chelsea Finn
+year: 2023
+venue: NeurIPS
+url: https://arxiv.org/abs/2305.18290
+arxiv: '2305.18290'
+field: llm
+tags: [dpo, preference optimisation, rlhf, reparameterisation]
+problem: RLHF requires training a separate reward model and running an on-policy RL loop, which is complex, unstable and expensive.
+contribution: An exact change of variables showing that the KL-regularised RLHF optimum can be expressed directly in terms of the policy, converting the whole pipeline into a single supervised classification loss on preference pairs.
+prerequisites:
+  - llm/preference-optimisation
+  - llm/language-modelling-and-cross-entropy
+descendants: []
+related: [instructgpt]
+---
+
+## What problem does this paper solve?
+
+Pipeline complexity. RLHF needs a reward model, a value model, on-policy sampling and PPO's clipping
+machinery. DPO needs a loss function.
+
+## What mathematical objects are introduced?
+
+The **implicit reward**
+$$
+\hat r_\theta(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)},
+$$
+which is the reward whose KL-regularised optimum is $\pi_\theta$, up to a function of $x$ alone.
+
+## What assumptions are made?
+
+Exactly those of RLHF: Bradley–Terry preferences, and the KL-regularised objective with the same
+$\beta$ and reference policy. Nothing is added; nothing is removed.
+
+## What equations matter?
+
+The derivation, in full on the
+<TopicRef id="llm/preference-optimisation">preference optimisation page</TopicRef>: invert
+$\pi^\star\propto\pi_{\mathrm{ref}}e^{r/\beta}$ to get $r$ in terms of $\pi^\star$, substitute into
+Bradley–Terry, and observe that the intractable partition function $Z(x)$ cancels because the
+preference model uses only reward *differences* at fixed $x$. The result is
+$$
+\mathcal{L}_{\mathrm{DPO}} = -\E\log\sigma\!\left(\beta\log\frac{\pi_\theta(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)} - \beta\log\frac{\pi_\theta(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)}\right).
+$$
+
+## What theorem or result is important?
+
+The equivalence itself: the set of optimal policies under the two objectives coincides. This is a
+genuine theorem, proved by the change of variables, and it is exact rather than approximate.
+
+## What proof techniques are used?
+
+A Gibbs-measure characterisation of the KL-regularised optimum (a short variational argument), then
+algebra. The whole proof is half a page.
+
+## What prior mathematics is required?
+
+KL divergence, the Gibbs variational principle, and the invariance of Bradley–Terry to
+prompt-dependent reward shifts.
+
+## Limitations
+
+The equivalence holds at the optimum with unlimited data. Off the preference distribution the implicit
+reward is unconstrained, so the optimised policy can drift where nothing pins it — RLHF's on-policy
+sampling supplies a signal there and DPO does not. The Bradley–Terry assumption is inherited, not
+removed. Empirically DPO can collapse output diversity more sharply and is sensitive to
+$\pi_{\mathrm{ref}}$'s quality.
+
+## Why it mattered
+
+It removed a large engineering barrier and became the default preference-tuning method within a year.
+Mathematically it is a fine example of how far a correctly-chosen reparameterisation goes: no new
+analysis, no new assumption, and a substantially simpler algorithm.

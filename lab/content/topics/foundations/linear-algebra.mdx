@@ -1,0 +1,387 @@
+---
+title: Linear Algebra for Machine Learning
+summary: Inner products, orthogonal projection, the spectral theorem, the SVD and the matrix norms that every later bound is written in.
+field: foundations
+level: 0
+order: 10
+tags: [linear algebra, spectral theorem, svd, norms, psd, projection]
+estimated_time: 3h
+claims:
+  - id: cauchy-schwarz
+    kind: theorem
+    title: Cauchy–Schwarz inequality
+    summary: The inner product of two vectors is bounded by the product of their norms, with equality exactly for parallel vectors.
+    proved: true
+    tags: [inner product, inequality]
+  - id: projection-theorem
+    kind: theorem
+    title: Orthogonal projection onto a subspace
+    summary: Every vector decomposes uniquely into a component in a subspace and a component orthogonal to it, and the subspace component is the nearest point.
+    proved: true
+    tags: [projection, least squares]
+  - id: spectral-theorem
+    kind: theorem
+    title: Spectral theorem for real symmetric matrices
+    summary: A real symmetric matrix has an orthonormal eigenbasis and real eigenvalues.
+    proved: true
+    tags: [eigenvalues, symmetric, diagonalisation]
+  - id: rayleigh
+    kind: proposition
+    title: Rayleigh quotient characterisation of eigenvalues
+    summary: The extreme eigenvalues of a symmetric matrix are the extreme values of the Rayleigh quotient.
+    proved: true
+    tags: [variational, eigenvalues]
+  - id: svd
+    kind: theorem
+    title: Singular value decomposition
+    summary: Every real matrix factors as a rotation, a non-negative scaling and another rotation.
+    proved: true
+    tags: [svd, low rank]
+  - id: eckart-young
+    kind: theorem
+    title: Eckart–Young–Mirsky theorem
+    summary: Truncating the SVD gives the best low-rank approximation in both the spectral and the Frobenius norm.
+    proved: false
+    tags: [low rank, approximation, pca]
+  - id: psd-characterisation
+    kind: proposition
+    title: Characterisations of positive semidefiniteness
+    summary: Four equivalent descriptions of a PSD matrix, each of which is the convenient one somewhere later.
+    proved: true
+    tags: [psd, quadratic form, gram]
+references:
+  - key: horn-johnson
+    title: Matrix Analysis
+    authors: Roger A. Horn and Charles R. Johnson
+    year: 2012
+    kind: book
+    note: The standard reference for everything on this page, in far greater generality.
+  - key: trefethen-bau
+    title: Numerical Linear Algebra
+    authors: Lloyd N. Trefethen and David Bau III
+    year: 1997
+    kind: book
+    note: Excellent on the SVD and on conditioning.
+  - key: boyd-vandenberghe
+    title: Convex Optimization
+    authors: Stephen Boyd and Lieven Vandenberghe
+    year: 2004
+    kind: book
+    url: https://web.stanford.edu/~boyd/cvxbook/
+    note: Appendix A collects the linear algebra used throughout optimisation.
+---
+
+Everything later in this laboratory is written in the language of this page. A concentration
+inequality for random matrices is a statement about $\|A\|$; a convergence rate for gradient
+descent is a statement about $\lambda_{\max}(\nabla^2 f)$ and $\lambda_{\min}(\nabla^2 f)$; the
+kernel trick is a statement about Gram matrices; attention is a statement about the geometry of
+inner products. This page fixes notation and proves the five or six facts that get used without
+comment from here on.
+
+## Inner products, norms and orthogonality
+
+We work in $\R^d$ with the standard inner product $\ip{x}{y} = \sum_{i=1}^d x_i y_i = x^\top y$ and
+the Euclidean norm $\norm{x}_2 = \sqrt{\ip{x}{x}}$.
+
+<Definition id="norm-defs" title="Norms on vectors">
+For $p \in [1,\infty)$ the $\ell^p$ norm is $\norm{x}_p = \left(\sum_i |x_i|^p\right)^{1/p}$, and
+$\norm{x}_\infty = \max_i |x_i|$. Each satisfies
+
+- $\norm{x} \ge 0$, with $\norm{x} = 0$ only for $x = 0$ (positivity),
+- $\norm{cx} = |c|\,\norm{x}$ (homogeneity),
+- $\norm{x+y} \le \norm{x} + \norm{y}$ (triangle inequality).
+
+Only $p=2$ comes from an inner product, which is why the Euclidean norm is the one with a geometry —
+angles, projections, orthogonality — attached to it.
+</Definition>
+
+<Theorem id="cauchy-schwarz" title="Cauchy–Schwarz inequality">
+For all $x, y \in \R^d$,
+$$
+|\ip{x}{y}| \le \norm{x}_2 \norm{y}_2 ,
+$$
+with equality if and only if $x$ and $y$ are linearly dependent.
+</Theorem>
+
+<Proof>
+If $y = 0$ both sides vanish. Otherwise, for every $t \in \R$,
+$$
+0 \le \norm{x - ty}_2^2 = \norm{x}_2^2 - 2t\ip{x}{y} + t^2\norm{y}_2^2 .
+$$
+The right-hand side is a quadratic in $t$ that is non-negative everywhere, so its discriminant is
+non-positive:
+$$
+4\ip{x}{y}^2 - 4\norm{x}_2^2\norm{y}_2^2 \le 0 ,
+$$
+which is the claim. Equality forces the discriminant to vanish, so the quadratic has a double root
+$t_\star$ with $\norm{x - t_\star y}_2 = 0$, i.e. $x = t_\star y$. Conversely if $x = cy$ both sides
+equal $|c|\norm{y}_2^2$.
+</Proof>
+
+<Note title="Why this proof is the right one">
+The argument is "complete the square and read off the discriminant", and it generalises verbatim to
+any inner-product space, including the reproducing-kernel Hilbert spaces of the
+<TopicRef id="machine-learning/kernel-methods-and-rkhs">kernel methods</TopicRef> page. It uses
+nothing about $\R^d$ beyond bilinearity and positivity.
+</Note>
+
+The Cauchy–Schwarz inequality is what lets us define the **angle** $\theta$ between non-zero vectors
+through $\cos\theta = \ip{x}{y}/(\norm{x}_2\norm{y}_2) \in [-1,1]$. Two vectors are **orthogonal**
+when $\ip{x}{y}=0$. A set $\{u_1,\dots,u_k\}$ is **orthonormal** when $\ip{u_i}{u_j} = \delta_{ij}$.
+
+### Orthogonal projection
+
+<Theorem id="projection-theorem" title="Orthogonal projection onto a subspace">
+Let $V \subseteq \R^d$ be a subspace with orthonormal basis $u_1,\dots,u_k$, and let
+$P = \sum_{i=1}^k u_i u_i^\top$. Then for every $x \in \R^d$:
+
+1. $Px \in V$ and $x - Px \perp V$;
+2. the decomposition $x = Px + (x - Px)$ into a $V$-component and a $V^\perp$-component is unique;
+3. $Px = \argmin_{v \in V} \norm{x - v}_2$, and $\norm{x}_2^2 = \norm{Px}_2^2 + \norm{x-Px}_2^2$;
+4. $P = P^\top = P^2$, and $\norm{P} = 1$ unless $V = \{0\}$.
+</Theorem>
+
+<Proof>
+(1) $Px = \sum_i \ip{u_i}{x} u_i$ is a combination of the $u_i$, hence in $V$. For each $j$,
+$\ip{u_j}{x - Px} = \ip{u_j}{x} - \sum_i \ip{u_i}{x}\ip{u_j}{u_i} = \ip{u_j}{x} - \ip{u_j}{x} = 0$,
+and the $u_j$ span $V$.
+
+(2) If $x = v_1 + w_1 = v_2 + w_2$ with $v_i \in V$, $w_i \in V^\perp$, then
+$v_1 - v_2 = w_2 - w_1 \in V \cap V^\perp = \{0\}$, because a vector orthogonal to itself has norm
+zero.
+
+(3) For any $v \in V$ write $x - v = (x - Px) + (Px - v)$. The first term is in $V^\perp$ and the
+second in $V$, so they are orthogonal and
+$$
+\norm{x-v}_2^2 = \norm{x - Px}_2^2 + \norm{Px - v}_2^2 \ge \norm{x-Px}_2^2 ,
+$$
+with equality exactly when $v = Px$. Taking $v=0$ gives the Pythagorean identity.
+
+(4) Symmetry and idempotence are immediate from orthonormality:
+$P^2 = \sum_{i,j} u_i (u_i^\top u_j) u_j^\top = \sum_i u_i u_i^\top = P$. By (3),
+$\norm{Px}_2 \le \norm{x}_2$ always, with equality for $x \in V$.
+</Proof>
+
+<KeyIdea>
+Least squares *is* orthogonal projection. The normal equations of
+<TopicRef id="machine-learning/linear-and-ridge-regression">linear regression</TopicRef> say exactly
+that the residual is orthogonal to the column space of the design matrix; the geometry of this
+theorem is the whole derivation.
+</KeyIdea>
+
+## The spectral theorem
+
+Write $\mathbb{S}^d$ for the set of real symmetric $d \times d$ matrices.
+
+<Theorem id="spectral-theorem" title="Spectral theorem for real symmetric matrices">
+Let $A \in \mathbb{S}^d$. Then there exist real numbers
+$\lambda_1 \ge \lambda_2 \ge \dots \ge \lambda_d$ and an orthonormal basis $u_1,\dots,u_d$ of
+$\R^d$ with $Au_i = \lambda_i u_i$. Equivalently $A = U\Lambda U^\top$ with $U$ orthogonal and
+$\Lambda = \diag(\lambda_1,\dots,\lambda_d)$, equivalently
+$A = \sum_{i=1}^d \lambda_i u_i u_i^\top$.
+</Theorem>
+
+<Proof>
+Induct on $d$. For $d=1$ there is nothing to prove.
+
+The function $x \mapsto x^\top A x$ is continuous on the unit sphere $S^{d-1}$, which is compact, so
+it attains a maximum at some $u_1$ with $\norm{u_1}_2 = 1$; set $\lambda_1 = u_1^\top A u_1$.
+
+We claim $Au_1 = \lambda_1 u_1$. Let $v \perp u_1$ with $\norm{v}_2 = 1$ and consider
+$x(t) = (u_1 + tv)/\norm{u_1+tv}_2$, a curve on the sphere with $x(0)=u_1$. Since
+$\norm{u_1+tv}_2^2 = 1+t^2$,
+$$
+g(t) := x(t)^\top A x(t) = \frac{\lambda_1 + 2t\,v^\top A u_1 + t^2 v^\top A v}{1+t^2},
+$$
+using symmetry to combine the two cross terms. As $t=0$ is a maximum of $g$ we need $g'(0)=0$, and
+differentiating gives $g'(0) = 2\, v^\top A u_1$. So $Au_1$ is orthogonal to every $v \perp u_1$,
+which forces $Au_1 \in \operatorname{span}(u_1)$, and pairing with $u_1$ identifies the scalar as
+$\lambda_1$.
+
+Now let $W = u_1^\perp$, a subspace of dimension $d-1$. If $w \in W$ then
+$\ip{u_1}{Aw} = \ip{Au_1}{w} = \lambda_1\ip{u_1}{w} = 0$, so $A$ maps $W$ into $W$. The restriction
+$A|_W$ is symmetric as a bilinear form on $W$, so by induction $W$ has an orthonormal eigenbasis
+$u_2,\dots,u_d$ with real eigenvalues. Together with $u_1$ these form an orthonormal eigenbasis of
+$\R^d$; sorting the eigenvalues gives the stated ordering.
+
+Reality of the eigenvalues is part of the construction: each $\lambda_i$ arises as a value of the
+real quadratic form $x^\top A x$.
+</Proof>
+
+<Proposition id="rayleigh" title="Rayleigh quotient characterisation of eigenvalues">
+For $A \in \mathbb{S}^d$ and $x \ne 0$ define the Rayleigh quotient
+$R_A(x) = \dfrac{x^\top A x}{x^\top x}$. Then
+$$
+\lambda_{\max}(A) = \max_{x \ne 0} R_A(x), \qquad \lambda_{\min}(A) = \min_{x \ne 0} R_A(x),
+$$
+and more generally $\lambda_k(A) = \max_{\dim V = k}\ \min_{0 \ne x \in V} R_A(x)$ (the Courant–Fischer
+min–max characterisation).
+</Proposition>
+
+<Proof>
+Expand $x = \sum_i c_i u_i$ in the eigenbasis. Then $x^\top A x = \sum_i \lambda_i c_i^2$ and
+$x^\top x = \sum_i c_i^2$, so $R_A(x)$ is a weighted average of the eigenvalues with weights
+$c_i^2 / \sum_j c_j^2$. A weighted average lies between the smallest and largest value averaged, and
+attains each at the corresponding $c$ concentrated on one coordinate. The min–max statement follows
+by the same expansion together with a dimension count: any $k$-dimensional $V$ meets
+$\operatorname{span}(u_k,\dots,u_d)$ non-trivially, which bounds the inner minimum above by
+$\lambda_k$, and $V = \operatorname{span}(u_1,\dots,u_k)$ achieves it.
+</Proof>
+
+<Note title="Where this gets used">
+The Rayleigh quotient is the bridge between "eigenvalue" and "optimisation problem", and it is the
+reason spectral quantities show up in convergence rates at all. It is also the tool that turns the
+$\eps$-net arguments of <TopicRef id="high-dimensional-probability/nets-covering-and-packing">nets and
+covering numbers</TopicRef> into bounds on $\norm{A}$.
+</Note>
+
+## Positive semidefinite matrices and quadratic forms
+
+<Definition id="psd-def" title="Positive semidefinite and positive definite">
+$A \in \mathbb{S}^d$ is **positive semidefinite** (PSD), written $A \succeq 0$, if
+$x^\top A x \ge 0$ for all $x$, and **positive definite** (PD), written $A \succ 0$, if
+$x^\top A x > 0$ for all $x \ne 0$. We write $A \succeq B$ for $A - B \succeq 0$; this is the
+**Loewner order**, a partial order — not every pair of symmetric matrices is comparable.
+</Definition>
+
+<Proposition id="psd-characterisation" title="Characterisations of positive semidefiniteness">
+For $A \in \mathbb{S}^d$ the following are equivalent:
+
+1. $x^\top A x \ge 0$ for all $x \in \R^d$;
+2. every eigenvalue of $A$ is non-negative;
+3. $A = B^\top B$ for some matrix $B$;
+4. $A = \sum_{i=1}^r \sigma_i v_i v_i^\top$ for some $r \le d$, $\sigma_i > 0$ and orthonormal $v_i$.
+</Proposition>
+
+<Proof>
+(1) $\Leftrightarrow$ (2): by the Rayleigh quotient, $\min_{x\ne0} R_A(x) = \lambda_{\min}(A)$, and
+$x^\top A x \ge 0$ for all $x$ is precisely $\lambda_{\min}(A) \ge 0$.
+
+(2) $\Rightarrow$ (4): the spectral theorem gives $A = \sum_i \lambda_i u_i u_i^\top$; drop the zero
+eigenvalues.
+
+(4) $\Rightarrow$ (3): take $B = \sum_i \sqrt{\sigma_i}\, v_i e_i^\top$, so that
+$B^\top B = \sum_i \sigma_i v_i v_i^\top$.
+
+(3) $\Rightarrow$ (1): $x^\top B^\top B x = \norm{Bx}_2^2 \ge 0$.
+</Proof>
+
+Statement (3) is why PSD matrices are unavoidable in learning theory: every **Gram matrix**
+$K_{ij} = \ip{\phi(x_i)}{\phi(x_j)}$ is of the form $B^\top B$ and therefore PSD, and conversely every
+PSD matrix is a Gram matrix of *some* feature map. That equivalence is Mercer's condition in
+miniature.
+
+<Definition id="matrix-sqrt" title="Square root and Cholesky factor">
+For $A \succeq 0$ with spectral decomposition $U\Lambda U^\top$, the matrix
+$A^{1/2} := U \Lambda^{1/2} U^\top$ is the unique PSD matrix with $(A^{1/2})^2 = A$. If $A \succ 0$
+it also has a unique factorisation $A = LL^\top$ with $L$ lower triangular and positive diagonal
+(the Cholesky factor), computable in $\tfrac13 d^3$ flops — which is how every "solve
+$(X^\top X + \lambda I)\beta = X^\top y$" in this laboratory is actually executed.
+</Definition>
+
+## The singular value decomposition
+
+<Theorem id="svd" title="Singular value decomposition">
+Every $A \in \R^{n \times p}$ can be written
+$$
+A = U \Sigma V^\top = \sum_{i=1}^{r} \sigma_i u_i v_i^\top ,
+$$
+where $r = \rank A$, $U \in \R^{n\times n}$ and $V \in \R^{p \times p}$ are orthogonal, and
+$\Sigma \in \R^{n \times p}$ is zero off the diagonal with
+$\sigma_1 \ge \dots \ge \sigma_{\min(n,p)} \ge 0$.
+</Theorem>
+
+<Proof>
+Apply the spectral theorem to $A^\top A \in \mathbb{S}^p$, which is PSD because
+$x^\top A^\top A x = \norm{Ax}_2^2 \ge 0$. Write $A^\top A = V \Lambda V^\top$ with
+$\lambda_1 \ge \dots \ge \lambda_p \ge 0$, and set $\sigma_i = \sqrt{\lambda_i}$. Let $r$ be the number
+of strictly positive $\sigma_i$.
+
+For $i \le r$ define $u_i = Av_i/\sigma_i$. These are orthonormal:
+$$
+\ip{u_i}{u_j} = \frac{v_i^\top A^\top A v_j}{\sigma_i\sigma_j}
+= \frac{\lambda_j\, \ip{v_i}{v_j}}{\sigma_i \sigma_j} = \delta_{ij}.
+$$
+Extend $u_1,\dots,u_r$ to an orthonormal basis of $\R^n$. For $i > r$ we have
+$\norm{Av_i}_2^2 = \lambda_i = 0$, so $Av_i = 0$. Hence $Av_i = \sigma_i u_i$ for all $i$, which is
+exactly $AV = U\Sigma$, and $V$ orthogonal gives $A = U\Sigma V^\top$. Finally
+$\rank A = \rank \Sigma = r$.
+</Proof>
+
+<Note title="Reading the SVD">
+$A$ acts by rotating with $V^\top$, scaling the $i$-th coordinate by $\sigma_i$, and rotating with
+$U$. The right singular vectors $v_i$ diagonalise $A^\top A$; the left singular vectors $u_i$
+diagonalise $AA^\top$; the two matrices share the non-zero eigenvalues $\sigma_i^2$. This is why the
+spectral experiments on this site can compute singular values by forming whichever of the two
+products is smaller.
+</Note>
+
+### Matrix norms
+
+<Definition id="matrix-norms" title="Operator, Frobenius and nuclear norms">
+$$
+\norm{A} = \norm{A}_{2\to2} = \max_{\norm{x}_2 = 1}\norm{Ax}_2 = \sigma_1, \qquad
+\norm{A}_F = \sqrt{\sum_{i,j} A_{ij}^2} = \sqrt{\sum_i \sigma_i^2}, \qquad
+\norm{A}_* = \sum_i \sigma_i .
+$$
+The first is the **spectral** (operator) norm, the second the **Frobenius** norm, the third the
+**nuclear** norm. All three are functions of the singular values alone, hence invariant under
+$A \mapsto QAR$ for orthogonal $Q,R$.
+</Definition>
+
+The inequalities
+$$
+\norm{A} \le \norm{A}_F \le \sqrt{r}\,\norm{A}, \qquad \norm{A}_F \le \norm{A}_* \le \sqrt{r}\,\norm{A}_F
+$$
+follow at once from $\sigma_1^2 \le \sum_i \sigma_i^2 \le r\sigma_1^2$ and Cauchy–Schwarz on the vector
+of singular values. They matter because the *statistically* natural norm is often $\norm{\cdot}_F$
+while the *analytically* tractable one is $\norm{\cdot}$, and the conversion costs a $\sqrt{r}$ —
+a factor that is harmless for low-rank objects and fatal for full-rank ones in high dimension.
+
+<Theorem id="eckart-young" title="Eckart–Young–Mirsky theorem">
+Let $A_k = \sum_{i=1}^k \sigma_i u_i v_i^\top$ be the rank-$k$ truncation of the SVD. Then for every
+matrix $B$ of rank at most $k$,
+$$
+\norm{A - A_k} = \sigma_{k+1} \le \norm{A-B}, \qquad
+\norm{A-A_k}_F = \Big(\sum_{i>k}\sigma_i^2\Big)^{1/2} \le \norm{A-B}_F .
+$$
+</Theorem>
+
+<Proof sketch>
+The value at $A_k$ is a computation from the SVD. For optimality in the spectral norm: if
+$\rank B \le k$ then $\ker B$ has dimension at least $p-k$, so it meets
+$\operatorname{span}(v_1,\dots,v_{k+1})$ in some unit vector $x$, and then
+$\norm{A-B} \ge \norm{(A-B)x}_2 = \norm{Ax}_2 \ge \sigma_{k+1}$ since $x$ lies in the span of the top
+$k+1$ right singular vectors. The Frobenius statement follows from Weyl's inequalities for singular
+values, $\sigma_{i+j-1}(X+Y) \le \sigma_i(X) + \sigma_j(Y)$, applied to $A = (A-B) + B$; the details
+of that step are the part omitted here.
+</Proof>
+
+This theorem is the reason principal component analysis is what it is: PCA is the Frobenius-optimal
+low-rank approximation of the centred data matrix, and nothing more.
+
+## Matrix calculus in one line each
+
+The derivative conventions used throughout the optimisation pages are collected on the
+<TopicRef id="foundations/matrix-calculus">matrix calculus</TopicRef> page. The three identities used
+most often are
+$$
+\nabla_x (a^\top x) = a, \qquad
+\nabla_x (x^\top A x) = (A + A^\top)x, \qquad
+\nabla_x \tfrac12\norm{Ax-b}_2^2 = A^\top(Ax-b).
+$$
+
+<Warning title="Common mistake">
+$\nabla_x (x^\top A x) = 2Ax$ **only** when $A$ is symmetric. For general $A$ the answer is
+$(A+A^\top)x$. Most of the time in this laboratory $A$ is a Hessian or a covariance and therefore
+symmetric, which makes the shortcut safe — but not always, and the asymmetric case is exactly where
+sign errors in backpropagation derivations come from.
+</Warning>
+
+## Problems
+
+<ProblemRef id="la-cauchy-schwarz-equality" />
+<ProblemRef id="la-projection-idempotent" />
+<ProblemRef id="la-psd-schur" />
+<ProblemRef id="la-spectral-norm-bound" />
+<ProblemRef id="la-power-iteration" />

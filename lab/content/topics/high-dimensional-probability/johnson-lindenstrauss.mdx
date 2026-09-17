@@ -1,0 +1,276 @@
+---
+title: The Johnson–Lindenstrauss Lemma
+summary: A complete proof that random projection to O(log N / eps^2) dimensions preserves all pairwise distances, with the dimension requirement, the geometry and the limits of the result.
+field: high-dimensional-probability
+level: 3
+order: 50
+prerequisites: [high-dimensional-probability/concentration-of-the-norm, high-dimensional-probability/nets-covering-and-packing]
+tags: [johnson-lindenstrauss, random projection, dimension reduction, distortion, embeddings]
+estimated_time: 3h
+experiments: [random-projection-jl]
+papers: [rag-original]
+claims:
+  - id: distributional-jl
+    kind: lemma
+    title: Distributional Johnson–Lindenstrauss lemma
+    summary: A random Gaussian projection preserves the norm of any single fixed vector to within a factor 1 ± eps with probability 1 − 2exp(−c k eps^2).
+    proved: true
+    tags: [random projection, concentration, chi-squared]
+  - id: jl-lemma
+    kind: theorem
+    title: Johnson–Lindenstrauss lemma
+    summary: Any N points in Euclidean space embed into O(eps^{-2} log N) dimensions with all pairwise distances preserved to within 1 ± eps.
+    proved: true
+    tags: [johnson-lindenstrauss, union bound, embedding]
+  - id: jl-optimal
+    kind: theorem
+    title: Optimality of the dimension bound
+    summary: The eps^{-2} log N dependence cannot be improved in general.
+    proved: false
+    tags: [lower bound, optimality]
+  - id: jl-inner-products
+    kind: corollary
+    title: Inner products are preserved too
+    summary: Distance preservation for a point set closed under differences implies inner-product preservation.
+    proved: true
+    tags: [inner product, polarisation]
+  - id: jl-not-nn
+    kind: empirical
+    title: Distance preservation is not neighbour preservation
+    summary: A 1 ± eps distortion guarantee does not preserve the identity of the nearest neighbour when the gap to the runner-up is smaller than eps.
+    proved: false
+    tags: [caveat, nearest neighbour, retrieval]
+references:
+  - key: jl-1984
+    title: Extensions of Lipschitz mappings into a Hilbert space
+    authors: William B. Johnson and Joram Lindenstrauss
+    year: 1984
+    kind: paper
+    note: The original paper; the lemma appears as a tool in a functional-analysis argument.
+  - key: dasgupta-gupta
+    title: An elementary proof of a theorem of Johnson and Lindenstrauss
+    authors: Sanjoy Dasgupta and Anupam Gupta
+    year: 2003
+    kind: paper
+    url: https://doi.org/10.1002/rsa.10073
+    note: The proof strategy used below follows the standard elementary route this paper popularised; the exposition here is written independently.
+  - key: larsen-nelson
+    title: Optimality of the Johnson–Lindenstrauss lemma
+    authors: Kasper Green Larsen and Jelani Nelson
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1609.02094
+    note: Establishes that the O(eps^{-2} log N) bound is tight.
+  - key: vershynin-hdp-6
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+---
+
+<Intuition>
+Here is the statement that should feel impossible. Take a million points anywhere in
+$\R^{1{,}000{,}000}$. There is a linear map into $\R^{500}$ that preserves *every one of the
+$\binom{10^6}{2} \approx 5\times10^{11}$ pairwise distances* to within $10\%$. The target dimension
+does not depend on the original dimension at all, and the map is found by flipping coins — no
+knowledge of the points is needed.
+
+The reason it is true is the <TopicRef id="high-dimensional-probability/concentration-of-the-norm">norm
+concentration</TopicRef> of the previous page: a random projection changes a fixed vector's norm by a
+predictable factor with exponentially small failure probability, and exponentially small failure
+probabilities survive a union bound over polynomially many events.
+</Intuition>
+
+## The single-vector statement
+
+Everything follows from one lemma about one vector.
+
+<Lemma id="distributional-jl" title="Distributional Johnson–Lindenstrauss lemma">
+Let $A \in \R^{k\times d}$ have i.i.d. $\Ncal(0,1/k)$ entries. For any fixed $x \in \R^d$ and any
+$\eps \in (0,1)$,
+$$
+\P\Big( \big|\norm{Ax}_2^2 - \norm{x}_2^2\big| \ge \eps\norm{x}_2^2 \Big)
+\le 2\exp\left(-\frac{k\eps^2}{8}\right) .
+$$
+</Lemma>
+
+<Proof>
+By homogeneity we may assume $\norm{x}_2 = 1$; both sides scale the same way under $x \mapsto cx$.
+
+**Step 1: identify the distribution.** Write $a_1^\top,\dots,a_k^\top$ for the rows of $A$. Each
+$\ip{a_i}{x}$ is a linear combination of independent $\Ncal(0,1/k)$ variables, hence Gaussian with
+mean $0$ and variance $\frac1k\norm{x}_2^2 = \frac1k$. The rows are independent, so
+$$
+\norm{Ax}_2^2 = \sum_{i=1}^k \ip{a_i}{x}^2 = \frac1k\sum_{i=1}^k Z_i^2,
+\qquad Z_i \overset{\text{i.i.d.}}{\sim}\Ncal(0,1) .
+$$
+Thus $k\norm{Ax}_2^2 \sim \chi^2_k$, and in particular $\E\norm{Ax}_2^2 = 1$: the projection is
+**unbiased** in the squared norm. This is the reason for the $1/k$ scaling of the entries.
+
+**Step 2: a Chernoff bound for the chi-squared.** Let $S = \sum_i Z_i^2$. For $\lambda < 1/2$ the MGF
+of a single $Z_i^2$ is
+$$
+\E e^{\lambda Z_i^2}
+= \frac{1}{\sqrt{2\pi}}\int_\R e^{\lambda z^2 - z^2/2}dz
+= \frac{1}{\sqrt{1-2\lambda}},
+$$
+by recognising the integrand as a Gaussian density with variance $(1-2\lambda)^{-1}$. By
+independence $\E e^{\lambda S} = (1-2\lambda)^{-k/2}$.
+
+For the upper tail, Chernoff gives for $\lambda \in (0,1/2)$
+$$
+\P\big(S \ge (1+\eps)k\big) \le e^{-\lambda(1+\eps)k}(1-2\lambda)^{-k/2}.
+$$
+Choose $\lambda = \frac{\eps}{2(1+\eps)}$, so $1 - 2\lambda = \frac{1}{1+\eps}$. Then the exponent is
+$$
+-\frac{\eps k}{2} + \frac k2\log(1+\eps)
+= \frac k2\Big(\log(1+\eps) - \eps\Big) \le \frac k2\left(-\frac{\eps^2}{2} + \frac{\eps^3}{3}\right)
+\le -\frac{k\eps^2}{8}
+$$
+for $\eps \in (0,1)$, using $\log(1+u) \le u - u^2/2 + u^3/3$ and $\eps^3/3 \le \eps^2/4$ when
+$\eps \le 3/4$; a direct check covers $\eps \in [3/4,1)$.
+
+For the lower tail, apply Chernoff with $\lambda < 0$. Setting $\lambda = -\frac{\eps}{2(1-\eps)}$
+gives, by the analogous computation with $\log(1-\eps) \le -\eps - \eps^2/2$,
+$$
+\P\big(S \le (1-\eps)k\big) \le \exp\left(\frac k2\big(\eps + \log(1-\eps)\big)\right)
+\le \exp\left(-\frac{k\eps^2}{4}\right) \le \exp\left(-\frac{k\eps^2}{8}\right).
+$$
+
+**Step 3: combine.** $\norm{Ax}_2^2 = S/k$, so the two tails above are exactly the events
+$\norm{Ax}_2^2 \ge 1+\eps$ and $\norm{Ax}_2^2 \le 1-\eps$. The union bound gives the factor $2$.
+</Proof>
+
+<Note title="What made this work">
+Two ingredients, both from earlier pages. The squared norm of a projected vector is a sum of $k$
+independent squared Gaussians — *sub-exponential*, not sub-Gaussian, which is why the exponent is
+$k\eps^2$ rather than something involving a range. And rotational invariance of the Gaussian is what
+reduced an arbitrary $x$ to the unit vector case: a Gaussian random matrix has no preferred
+directions, so the guarantee is **oblivious** to the data.
+</Note>
+
+## The lemma
+
+<Theorem id="jl-lemma" title="Johnson–Lindenstrauss lemma">
+Let $x_1,\dots,x_N \in \R^d$ and $\eps \in (0,1)$. If
+$$
+k \ge \frac{24\log N}{\eps^2},
+$$
+and $A\in\R^{k\times d}$ has i.i.d. $\Ncal(0,1/k)$ entries, then with probability at least
+$1 - 1/N$,
+$$
+(1-\eps)\norm{x_i - x_j}_2^2 \;\le\; \norm{Ax_i - Ax_j}_2^2 \;\le\; (1+\eps)\norm{x_i-x_j}_2^2
+\qquad\text{for all } i,j .
+$$
+</Theorem>
+
+<Assumptions>
+The points are **fixed in advance** (the map is chosen after the points, but the points may not
+depend on the map); $A$ is a Gaussian random matrix with the stated variance; $\eps < 1$. Nothing is
+assumed about $d$, $N$ or the geometry of the point set.
+</Assumptions>
+
+<Proof>
+For each of the $\binom N2$ pairs $i < j$, apply the distributional lemma to the fixed vector
+$x_i - x_j$ — legitimate because the vector does not depend on $A$. Let $E_{ij}$ be the event that
+this pair's distortion exceeds $\eps$. By the lemma,
+$$
+\P(E_{ij}) \le 2\exp\left(-\frac{k\eps^2}{8}\right).
+$$
+By the union bound over all pairs, and using $2\binom N2 \le N^2$,
+$$
+\P\left(\bigcup_{i<j}E_{ij}\right) \le \binom N2 \cdot 2\exp\left(-\frac{k\eps^2}{8}\right)
+\le N^2\exp\left(-\frac{k\eps^2}{8}\right).
+$$
+Substituting $k \ge 24\log N/\eps^2$ makes $k\eps^2/8 \ge 3\log N$, so the right-hand side is at most
+$N^2 e^{-3\log N} = N^{-1}$. Hence with probability at least $1 - 1/N$ no pair is distorted by more
+than $\eps$.
+
+Only the shape $k \asymp \eps^{-2}\log N$ is essential; the constant $24$ is what this particular
+chain of estimates delivers, and sharper constants are available at the cost of a more careful
+chi-squared tail bound.
+</Proof>
+
+<KeyIdea>
+Count the exponents. Each pair fails with probability $e^{-k\eps^2/8}$; there are $\approx N^2$
+pairs; so we need $e^{-k\eps^2/8} \ll N^{-2}$, i.e. $k\eps^2 \gtrsim \log N$. The $\eps^{-2}$ comes
+from the *Gaussian shape* of the concentration — a bound of the form $e^{-k\eps}$ would have given
+$\eps^{-1}$ — and the $\log N$ comes from the *union bound*, which is why the dependence is on the
+number of points and not on the dimension they started in.
+</KeyIdea>
+
+<ExperimentRef id="random-projection-jl" />
+
+## Is the bound tight?
+
+<Theorem id="jl-optimal" title="Optimality of the dimension bound">
+For every $\eps \in (0,1/2)$ and $N$ large enough there exist $N$ points in $\R^{O(\log N)}$ such
+that any map (linear or not) achieving distortion $1\pm\eps$ on all pairs must have target dimension
+$$
+k = \Omega\!\left(\frac{\log N}{\eps^2\log(1/\eps)}\right).
+$$
+</Theorem>
+
+This is the theorem of Larsen and Nelson, quoted from the reference. Its content is that the
+$\eps^{-2}\log N$ shape of the lemma is not an artefact of the proof technique — no cleverer
+construction can do essentially better. A weaker and much older observation goes the same way: an
+$\eps$-distortion embedding of $N$ mutually near-orthogonal points needs $k \gtrsim \log N$ simply
+because $\R^k$ cannot hold more than $e^{O(k\eps^2)}$ points at pairwise distance $\ge (1-\eps)$ — a
+<TopicRef id="high-dimensional-probability/nets-covering-and-packing">packing bound</TopicRef>.
+
+<Corollary id="jl-inner-products" title="Inner products are preserved too">
+If the conclusion of the lemma holds for the point set $\{x_i\} \cup \{x_i \pm x_j\}$, then for all
+$i,j$,
+$$
+\big|\ip{Ax_i}{Ax_j} - \ip{x_i}{x_j}\big| \le \frac{\eps}{2}\left(\norm{x_i}_2^2+\norm{x_j}_2^2\right).
+$$
+In particular unit vectors have their inner products preserved to additive $\eps$.
+</Corollary>
+
+<Proof>
+Polarisation: $4\ip{u}{v} = \norm{u+v}_2^2 - \norm{u-v}_2^2$. Applying the distortion bound to both
+$x_i+x_j$ and $x_i - x_j$,
+$$
+4\ip{Ax_i}{Ax_j} \le (1+\eps)\norm{x_i+x_j}_2^2 - (1-\eps)\norm{x_i-x_j}_2^2
+= 4\ip{x_i}{x_j} + \eps\left(\norm{x_i+x_j}_2^2 + \norm{x_i-x_j}_2^2\right),
+$$
+and the parallelogram law gives
+$\norm{x_i+x_j}_2^2 + \norm{x_i-x_j}_2^2 = 2\norm{x_i}_2^2 + 2\norm{x_j}_2^2$. Dividing by $4$ gives
+the upper bound; the lower bound is symmetric.
+</Proof>
+
+This corollary is the version that matters for machine learning: it says a random projection
+approximately preserves the Gram matrix, hence approximately preserves every kernel method, every
+linear classifier's margins, and every cosine similarity used in
+<TopicRef id="rag/embedding-geometry-and-similarity">retrieval</TopicRef>.
+
+## What the lemma does not give you
+
+<Claim kind="empirical" id="jl-not-nn" title="Distance preservation is not neighbour preservation">
+A $1\pm\eps$ guarantee on all pairwise distances does **not** guarantee that the nearest neighbour of
+a query is preserved.
+</Claim>
+
+<NotSaid>
+Suppose the nearest neighbour is at distance $1$ and the second nearest at distance $1 + \eps/2$.
+After projection the first may be at $1+\eps$ and the second at $(1+\eps/2)(1-\eps) < 1 + \eps$: the
+order has flipped, while every pairwise distance is within the guarantee. Nearest-neighbour
+preservation requires the *relative gap* between the true neighbour and its competitors to exceed
+$2\eps$ or so, which is an assumption about the data, not a consequence of the lemma.
+
+Three further limits worth stating explicitly:
+
+- **The lemma is about a fixed point set.** If the query is chosen adversarially *after* seeing $A$, all guarantees are void. This is why one cannot reuse a single projection matrix across an adaptively-chosen sequence of queries without care.
+- **$\eps^{-2}$ is brutal in practice.** Distortion $\eps = 0.01$ on $N = 10^6$ points needs $k \approx 24\log(10^6)/10^{-4} \approx 3.3\times10^6$ — larger than any plausible ambient dimension. The lemma is a statement about the *regime* $\eps$ constant, $N$ large.
+- **No sparsity, no structure.** A dense Gaussian $A$ costs $O(kd)$ per point to apply. Sparse and fast variants (the subsampled Hadamard transform, CountSketch, sparse JL) achieve similar guarantees with better runtime, and are what actual systems use.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="jl-prove-lemma" />
+<ProblemRef id="jl-chi-squared-mgf" />
+<ProblemRef id="jl-dimension-arithmetic" />
+<ProblemRef id="jl-rademacher-projection" />
+<ProblemRef id="jl-implement-projection" />
+<ProblemRef id="jl-inner-product-corollary" />

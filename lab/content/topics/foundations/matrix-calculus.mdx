@@ -1,0 +1,281 @@
+---
+title: Multivariable and Matrix Calculus
+summary: Gradients, Jacobians, Hessians and Taylor expansion, set up so that backpropagation and every smoothness assumption later are routine.
+field: foundations
+level: 0
+order: 20
+prerequisites: [foundations/linear-algebra]
+tags: [gradient, jacobian, hessian, taylor, chain rule, matrix derivatives]
+estimated_time: 3h
+claims:
+  - id: taylor-quadratic
+    kind: theorem
+    title: Taylor's theorem with integral remainder
+    summary: A twice-differentiable function equals its linear model plus an exact curvature term.
+    proved: true
+    tags: [taylor, remainder]
+  - id: descent-lemma
+    kind: lemma
+    title: Descent lemma for L-smooth functions
+    summary: L-smoothness sandwiches a function between its linear model and that model plus a quadratic.
+    proved: true
+    tags: [smoothness, quadratic upper bound]
+  - id: chain-rule
+    kind: theorem
+    title: Chain rule for compositions
+    summary: The Jacobian of a composition is the product of the Jacobians, in reverse order of evaluation.
+    proved: false
+    tags: [chain rule, jacobian, autodiff]
+  - id: symmetry-hessian
+    kind: theorem
+    title: Symmetry of the Hessian
+    summary: Continuous second partials commute, so the Hessian is symmetric.
+    proved: false
+    tags: [hessian, schwarz]
+references:
+  - key: rudin-pma
+    title: Principles of Mathematical Analysis
+    authors: Walter Rudin
+    year: 1976
+    kind: book
+    note: Chapter 9 for differentiation in several variables, including the statements quoted without proof here.
+  - key: magnus-neudecker
+    title: Matrix Differential Calculus with Applications in Statistics and Econometrics
+    authors: Jan R. Magnus and Heinz Neudecker
+    year: 2019
+    kind: book
+    note: The systematic reference for matrix derivative identities.
+  - key: griewank-walther
+    title: 'Evaluating Derivatives: Principles and Techniques of Algorithmic Differentiation'
+    authors: Andreas Griewank and Andrea Walther
+    year: 2008
+    kind: book
+    note: The authoritative account of forward and reverse mode automatic differentiation.
+---
+
+Optimisation theory is calculus with inequalities attached. The assumptions that appear in every
+convergence theorem later — $L$-smoothness, $\mu$-strong convexity, bounded gradients — are all
+statements about the objects defined here, and the descent lemma proved below is used in essentially
+every proof on the <TopicRef id="optimization/gradient-descent-convergence">gradient descent</TopicRef>
+page.
+
+## Derivatives as linear maps
+
+<Definition id="differentiable" title="Differentiability">
+$f : \R^d \to \R^m$ is **differentiable** at $x$ if there is a linear map
+$Df(x) : \R^d \to \R^m$ with
+$$
+f(x+h) = f(x) + Df(x)h + o(\norm{h}) \quad \text{as } h \to 0 .
+$$
+In coordinates $Df(x)$ is the **Jacobian** $J \in \R^{m \times d}$ with
+$J_{ij} = \partial f_i/\partial x_j$. When $m=1$ we write the derivative as a column vector, the
+**gradient** $\nabla f(x) \in \R^d$, so that $Df(x)h = \ip{\nabla f(x)}{h}$.
+</Definition>
+
+<Intuition>
+The gradient is not "the direction of steepest ascent" by definition — it is the unique vector that
+*represents* the derivative as an inner product, and steepest ascent is then a one-line consequence
+of Cauchy–Schwarz: among unit $h$, $\ip{\nabla f(x)}{h}$ is largest when $h$ points along
+$\nabla f(x)$. The distinction matters because the representation depends on the inner product, and
+changing the inner product changes the "steepest" direction. That observation is the whole idea
+behind mirror descent and natural gradient methods.
+</Intuition>
+
+<Definition id="directional" title="Directional derivative">
+The derivative of $f$ at $x$ along $v$ is
+$$
+D_v f(x) = \lim_{t \downarrow 0} \frac{f(x+tv) - f(x)}{t} = \ip{\nabla f(x)}{v},
+$$
+the last equality holding when $f$ is differentiable at $x$. A function can have all directional
+derivatives at a point without being differentiable there; $f(x_1,x_2) = x_1^3/(x_1^2+x_2^2)$ at the
+origin is the standard example.
+</Definition>
+
+<Definition id="hessian" title="Hessian">
+If $\nabla f$ is itself differentiable at $x$, its Jacobian is the **Hessian**
+$\nabla^2 f(x) \in \R^{d\times d}$ with $[\nabla^2 f(x)]_{ij} = \partial^2 f/\partial x_i \partial x_j$.
+</Definition>
+
+<Theorem id="symmetry-hessian" title="Symmetry of the Hessian">
+If the second partial derivatives of $f$ exist and are continuous in a neighbourhood of $x$, then
+$\nabla^2 f(x)$ is symmetric.
+</Theorem>
+
+This is Clairaut–Schwarz; the proof is in any analysis text and is not reproduced here. The
+consequence we use constantly is that the spectral theorem applies to Hessians, so "curvature" is a
+list of real eigenvalues, and the second-order conditions for a minimum become eigenvalue conditions.
+
+## Taylor expansion and the descent lemma
+
+<Theorem id="taylor-quadratic" title="Taylor's theorem with integral remainder">
+Let $f : \R^d \to \R$ be twice continuously differentiable. For all $x, y$,
+$$
+f(y) = f(x) + \ip{\nabla f(x)}{y - x} + \int_0^1 (1-t)\,(y-x)^\top \nabla^2 f\big(x + t(y-x)\big)(y-x)\,dt .
+$$
+In particular there is $\xi$ on the segment $[x,y]$ with
+$f(y) = f(x) + \ip{\nabla f(x)}{y-x} + \tfrac12 (y-x)^\top\nabla^2 f(\xi)(y-x)$.
+</Theorem>
+
+<Proof>
+Fix $x,y$ and set $g(t) = f(x + t(y-x))$ for $t \in [0,1]$, so $g$ is twice continuously
+differentiable with
+$$
+g'(t) = \ip{\nabla f(x+t(y-x))}{y-x}, \qquad
+g''(t) = (y-x)^\top \nabla^2 f(x+t(y-x))(y-x)
+$$
+by the chain rule. Integrating by parts,
+$$
+g(1) - g(0) - g'(0) = \int_0^1 \big(g'(t) - g'(0)\big)dt = \int_0^1\!\!\int_0^t g''(s)\,ds\,dt
+= \int_0^1 (1-s) g''(s)\,ds,
+$$
+where the last step swaps the order of integration over the triangle $\{0 \le s \le t \le 1\}$.
+Substituting the expressions for $g$, $g'$, $g''$ gives the integral form. The mean-value form
+follows because $\int_0^1(1-t)\,dt = \tfrac12$ and $t \mapsto g''(t)$ is continuous, so it attains its
+average value.
+</Proof>
+
+<Definition id="smooth-def" title="L-smoothness">
+$f$ is **$L$-smooth** if $\nabla f$ is $L$-Lipschitz:
+$\norm{\nabla f(x) - \nabla f(y)}_2 \le L\norm{x-y}_2$ for all $x,y$. For twice-differentiable $f$
+this is equivalent to $-L I \preceq \nabla^2 f(x) \preceq L I$ for all $x$.
+</Definition>
+
+<Lemma id="descent-lemma" title="Descent lemma">
+If $f$ is $L$-smooth then for all $x,y$,
+$$
+\big| f(y) - f(x) - \ip{\nabla f(x)}{y-x} \big| \le \frac{L}{2}\norm{y-x}_2^2 .
+$$
+In particular $f(y) \le f(x) + \ip{\nabla f(x)}{y-x} + \frac{L}{2}\norm{y-x}_2^2$.
+</Lemma>
+
+<Proof>
+Write $f(y) - f(x) = \int_0^1 \ip{\nabla f(x + t(y-x))}{y-x}\,dt$ (the fundamental theorem of
+calculus applied to $g$ as above; this needs only differentiability). Subtract the linear model:
+$$
+f(y) - f(x) - \ip{\nabla f(x)}{y-x} = \int_0^1 \ip{\nabla f(x+t(y-x)) - \nabla f(x)}{y-x}\,dt .
+$$
+Bound the integrand with Cauchy–Schwarz and then with Lipschitzness of the gradient:
+$$
+\big|\ip{\nabla f(x+t(y-x)) - \nabla f(x)}{y-x}\big|
+\le L\,\norm{t(y-x)}_2\norm{y-x}_2 = Lt\norm{y-x}_2^2 .
+$$
+Integrating $Lt$ over $t\in[0,1]$ gives $L/2$.
+</Proof>
+
+<KeyIdea>
+The descent lemma converts a *global* assumption about the gradient into a *usable quadratic upper
+bound* on the function. Every proof of a gradient-descent rate in this laboratory begins by
+minimising that upper bound, which is why the step size $1/L$ appears everywhere: it is the exact
+minimiser of $t \mapsto f(x) - t\norm{\nabla f(x)}^2 + \frac{L t^2}{2}\norm{\nabla f(x)}^2$.
+</KeyIdea>
+
+<Warning title="Common mistake">
+$L$-smoothness is a condition on the *gradient*, not on the function values, and it is not implied by
+differentiability. $f(x) = |x|^{3/2}$ is differentiable everywhere but not $L$-smooth near 0 for any
+finite $L$; $f(x) = \norm{x}_2$ is not differentiable at 0 at all. Neural network losses with ReLU
+activations are not $L$-smooth either, which is why the theorems on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page have to say
+what they assume instead.
+</Warning>
+
+## The chain rule and reverse-mode differentiation
+
+<Theorem id="chain-rule" title="Chain rule">
+If $g : \R^d \to \R^m$ is differentiable at $x$ and $f : \R^m \to \R^k$ is differentiable at $g(x)$,
+then $f \circ g$ is differentiable at $x$ with
+$$
+D(f\circ g)(x) = Df(g(x)) \cdot Dg(x) .
+$$
+</Theorem>
+
+Consider a composition of $n$ maps, as in a feedforward network:
+$$
+f = f_n \circ f_{n-1} \circ \dots \circ f_1, \qquad
+x_0 = x,\quad x_i = f_i(x_{i-1}) .
+$$
+The chain rule gives $Df(x) = J_n J_{n-1}\cdots J_1$ with $J_i = Df_i(x_{i-1})$. Matrix
+multiplication is associative, so this product may be evaluated in any order — and the order is
+exactly the difference between forward and reverse mode.
+
+<Algorithm title="Reverse-mode differentiation (backpropagation)">
+<ol>
+<li><strong>Forward pass.</strong> Compute and store $x_1, \dots, x_n$.</li>
+<li><strong>Seed.</strong> Set $\bar{x}_n = \nabla_{x_n} \mathcal{L}$, the gradient of the scalar objective with respect to the output.</li>
+<li><strong>Backward pass.</strong> For $i = n, n-1, \dots, 1$: set $\bar{x}_{i-1} = J_i^\top \bar{x}_i$ and accumulate the gradient with respect to the parameters of layer $i$ as $(\partial x_i/\partial \theta_i)^\top \bar{x}_i$.</li>
+<li><strong>Return</strong> $\bar{x}_0$ and the accumulated parameter gradients.</li>
+</ol>
+</Algorithm>
+
+<Proposition id="reverse-cost" title="Cost of reverse mode">
+For a scalar-valued $f$ built from $n$ elementary operations, reverse mode computes the full gradient
+at a cost within a constant factor of one function evaluation, using memory proportional to the number
+of stored intermediates. Forward mode costs one function evaluation *per input coordinate*.
+</Proposition>
+
+<Proof>
+Associate the product $J_n \cdots J_1$ from the left. Each step multiplies a row vector (the
+transposed adjoint, of length $m_i$) by a Jacobian, which for an elementary operation costs $O(1)$
+because elementary Jacobians are sparse and structured. There are $n$ such steps, so the total is
+$O(n)$ — the same order as the forward evaluation. Associating from the right instead propagates a
+$d$-column matrix, costing $O(nd)$.
+
+The memory statement is immediate: the backward pass needs $x_{i-1}$ to evaluate $J_i$, so the
+intermediates must be retained (or recomputed, which is the gradient-checkpointing trade).
+</Proof>
+
+<Note title="Why this is the reason deep learning is practical">
+A modern network has $d \sim 10^9$ parameters and one scalar loss. Forward mode would need $10^9$
+passes; reverse mode needs one, at the price of storing the activations. The asymmetry is entirely
+about the shape of the problem — many inputs, one output — and it is a statement about matrix
+multiplication order, not about neural networks.
+</Note>
+
+## Matrix derivative identities
+
+Throughout, $x \in \R^d$, $A \in \R^{d\times d}$, $X \in \R^{n \times p}$, and all gradients are with
+respect to the indicated variable.
+
+| Function | Derivative | Notes |
+| --- | --- | --- |
+| $a^\top x$ | $a$ | |
+| $x^\top A x$ | $(A + A^\top)x$ | $2Ax$ if $A$ symmetric |
+| $\tfrac12\norm{Ax - b}_2^2$ | $A^\top(Ax-b)$ | normal equations set this to zero |
+| $\norm{x}_2$ | $x/\norm{x}_2$ | undefined at $x=0$ |
+| $\log\det X$ | $X^{-\top}$ | $X \succ 0$ |
+| $\tr(AX)$ | $A^\top$ | with respect to $X$ |
+| $\tr(X^\top A X)$ | $(A + A^\top)X$ | |
+| $\norm{X}_F^2$ | $2X$ | |
+| $X^{-1}$ | $-X^{-1}(dX)X^{-1}$ | as a differential |
+| $\sigma(x)$, $\sigma(t)=\tfrac{1}{1+e^{-t}}$ | $\diag\!\big(\sigma(x)(1-\sigma(x))\big)$ | elementwise |
+| $\operatorname{softmax}(z)$ | $\diag(p) - pp^\top$, $p = \operatorname{softmax}(z)$ | PSD, singular on $\one$ |
+
+<Derivation title="The softmax Jacobian, since it is used in every LLM derivation">
+<Step why="Definition.">
+$p_i = e^{z_i}/\sum_k e^{z_k}$.
+</Step>
+<Step why="Differentiate the quotient, separating the i = j and i ≠ j cases.">
+$$
+\frac{\partial p_i}{\partial z_j}
+= \frac{\delta_{ij}e^{z_i}\sum_k e^{z_k} - e^{z_i}e^{z_j}}{\left(\sum_k e^{z_k}\right)^2}
+= \delta_{ij}p_i - p_ip_j .
+$$
+</Step>
+<Step why="Collect into matrix form.">
+$\dfrac{\partial p}{\partial z} = \diag(p) - pp^\top$.
+</Step>
+<Step why="The Jacobian is PSD and annihilates the all-ones vector, because shifting all logits by a constant does not change the distribution.">
+For any $v$, $v^\top(\diag(p) - pp^\top)v = \E_{i \sim p}[v_i^2] - (\E_{i\sim p}[v_i])^2 = \Var_{i\sim p}(v_i) \ge 0$, and the expression vanishes for $v = \one$.
+</Step>
+</Derivation>
+
+That last line is worth keeping: the softmax Jacobian *is* a variance under the predicted
+distribution. It is why gradients vanish when the model is confident — a confident $p$ has small
+variance — and it reappears as the Fisher information of the categorical family in the
+<TopicRef id="llm/language-modelling-and-cross-entropy">language modelling</TopicRef> derivations.
+
+## Problems
+
+<ProblemRef id="mc-descent-lemma-tight" />
+<ProblemRef id="mc-softmax-jacobian" />
+<ProblemRef id="mc-logdet-gradient" />
+<ProblemRef id="mc-directional-not-differentiable" />

@@ -1,0 +1,507 @@
+---
+title: Why Does Deep Learning Optimization Work?
+summary: A careful ledger of what is proved about training deep networks, what each theorem excludes, and which questions are genuinely open.
+field: deep-learning-theory
+level: 4
+order: 10
+prerequisites: [stochastic-optimization/sgd-convergence, deep-learning/transformers, learning-theory/bias-variance-and-double-descent]
+tags: [ntk, lazy training, implicit bias, overparameterisation, loss landscape, sharpness, grokking, scaling laws, open problems]
+estimated_time: 1d
+papers: [neural-tangent-kernel, deep-double-descent, lottery-ticket, grokking, scaling-laws, chinchilla]
+claims:
+  - id: nonconvex-hardness
+    kind: theorem
+    title: Training a neural network is NP-hard in general
+    summary: Even fitting a three-node network to data exactly is NP-complete, so no efficient algorithm can work for all instances.
+    proved: false
+    tags: [np-hard, complexity]
+  - id: what-gd-gives
+    kind: theorem
+    title: What gradient methods provably give on any smooth loss
+    summary: Convergence to an approximate stationary point at a known rate, and nothing more.
+    proved: false
+    tags: [stationary point, guarantee]
+  - id: ntk-convergence
+    kind: theorem
+    title: Convergence for sufficiently wide networks (NTK regime)
+    summary: With width polynomial in the sample size and small enough step size, gradient descent on the squared loss converges to zero training error at a linear rate.
+    proved: false
+    tags: [ntk, overparameterisation, linear rate]
+  - id: ntk-mechanism
+    kind: proposition
+    title: Why the NTK argument works — a PL inequality in disguise
+    summary: Wide networks have a near-constant tangent kernel, which makes the loss satisfy a Polyak-Lojasiewicz inequality along the trajectory.
+    proved: true
+    tags: [ntk, pl inequality, mechanism]
+  - id: ntk-limits
+    kind: open-problem
+    title: The NTK regime does not describe practical training
+    summary: Feature learning, the widths used in practice and the observed kernel drift all contradict the regime's hypotheses.
+    proved: false
+    tags: [open problem, feature learning, lazy training]
+  - id: implicit-bias-linear
+    kind: theorem
+    title: Implicit bias — the cases that are proved
+    summary: For linear models and some simple networks the solution selected by gradient descent is characterised exactly.
+    proved: false
+    tags: [implicit bias, max margin, minimum norm]
+  - id: implicit-bias-open
+    kind: open-problem
+    title: Implicit bias of SGD on deep networks
+    summary: No characterisation of the solution selected by SGD on a realistic deep network is known.
+    proved: false
+    tags: [open problem, implicit bias]
+  - id: saddle-escape
+    kind: theorem
+    title: Perturbed gradient descent escapes strict saddles
+    summary: With noise, first-order methods reach approximate second-order stationary points in polynomial time.
+    proved: false
+    tags: [saddle point, escape, second order stationary]
+  - id: flat-minima
+    kind: empirical
+    title: Flat minima and generalisation
+    summary: Sharpness correlates with generalisation across many experiments, but the measure is reparameterisation-dependent and the causal claim is unproved.
+    proved: false
+    tags: [flatness, sharpness, sam, caveat]
+  - id: edge-of-stability
+    kind: empirical
+    title: Edge of stability
+    summary: Training typically settles at a sharpness just above the classical stability threshold two over the learning rate.
+    proved: false
+    tags: [edge of stability, sharpness, empirical]
+  - id: grokking-status
+    kind: empirical
+    title: Grokking
+    summary: Test accuracy can jump from chance to perfect long after training accuracy saturates; several mechanisms are proposed and none is established in general.
+    proved: false
+    tags: [grokking, delayed generalisation]
+  - id: scaling-laws-status
+    kind: empirical
+    title: Scaling laws
+    summary: Loss follows a power law in parameters, data and compute over many orders of magnitude, an extremely robust empirical regularity without a derivation from first principles.
+    proved: false
+    tags: [scaling laws, power law, chinchilla]
+  - id: the-central-open-problem
+    kind: open-problem
+    title: The central open problem
+    summary: There is no theory that predicts, for a given architecture and dataset, that training will find a solution that generalises.
+    proved: false
+    tags: [open problem, generalisation]
+references:
+  - key: blum-rivest
+    title: Training a 3-node neural network is NP-complete
+    authors: Avrim L. Blum and Ronald L. Rivest
+    year: 1992
+    kind: paper
+  - key: jacot-gabriel-hongler
+    title: 'Neural Tangent Kernel: Convergence and Generalization in Neural Networks'
+    authors: Arthur Jacot, Franck Gabriel and Clément Hongler
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1806.07572
+  - key: du-et-al
+    title: Gradient Descent Provably Optimizes Over-parameterized Neural Networks
+    authors: Simon S. Du, Xiyu Zhai, Barnabás Póczos and Aarti Singh
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1810.02054
+  - key: chizat-oyallon-bach
+    title: On Lazy Training in Differentiable Programming
+    authors: Lénaïc Chizat, Edouard Oyallon and Francis Bach
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1812.07956
+  - key: soudry-implicit
+    title: The Implicit Bias of Gradient Descent on Separable Data
+    authors: Daniel Soudry, Elad Hoffer, Mor Shpigel Nacson, Suriya Gunasekar and Nathan Srebro
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1710.10345
+  - key: jin-et-al-saddle
+    title: How to Escape Saddle Points Efficiently
+    authors: Chi Jin, Rong Ge, Praneeth Netrapalli, Sham M. Kakade and Michael I. Jordan
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1703.00887
+  - key: zhang-et-al-rethinking
+    title: Understanding deep learning requires rethinking generalization
+    authors: Chiyuan Zhang, Samy Bengio, Moritz Hardt, Benjamin Recht and Oriol Vinyals
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1611.03530
+  - key: dinh-et-al
+    title: Sharp Minima Can Generalize For Deep Nets
+    authors: Laurent Dinh, Razvan Pascanu, Samy Bengio and Yoshua Bengio
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1703.04933
+  - key: cohen-et-al-eos
+    title: Gradient Descent on Neural Networks Typically Occurs at the Edge of Stability
+    authors: Jeremy M. Cohen, Simran Kaur, Yuanzhi Li, J. Zico Kolter and Ameet Talwalkar
+    year: 2021
+    kind: paper
+    url: https://arxiv.org/abs/2103.00065
+  - key: power-et-al-grokking
+    title: 'Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets'
+    authors: Alethea Power, Yuri Burda, Harri Edwards, Igor Babuschkin and Vedant Misra
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2201.02177
+  - key: kaplan-et-al
+    title: Scaling Laws for Neural Language Models
+    authors: Jared Kaplan and collaborators
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2001.08361
+  - key: hoffmann-et-al
+    title: Training Compute-Optimal Large Language Models
+    authors: Jordan Hoffmann and collaborators
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2203.15556
+---
+
+<Intuition>
+Deep learning works. That is an empirical fact, established by enormous and repeatable evidence. It
+is also true that no theorem currently explains it. Those two statements are compatible, and holding
+both at once is the honest position.
+
+This page is organised as a ledger. For each topic: what is actually proved, under what hypotheses,
+what the theorem does *not* say, what the empirical evidence shows, and what remains open. The
+distinction between the columns is the entire point of the page.
+</Intuition>
+
+## The starting point: it should not work
+
+<Theorem id="nonconvex-hardness" title="Training a neural network is NP-hard in general">
+Deciding whether a given dataset can be fit exactly by a network with two hidden threshold units and
+one output unit is NP-complete.
+</Theorem>
+
+Quoted from Blum and Rivest. Related results establish hardness for ReLU networks and for
+approximate fitting. So there is no algorithm that trains all networks efficiently, and any
+explanation of why training works in practice must be an explanation about the *instances* that arise
+in practice, not about the problem class.
+
+<Theorem id="what-gd-gives" title="What gradient methods provably give on any smooth loss">
+For any $L$-smooth loss bounded below, $T$ steps of gradient descent with $\eta = 1/L$ give
+$\min_{t<T}\norm{\nabla f(x_t)}_2 \le \sqrt{2L\Delta_0/T}$, and $T$ steps of SGD with tuned constant
+step give $\frac1T\sum_t\E\norm{\nabla f(x_t)}_2^2 \lesssim \sqrt{L\sigma^2\Delta_0/T}$.
+</Theorem>
+
+These are the theorems on the
+<TopicRef id="optimization/gradient-descent-convergence">gradient descent</TopicRef> and
+<TopicRef id="stochastic-optimization/sgd-convergence">SGD</TopicRef> pages, and they are the strongest
+assumption-free guarantees available.
+
+<NotSaid>
+They deliver an **approximate stationary point**. They do not say that point is a local minimum, that
+it has low loss, or that it generalises. A neural network loss has exponentially many stationary
+points, most of them useless. So the assumption-free theory is compatible with training producing
+nothing of value — and the fact that it does not is precisely what needs explaining.
+
+Note also that neural network losses are typically **not** $L$-smooth globally (ReLU has unbounded
+curvature at the kink locus in a suitable sense; the loss surface has regions of very large
+curvature), so even these theorems apply only under a hypothesis that is not verified in practice.
+</NotSaid>
+
+## What overparameterisation buys: the NTK regime
+
+<Definition id="ntk-def" title="Neural tangent kernel">
+For a network $f(x;\theta)$, the **tangent features** are $\nabla_\theta f(x;\theta)$ and the
+**neural tangent kernel** is
+$$
+\Theta(x,x') = \ip{\nabla_\theta f(x;\theta)}{\nabla_\theta f(x';\theta)} .
+$$
+</Definition>
+
+<Theorem id="ntk-convergence" title="Convergence for sufficiently wide networks">
+Consider a two-layer ReLU network of width $m$ with standard initialisation, trained by gradient
+descent on the squared loss over $n$ data points with $\norm{x_i}_2=1$ and no two inputs parallel.
+Let $\lambda_0 = \lambda_{\min}(\Theta^\infty)>0$ be the smallest eigenvalue of the infinite-width
+kernel matrix. If
+$$
+m = \Omega\!\left(\frac{n^6}{\lambda_0^4\delta^3}\right)
+\quad\text{and}\quad \eta = O\!\left(\frac{\lambda_0}{n^2}\right),
+$$
+then with probability at least $1-\delta$ over the initialisation,
+$$
+\mathcal{L}(\theta_t) \le \left(1-\frac{\eta\lambda_0}{2}\right)^t\mathcal{L}(\theta_0),
+$$
+so the training loss converges to zero at a linear rate.
+</Theorem>
+
+Quoted from Du et al.; Jacot, Gabriel and Hongler introduced the kernel and its infinite-width limit.
+
+<Proposition id="ntk-mechanism" title="Why the NTK argument works — a PL inequality in disguise">
+Let $u_t \in\R^n$ be the vector of network outputs on the training set and
+$J_t = \partial u_t/\partial\theta$. Gradient flow on
+$\mathcal{L} = \tfrac12\norm{u - y}_2^2$ gives
+$$
+\dot u_t = -J_tJ_t^\top(u_t-y) = -\Theta_t\,(u_t-y),
+$$
+so
+$$
+\frac{d}{dt}\mathcal{L}(\theta_t) = -(u_t-y)^\top\Theta_t(u_t-y) \le -\lambda_{\min}(\Theta_t)\,\norm{u_t-y}_2^2
+= -2\lambda_{\min}(\Theta_t)\,\mathcal{L}(\theta_t) .
+$$
+If $\lambda_{\min}(\Theta_t)\ge\lambda_0/2$ for all $t$ along the trajectory, then
+$\mathcal{L}(\theta_t)\le e^{-\lambda_0t}\mathcal{L}(\theta_0)$.
+</Proposition>
+
+<Proof>
+Gradient flow is $\dot\theta = -\nabla_\theta\mathcal{L} = -J_t^\top(u_t-y)$, so by the chain rule
+$\dot u_t = J_t\dot\theta = -J_tJ_t^\top(u_t-y)$. The displayed inequality is the Rayleigh-quotient
+bound $v^\top\Theta v\ge\lambda_{\min}(\Theta)\norm v_2^2$. Integrating
+$\dot{\mathcal{L}}\le-\lambda_0\mathcal{L}$ gives the exponential decay.
+</Proof>
+
+<KeyIdea>
+The condition $\dot{\mathcal{L}}\le-2\lambda_{\min}\mathcal{L}$ is exactly a
+<TopicRef id="optimization/convex-sets-and-functions">Polyak–Łojasiewicz inequality</TopicRef>. So the
+entire NTK convergence result is: *width makes the tangent kernel stay near its initialisation, which
+makes $\lambda_{\min}(\Theta_t)$ stay bounded away from zero, which gives a PL inequality, which gives
+a linear rate*. The non-convexity is not overcome — it is bypassed, by showing the trajectory stays
+in a region where the problem behaves like a strongly convex one.
+
+The technical heart is the second step: bounding $\norm{\Theta_t-\Theta_0}$ over the trajectory. That
+is what forces the enormous width requirement, since one needs the parameters to move so little that
+the Jacobian barely changes.
+</KeyIdea>
+
+<Claim kind="open-problem" id="ntk-limits" title="The NTK regime does not describe practical training">
+</Claim>
+
+<NotSaid>
+Four separate problems with reading the NTK theorem as an explanation of deep learning:
+
+1. **The width requirement is astronomical.** $m = \Omega(n^6/\lambda_0^4)$ with $n = 10^6$ is beyond any conceivable model. Sharper analyses have reduced the exponent, but not to the regime of real networks.
+2. **In the NTK regime the network does not learn features.** By construction the parameters barely move, so the tangent features are those at initialisation: the model is a *linear* model in random features, and the "deep" part is inert. Chizat, Oyallon and Bach call this **lazy training** and show it is a consequence of the scaling, not of depth.
+3. **NTK-regime networks generalise worse than real ones.** Empirically, the NTK-limit kernel machine underperforms the trained finite network on standard benchmarks, often substantially. So whatever the finite network is doing, it is not what the NTK describes.
+4. **The kernel demonstrably drifts.** Measurements of $\Theta_t$ during real training show large changes, especially early. The hypothesis of the theorem is observably false in practice.
+
+The mean-field / $\mu$P line of work studies alternative scalings under which features *do* move in
+the infinite-width limit, and is the more promising direction. It has produced genuine results for
+two-layer networks and useful hyperparameter-transfer prescriptions; a comparable theory for deep
+networks is open.
+</NotSaid>
+
+## Implicit bias
+
+Overparameterised networks have infinitely many zero-loss parameter settings, most of which
+generalise badly. So the question is not "does training reach zero loss" but "which zero-loss
+solution does it reach".
+
+<Theorem id="implicit-bias-linear" title="Implicit bias — the cases that are proved">
+- **Linear regression, underdetermined.** Gradient descent from $\beta_0=0$ on $\tfrac12\norm{y-X\beta}_2^2$ converges to the **minimum $\ell^2$-norm** interpolator.
+- **Linear classification, separable data.** Gradient descent on the logistic loss has $\theta_t/\norm{\theta_t}_2$ converging to the **maximum-margin** ($\ell^2$) direction, at rate $O(1/\log t)$.
+- **Diagonal linear networks.** Parameterising $\beta = u\odot v$ and running gradient descent from small initialisation converges towards the **minimum $\ell^1$-norm** interpolator, so the parameterisation changes the induced norm.
+- **Deep matrix factorisation.** Gradient flow on $\norm{Y - W_L\cdots W_1}_F^2$ from small initialisation biases towards low **nuclear norm**, with depth sharpening the effect.
+</Theorem>
+
+<Proof>
+We prove the first, which is short and shows the mechanism. Gradient descent gives
+$$
+\beta_{t+1} = \beta_t - \eta X^\top(X\beta_t - y),
+$$
+so every increment lies in $\operatorname{row}(X) = \operatorname{col}(X^\top)$. Starting from
+$\beta_0 = 0$, therefore $\beta_t\in\operatorname{row}(X)$ for all $t$.
+
+If $\beta_\infty$ is any limit point with $X\beta_\infty = y$, then for any other interpolator
+$\beta'$ we have $X(\beta'-\beta_\infty) = 0$, i.e. $\beta'-\beta_\infty\in\ker X = \operatorname{row}(X)^\perp$.
+Hence $\beta_\infty\perp(\beta'-\beta_\infty)$ and
+$$
+\norm{\beta'}_2^2 = \norm{\beta_\infty}_2^2 + \norm{\beta'-\beta_\infty}_2^2 \ge \norm{\beta_\infty}_2^2 .
+$$
+So $\beta_\infty$ is the minimum-norm interpolator.
+
+The other three are quoted from the literature (Soudry et al. for the second; the third and fourth
+have their own substantial literature).
+</Proof>
+
+<KeyIdea>
+The first proof is one paragraph and it identifies the mechanism precisely: *the algorithm cannot
+leave the row space, so the component of the solution in the kernel is whatever the initialisation
+put there — namely zero*. The implicit bias is a consequence of the update's algebraic form, not of
+anything subtle. That is encouraging, and it is also why the deep case is hard: for a nonlinear
+network the increments do not live in a fixed subspace.
+</KeyIdea>
+
+<Claim kind="open-problem" id="implicit-bias-open" title="Implicit bias of SGD on deep networks">
+There is no characterisation of the solution selected by SGD on a realistic deep network. Partial
+results exist for specific architectures, losses, initialisation scales and (usually) gradient flow
+rather than discrete stochastic steps, and they do not compose into a general statement.
+</Claim>
+
+<NotSaid>
+This is arguably *the* central technical gap. If the implicit bias were characterised, the
+generalisation question would reduce to asking whether the induced complexity measure is small for
+the data — a question of the kind learning theory knows how to answer. Without it, we do not even
+know what function class the algorithm is effectively searching.
+
+Note also that the discrete/continuous distinction is not cosmetic: gradient descent with a finite
+step has a different implicit bias from gradient flow (there are extra terms of order $\eta$ that
+penalise gradient norm), and the SGD noise adds further terms. Results proved for flow do not
+transfer automatically.
+</NotSaid>
+
+## Saddle points and the loss landscape
+
+<Theorem id="saddle-escape" title="Perturbed gradient descent escapes strict saddles">
+Let $f$ be $L$-smooth with $\rho$-Lipschitz Hessian. Perturbed gradient descent — gradient descent
+with small isotropic noise added when the gradient is small — finds an $\eps$-second-order stationary
+point, i.e. a point with
+$$
+\norm{\nabla f(x)}_2\le\eps \quad\text{and}\quad \lambda_{\min}\big(\nabla^2f(x)\big)\ge-\sqrt{\rho\eps},
+$$
+in $\tilde O(1/\eps^2)$ iterations, with only polylogarithmic dependence on the dimension.
+</Theorem>
+
+Quoted from Jin et al. The intuition is that a strict saddle has a descent direction, and isotropic
+noise has a component along it with high probability, so the iterate is pushed off the saddle's
+stable manifold. This is a genuine and satisfying result.
+
+<NotSaid>
+It gives an *approximate second-order* stationary point, which rules out strict saddles but not:
+degenerate saddles with $\lambda_{\min}=0$, poor local minima, or plateaus. And deep network losses
+are known to have degenerate critical points in abundance — every permutation of hidden units gives a
+symmetry, and every dead ReLU gives a flat direction. The theorem is progress on one obstruction, not
+on all of them.
+</NotSaid>
+
+## Flatness, sharpness and the edge of stability
+
+<Claim kind="empirical" id="flat-minima" title="Flat minima and generalisation">
+Across many experiments, solutions with smaller Hessian eigenvalues at the minimum generalise better,
+and algorithms that explicitly seek flat minima (SAM and relatives) improve test accuracy.
+</Claim>
+
+<NotSaid>
+The correlation is real and reproducible. The causal claim is not established, and there is a sharp
+objection. Dinh et al. showed that for a ReLU network the map
+$(W_1,W_2)\mapsto(\alpha W_1,\alpha^{-1}W_2)$ leaves the function — hence the test error — exactly
+unchanged while changing the Hessian spectrum by factors of $\alpha^{\pm2}$. So **"sharpness" is not
+a property of the learned function**; it is a property of the parameterisation, and can be made
+arbitrarily large or small without touching generalisation.
+
+Responses have been to define reparameterisation-invariant sharpness measures (adaptive sharpness,
+information-theoretic or PAC-Bayes flatness), and some of these correlate with generalisation more
+robustly. But no theorem currently shows that flatness in any such sense implies generalisation for
+realistic networks. Treat "flat minima generalise" as a well-supported empirical heuristic with a
+known counterexample to its naive form.
+</NotSaid>
+
+<Claim kind="empirical" id="edge-of-stability" title="Edge of stability">
+Cohen et al. document that full-batch gradient descent on neural networks typically has the sharpness
+$\lambda_{\max}(\nabla^2\mathcal{L})$ *rise* during training until it reaches approximately $2/\eta$,
+and then hover just above it, with the loss decreasing non-monotonically.
+</Claim>
+
+<NotSaid>
+The observation is striking because $2/\eta$ is exactly the classical stability threshold of the
+<TopicRef id="optimization/gradient-descent-convergence">quadratic analysis</TopicRef>: gradient
+descent on a quadratic with curvature above $2/\eta$ diverges. So training operates at the boundary of
+where the standard theory applies, and *beyond* the regime where descent-lemma arguments are valid.
+
+This has a direct consequence: convergence proofs assuming $\eta \le 1/L$ with $L$ the true
+smoothness constant do not describe what happens, because the effective $L$ adapts to $\eta$ rather
+than the reverse. Theory for the edge-of-stability regime exists for specific simplified models and
+is an active area; there is no general account.
+</NotSaid>
+
+## Generalisation, memorisation and grokking
+
+The foundational empirical result here is Zhang et al.: standard architectures can fit **random
+labels** on standard datasets to zero training error. So the hypothesis class is rich enough to
+memorise, and any explanation of generalisation must be about the algorithm and the data, not the
+architecture's capacity. This is also why
+<TopicRef id="learning-theory/erm-and-uniform-convergence">uniform convergence</TopicRef> bounds over
+the architecture's function class are vacuous here.
+
+<Claim kind="empirical" id="grokking-status" title="Grokking">
+On small algorithmic tasks (modular arithmetic, group operations), networks reach $100\%$ training
+accuracy quickly while remaining at chance on held-out data, and then — after many thousands of
+further steps with no visible change in training loss — jump to $100\%$ test accuracy.
+</Claim>
+
+<NotSaid>
+Several mechanisms have been proposed: a slow transition from a memorising to a generalising circuit
+driven by weight decay; a competition between a fast-to-find memorisation solution and a
+slower-to-find but lower-norm generalising one; a delayed alignment of representations. Each has
+supporting evidence on specific tasks, and mechanistic-interpretability work has reverse-engineered
+the learned circuit in the modular-addition case in convincing detail.
+
+What is not established is a general theory: which tasks grok, how long the delay is, or whether the
+phenomenon occurs in large-scale training at all (the evidence is largely from small models on
+algorithmic data). It is an unusually clean experimental handle on the memorisation-to-generalisation
+transition, and that is its main value.
+</NotSaid>
+
+<Claim kind="empirical" id="scaling-laws-status" title="Scaling laws">
+Test loss follows
+$$
+\mathcal{L}(N,D) \approx \mathcal{L}_\infty + \frac{A}{N^\alpha} + \frac{B}{D^\beta}
+$$
+in parameters $N$ and tokens $D$, with fitted exponents, over several orders of magnitude. Hoffmann
+et al. (Chinchilla) fit this form and conclude that compute-optimal training scales $N$ and $D$
+roughly in proportion, revising the earlier Kaplan et al. prescription.
+</Claim>
+
+<NotSaid>
+This is among the most useful empirical regularities in the field — it is what makes large training
+runs planable — and it is *not derived*. There are suggestive arguments connecting power-law loss
+curves to power-law data spectra, to intrinsic dimension of the data manifold, and to
+nonparametric-rate calculations of the kind on the
+<TopicRef id="machine-learning/nearest-neighbours">nearest neighbours</TopicRef> page. None of them
+predicts the observed exponents from properties of the data, and none explains the functional form's
+remarkable stability across modalities and architectures.
+
+Two further cautions. The fitted form is an extrapolation and has been revised when refit with better
+methodology — the Kaplan-to-Chinchilla correction moved the recommended data-to-parameter ratio by
+more than an order of magnitude, from a fit to the same functional family. And the laws describe
+*loss*, not capability; the relationship between loss and downstream behaviour is itself not a
+smooth function and is much less well characterised.
+</NotSaid>
+
+## The ledger
+
+| Question | Status |
+| --- | --- |
+| Does gradient descent reach a stationary point? | **Proved**, with rates, under smoothness |
+| Does it reach zero training loss for wide enough nets? | **Proved** in the NTK regime; width requirement unrealistic |
+| Is the NTK regime what happens in practice? | **No** — kernel drifts, features are learned |
+| Which interpolating solution does GD select? | **Proved** for linear models and a few simple architectures; **open** in general |
+| Can first-order methods escape saddles? | **Proved** for strict saddles with noise |
+| Do flat minima generalise better? | **Correlated**; naive sharpness is reparameterisation-dependent; causal claim **open** |
+| Why does training operate at the edge of stability? | **Open**; documented empirically |
+| Why do overparameterised nets generalise? | **Open** — the central question |
+| Why do scaling laws hold, with those exponents? | **Open**; empirically very robust |
+| Is there a non-vacuous generalisation bound for a state-of-the-art model? | **No** |
+
+<Claim kind="open-problem" id="the-central-open-problem" title="The central open problem">
+Given an architecture, a dataset and a training procedure, there is no theory that predicts in
+advance that training will find a solution which generalises — nor a non-vacuous bound on its test
+error. Every quantitative guarantee available today is either vacuous at realistic scale or holds
+under hypotheses that practical training violates.
+</Claim>
+
+<Note title="How to read this page">
+None of the above is an argument that theory is useless. The theorems on this site explain why the
+$1/\sqrt{d_k}$ scaling is there, why residual connections help, why AdamW differs from Adam with
+$L^2$, why batch size and learning rate interact the way they do, and why the sample covariance
+cannot be trusted when $p\approx n$. Theory that explains *components* is doing real work even when
+theory that explains *the whole* does not exist.
+
+What the page argues against is the habit of citing a theorem whose hypotheses fail as though it were
+an explanation. "Deep learning works because neural networks are universal approximators", "because
+SGD finds flat minima", "because of the NTK" — each of these attaches a real theorem to a real
+phenomenon across a gap that the theorem does not bridge.
+</Note>
+
+## Problems
+
+<ProblemRef id="dlt-ntk-pl" />
+<ProblemRef id="dlt-min-norm-implicit-bias" />
+<ProblemRef id="dlt-sharpness-reparameterisation" />
+<ProblemRef id="dlt-random-labels" />
+<ProblemRef id="dlt-scaling-law-fit" />

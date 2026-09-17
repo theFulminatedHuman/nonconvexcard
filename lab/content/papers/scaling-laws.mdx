@@ -1,0 +1,78 @@
+---
+title: Scaling Laws for Neural Language Models
+authors: Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, Dario Amodei
+year: 2020
+url: https://arxiv.org/abs/2001.08361
+arxiv: '2001.08361'
+field: llm
+also: [deep-learning-theory]
+tags: [scaling laws, power law, compute, language modelling]
+problem: There was no way to predict the loss of a large training run before doing it, making resource allocation guesswork.
+contribution: Empirical power laws relating test loss to parameters, data and compute over seven orders of magnitude, with the remarkable finding that architectural details matter far less than scale.
+prerequisites:
+  - llm/scaling-and-in-context-learning
+  - llm/language-modelling-and-cross-entropy
+  - deep-learning-theory/what-is-proven
+descendants: [chinchilla]
+related: [chinchilla, attention-is-all-you-need, adam]
+---
+
+## What problem does this paper solve?
+
+Predictability. Before this work, whether a $10\times$ larger model would be better was an empirical
+question requiring the experiment. The paper turns it into an extrapolation.
+
+## What mathematical objects are introduced?
+
+Power-law fits
+$$
+\mathcal{L}(N)\approx\left(\frac{N_c}{N}\right)^{\alpha_N},
+\quad
+\mathcal{L}(D)\approx\left(\frac{D_c}{D}\right)^{\alpha_D},
+\quad
+\mathcal{L}(C)\approx\left(\frac{C_c}{C}\right)^{\alpha_C},
+$$
+in non-embedding parameters, tokens and compute, together with a joint form interpolating between the
+parameter- and data-limited regimes.
+
+## What assumptions are made?
+
+That the fitted functional form extrapolates; that the learning-rate schedule and other
+hyperparameters are handled consistently across scales. The second assumption is where the analysis
+was later found wanting.
+
+## What equations matter?
+
+The joint fit and the compute-optimal allocation derived from it. The paper's conclusion was
+$N^\star\propto C^{0.73}$, $D^\star\propto C^{0.27}$ — strongly favouring larger models over more data.
+The Lagrange computation behind such a conclusion is on the
+<TopicRef id="llm/scaling-and-in-context-learning">scaling page</TopicRef>.
+
+## What theorem or result is important?
+
+No theorem. The empirical findings: smooth power laws with no visible breaks; weak dependence on
+depth, width and aspect ratio at fixed parameter count; larger models are more sample-efficient.
+
+## What proof techniques are used?
+
+Curve fitting across a systematically varied grid of runs.
+
+## What prior mathematics is required?
+
+Log–log regression; constrained optimisation for the allocation rule; the
+<TopicRef id="llm/language-modelling-and-cross-entropy">entropy floor</TopicRef> to interpret the
+irreducible term.
+
+## Limitations
+
+The compute-optimal conclusion was **superseded**: Hoffmann et al. showed the fit was biased by the
+use of a fixed learning-rate schedule that penalised runs trained on more tokens, and refitting gives
+$N^\star,D^\star\propto C^{1/2}$ — an order-of-magnitude different recommendation. The laws also
+describe loss, not capability, and the exponents are tokeniser- and dataset-dependent.
+
+## Why it mattered
+
+It made large-scale training planable and is the intellectual basis for the decision to build very
+large models. That its headline allocation recommendation was later corrected is part of the lesson:
+the functional form has held up, the fitted constants were methodology-dependent, and the whole
+enterprise remains an empirical extrapolation with no derivation.

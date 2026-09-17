@@ -1,0 +1,83 @@
+---
+title: Deep Residual Learning for Image Recognition
+authors: Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
+year: 2016
+venue: CVPR
+url: https://arxiv.org/abs/1512.03385
+arxiv: '1512.03385'
+field: deep-learning
+tags: [resnet, residual connection, depth, identity mapping, optimisation]
+problem: Adding layers to a deep network made both training and test error worse, which cannot be an overfitting problem and therefore had to be an optimisation problem.
+contribution: Reparameterising each block to learn a residual F(x) with output x + F(x), which makes the identity map trivially representable and lets networks of hundreds of layers train.
+prerequisites:
+  - deep-learning/approximation-and-backpropagation
+  - deep-learning/convolution-recurrence-normalisation
+  - optimization/gradient-descent-convergence
+descendants: [attention-is-all-you-need, batchnorm]
+related: [alexnet, batchnorm]
+---
+
+## What problem does this paper solve?
+
+The **degradation** problem. A $56$-layer plain network had higher *training* error than a $20$-layer
+one on CIFAR-10. Since the deeper network's function class strictly contains the shallower one's — set
+the extra layers to the identity — this is not a capacity or generalisation failure. It is a failure
+to find a solution that provably exists.
+
+## What mathematical objects are introduced?
+
+The residual block
+$$
+y = x + F(x;\theta),
+$$
+where $F$ is two or three convolution–normalisation–ReLU layers. The reparameterisation is exact: the
+function class is unchanged, only the coordinates on it are different.
+
+## What assumptions are made?
+
+Implicitly, that the target function is closer to the identity than to zero in the relevant sense —
+that each block needs to make a *small* adjustment. This is a hypothesis about the problem, and it is
+why the reparameterisation helps rather than being a cosmetic rewrite.
+
+## What equations matter?
+
+The Jacobian of a residual block is
+$$
+\frac{\partial y}{\partial x} = I + \frac{\partial F}{\partial x},
+$$
+so a stack of $L$ blocks has Jacobian $\prod_\ell\big(I + \partial F_\ell/\partial x\big)$. When the
+$\partial F_\ell$ are small this product stays near $I$, whereas the corresponding plain-network
+product $\prod_\ell J_\ell$ is
+<TopicRef id="deep-learning/approximation-and-backpropagation">generically exponential in $L$</TopicRef>.
+This is the mathematical content of the paper.
+
+## What theorem or result is important?
+
+No theorem. Empirically: $152$-layer networks train successfully and win ImageNet 2015; the degradation
+curve is removed; and a $1202$-layer network trains (though it overfits). The accompanying observation
+that the learned residuals have small norm supports the assumption above.
+
+## What proof techniques are used?
+
+None in the original paper. Later work (the identity-mappings follow-up) analysed the forward and
+backward signal propagation through the skip path more carefully, and the general phenomenon connects
+to the <TopicRef id="deep-learning-theory/what-is-proven">landscape</TopicRef> literature.
+
+## What prior mathematics is required?
+
+The chain rule as a Jacobian product, operator norms, and the observation that identity-plus-small
+matrices compose stably.
+
+## Limitations
+
+The explanation is a plausibility argument, not a theorem: there is no result stating that residual
+parameterisation makes the optimisation problem easier in a precise sense. Very deep ResNets behave
+in some respects like ensembles of shallower paths, which complicates the "depth is doing the work"
+reading.
+
+## Why it mattered
+
+The additive skip connection is now in essentially every deep architecture, including every
+<TopicRef id="deep-learning/transformers">transformer</TopicRef>, where the residual stream is the
+central object. The paper also established the diagnostic discipline of distinguishing optimisation
+failure from generalisation failure by looking at training error.

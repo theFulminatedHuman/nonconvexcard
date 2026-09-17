@@ -1,0 +1,1206 @@
+defaults:
+  field: high-dimensional-probability
+problems:
+  - id: sg-psi2-gaussian
+    title: The psi-2 norm of a Gaussian
+    topic: high-dimensional-probability/sub-gaussian-random-variables
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 15m
+    tags: [orlicz, gaussian, psi-2]
+    statement: |
+      Compute $\|X\|_{\psi_2}$ exactly for $X\sim\Ncal(0,\sigma^2)$, where
+      $\|X\|_{\psi_2}=\inf\{t>0:\E e^{X^2/t^2}\le2\}$.
+    hints:
+      - Compute $\E e^{aX^2}$ for a Gaussian by completing the square; it is finite only for $a<1/(2\sigma^2)$.
+      - Set the result equal to $2$ and solve.
+    solution: |
+      For $a < 1/(2\sigma^2)$,
+      $$
+      \E e^{aX^2} = \frac{1}{\sigma\sqrt{2\pi}}\int_\R e^{ax^2 - x^2/(2\sigma^2)}dx
+      = \frac{1}{\sigma\sqrt{2\pi}}\int_\R e^{-x^2(1-2a\sigma^2)/(2\sigma^2)}dx
+      = \frac{1}{\sqrt{1-2a\sigma^2}} .
+      $$
+      Setting $a = 1/t^2$ and requiring $\big(1-2\sigma^2/t^2\big)^{-1/2} = 2$ gives
+      $1 - 2\sigma^2/t^2 = 1/4$, hence $t^2 = \tfrac83\sigma^2$ and
+      $$
+      \|X\|_{\psi_2} = \sigma\sqrt{8/3} \approx 1.633\,\sigma .
+      $$
+      Note the constraint $t^2>2\sigma^2$ is satisfied. The $\psi_2$ norm is a constant multiple of the
+      standard deviation for Gaussians, which is the sense in which sub-Gaussian variables are
+      "Gaussian up to constants".
+
+  - id: sg-rademacher-psi2
+    title: The psi-2 norm of a Rademacher sign
+    topic: high-dimensional-probability/sub-gaussian-random-variables
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [rademacher, orlicz, bounded]
+    statement: |
+      Compute $\|\eps\|_{\psi_2}$ for a Rademacher sign $\eps\in\{-1,+1\}$, and more generally show that
+      any $X$ with $|X|\le M$ almost surely satisfies $\|X\|_{\psi_2}\le M/\sqrt{\log2}$.
+    hints:
+      - For the Rademacher, $X^2 \equiv 1$, so the expectation is trivial.
+      - For the bounded case, bound $e^{X^2/t^2}$ pointwise.
+    solution: |
+      **Rademacher.** $\eps^2 = 1$ always, so $\E e^{\eps^2/t^2} = e^{1/t^2}$. Setting this to $2$ gives
+      $1/t^2 = \log2$, so
+      $$
+      \|\eps\|_{\psi_2} = \frac{1}{\sqrt{\log2}} \approx 1.201 .
+      $$
+
+      **Bounded variables.** If $|X|\le M$ then $e^{X^2/t^2}\le e^{M^2/t^2}$ pointwise, so
+      $\E e^{X^2/t^2}\le e^{M^2/t^2}$, which is at most $2$ as soon as $M^2/t^2\le\log2$, i.e.
+      $t \ge M/\sqrt{\log2}$. Hence $\|X\|_{\psi_2}\le M/\sqrt{\log2}$.
+
+      So every bounded random variable is sub-Gaussian, with parameter proportional to its bound —
+      which is why Hoeffding's inequality is a special case of the sub-Gaussian machinery. Note the
+      bound is tight exactly for the Rademacher, which puts all its mass at the extremes.
+
+  - id: sg-moment-characterisation
+    title: From moment growth to a tail bound
+    topic: high-dimensional-probability/sub-gaussian-random-variables
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [moments, tails, equivalence]
+    statement: |
+      Suppose $\|X\|_{L^p}\le K\sqrt p$ for all $p\ge1$. Prove directly (without going through the MGF)
+      that
+      $$
+      \P(|X|\ge t)\le e^{-ct^2/K^2}
+      $$
+      for an absolute constant $c>0$ and all $t\ge0$.
+    hints:
+      - Apply Markov's inequality to $|X|^p$ and optimise over $p$.
+      - The optimal $p$ will depend on $t$; try $p = t^2/(eK^2)$ and check the arithmetic.
+      - Handle small $t$ separately, where the bound is trivial.
+    solution: |
+      By Markov applied to $|X|^p$, for every $p\ge1$,
+      $$
+      \P(|X|\ge t) \le \frac{\E|X|^p}{t^p} \le \left(\frac{K\sqrt p}{t}\right)^p .
+      $$
+      We are free to choose $p$. Take
+      $$
+      p = \frac{t^2}{e^2K^2},
+      $$
+      which is $\ge1$ provided $t \ge eK$. Then $K\sqrt p/t = 1/e$, and the bound becomes
+      $$
+      \P(|X|\ge t) \le e^{-p} = \exp\left(-\frac{t^2}{e^2K^2}\right),
+      $$
+      which is the claim with $c = 1/e^2$.
+
+      For $t < eK$ the claimed bound has $e^{-ct^2/K^2} \ge e^{-c e^2} = e^{-1}$, and we may simply
+      enlarge the constant in front (or note that any probability is at most $1$ and adjust $c$) so
+      that the statement holds for all $t\ge0$ after multiplying by an absolute constant.
+
+      **Why optimise over $p$.** A single fixed $p$ gives only polynomial decay $t^{-p}$. It is the
+      *freedom to grow $p$ with $t$* that produces Gaussian decay — and the $\sqrt p$ growth of the
+      moments is exactly what makes the optimal choice $p\propto t^2$ rather than $p\propto t$ (which
+      would give exponential decay, the sub-exponential case).
+
+  - id: sg-not-subgaussian
+    title: A variable with all moments finite that is not sub-Gaussian
+    topic: high-dimensional-probability/sub-gaussian-random-variables
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [counterexample, sub-exponential, moments]
+    statement: |
+      Show that $X\sim\text{Exp}(1)$ has all moments finite but is not sub-Gaussian, and compute
+      $\|X\|_{\psi_1}$. Then show that $Z^2$ for $Z\sim\Ncal(0,1)$ is also sub-exponential but not
+      sub-Gaussian.
+    hints:
+      - $\E X^p = p!$ for an Exponential(1), so $\|X\|_{L^p} \asymp p$, not $\sqrt p$.
+      - Sub-Gaussianity requires $\E e^{X^2/t^2}<\infty$ for some $t$. Is that true here?
+    solution: |
+      **Exponential.** $\E X^p = \Gamma(p+1) = p!$, so by Stirling
+      $\|X\|_{L^p} = (p!)^{1/p} \asymp p/e$ — **linear** in $p$, not $\sqrt p$. By the moment
+      characterisations, that is the signature of a sub-exponential, not a sub-Gaussian, variable.
+
+      Directly: $\E e^{X^2/t^2} = \int_0^\infty e^{x^2/t^2 - x}dx = \infty$ for every $t>0$, because the
+      integrand tends to $\infty$. So $\|X\|_{\psi_2}=\infty$.
+
+      For $\psi_1$: $\E e^{X/t} = \int_0^\infty e^{x/t - x}dx = \frac{1}{1-1/t}$ for $t>1$. Setting this
+      to $2$ gives $1-1/t = 1/2$, so $\|X\|_{\psi_1} = 2$.
+
+      **Squared Gaussian.** $\E e^{aZ^2} = (1-2a)^{-1/2}$ for $a<1/2$ and $\infty$ otherwise, so
+      $\E e^{Z^2/t}$ is finite for $t>2$ and $\|Z^2\|_{\psi_1}$ is finite — solving
+      $(1-2/t)^{-1/2}=2$ gives $\|Z^2\|_{\psi_1} = 8/3$. But $\E e^{Z^4/t^2} = \infty$ for every $t$,
+      since the integrand grows like $e^{z^4/t^2 - z^2/2}$. So $Z^2$ is sub-exponential and not
+      sub-Gaussian — consistent with $\|Z^2\|_{\psi_1} = \|Z\|_{\psi_2}^2 = 8/3$.
+
+  - id: sg-product-subexponential
+    title: Products of sub-Gaussians are sub-exponential
+    topic: high-dimensional-probability/sub-gaussian-random-variables
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [product, sub-exponential, young inequality]
+    statement: |
+      Let $X,Y$ be sub-Gaussian (not necessarily independent). Prove that $XY$ is sub-exponential with
+      $$
+      \|XY\|_{\psi_1} \le \|X\|_{\psi_2}\|Y\|_{\psi_2}.
+      $$
+    hints:
+      - Normalise so that $\|X\|_{\psi_2} = \|Y\|_{\psi_2} = 1$.
+      - Use Young's inequality $ab \le \frac{a^2+b^2}{2}$ pointwise inside the exponential.
+      - Then bound $\E e^{(X^2+Y^2)/2}$ using Cauchy–Schwarz.
+    solution: |
+      By homogeneity of all three norms we may assume $\|X\|_{\psi_2}=\|Y\|_{\psi_2}=1$, so that
+      $\E e^{X^2}\le2$ and $\E e^{Y^2}\le2$. We must show $\E e^{|XY|}\le2$.
+
+      Pointwise, Young's inequality gives $|XY| \le \tfrac12(X^2+Y^2)$, hence
+      $$
+      \E e^{|XY|} \le \E e^{(X^2+Y^2)/2} = \E\big[e^{X^2/2}e^{Y^2/2}\big]
+      \le \sqrt{\E e^{X^2}}\ \sqrt{\E e^{Y^2}} \le \sqrt2\cdot\sqrt2 = 2,
+      $$
+      using Cauchy–Schwarz in the middle step. Therefore $\|XY\|_{\psi_1}\le1 = \|X\|_{\psi_2}\|Y\|_{\psi_2}$.
+
+      **Why this matters.** Every entry of a sample covariance matrix is an average of products
+      $X_iX_j$ of coordinates. This lemma says those products are sub-exponential, which is why
+      covariance estimation is analysed with Bernstein's inequality rather than Hoeffding's, and why
+      the resulting rate has the two-term form $\sqrt{p/n} + p/n$ rather than a single Gaussian term.
+      Note also that no independence was needed — the bound is purely pointwise plus Cauchy–Schwarz.
+
+  - id: ci-markov-tight
+    title: Markov and Chebyshev are attained
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: foundation
+    type: proof
+    estimated_time: 15m
+    tags: [markov, chebyshev, tightness, extremal]
+    statement: |
+      For each $t>0$ and $p\in(0,1]$ construct a distribution attaining equality in Markov's
+      inequality, and one attaining equality in Chebyshev's. Explain what these extremal distributions
+      say about why the inequalities cannot be improved without further hypotheses.
+    hints:
+      - Put as much mass as possible exactly at the threshold and the rest at zero.
+    solution: |
+      **Markov.** Let $Z = t$ with probability $p$ and $Z=0$ otherwise. Then $\E Z = pt$ and
+      $\P(Z\ge t) = p = \E Z/t$: equality.
+
+      **Chebyshev.** Let $Z = \pm t$ each with probability $p/2$ and $Z = 0$ with probability $1-p$.
+      Then $\E Z = 0$, $\Var Z = pt^2$, and $\P(|Z|\ge t) = p = \Var(Z)/t^2$: equality.
+
+      **Interpretation.** Both extremal distributions place all of their deviation mass *exactly at the
+      threshold*. Under a constraint on the mean alone (Markov) or the variance alone (Chebyshev), this
+      is permitted, so the bounds are the best possible. To beat them one must rule such distributions
+      out — and that is exactly what the hypothesis "a sum of many independent bounded terms" does:
+      such a sum cannot concentrate its deviation mass at a single point, because the central limit
+      mechanism spreads it. This is the structural reason the exponential inequalities need
+      independence and the moment inequalities do not.
+
+  - id: ci-hoeffding-from-lemma
+    title: Derive Hoeffding's inequality from Hoeffding's lemma
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [hoeffding, chernoff, derivation]
+    statement: |
+      Assuming Hoeffding's lemma — a centred variable supported on $[a,b]$ satisfies
+      $\E e^{\lambda X}\le e^{\lambda^2(b-a)^2/8}$ — derive the full Hoeffding inequality
+      $$
+      \P\Big(\sum_{i=1}^n(X_i-\E X_i) \ge t\Big) \le \exp\left(-\frac{2t^2}{\sum_i(b_i-a_i)^2}\right),
+      $$
+      carrying out the optimisation over $\lambda$ explicitly. Then invert it to state the bound in
+      "with probability $1-\delta$" form for i.i.d. variables in $[0,1]$.
+    hints:
+      - Factorise the MGF using independence, then apply the lemma to each factor.
+      - The exponent is a quadratic in $\lambda$; minimise it by completing the square or differentiating.
+    solution: |
+      Centre each variable and write $S = \sum_i(X_i - \E X_i)$, $v = \sum_i(b_i-a_i)^2$. By
+      independence and the lemma,
+      $$
+      \E e^{\lambda S} = \prod_{i=1}^n\E e^{\lambda(X_i-\E X_i)} \le \prod_i e^{\lambda^2(b_i-a_i)^2/8} = e^{\lambda^2v/8}.
+      $$
+      Chernoff gives, for $\lambda>0$,
+      $$
+      \P(S\ge t) \le e^{-\lambda t}\E e^{\lambda S} \le \exp\left(\frac{\lambda^2v}{8}-\lambda t\right).
+      $$
+      Minimise the exponent $\varphi(\lambda) = \lambda^2v/8 - \lambda t$: $\varphi'(\lambda) = \lambda v/4 - t = 0$
+      at $\lambda_\star = 4t/v$, where
+      $$
+      \varphi(\lambda_\star) = \frac{(4t/v)^2v}{8} - \frac{4t^2}{v} = \frac{2t^2}{v} - \frac{4t^2}{v} = -\frac{2t^2}{v}.
+      $$
+      This gives the one-sided bound; applying it to $-S$ and using the union bound gives the
+      two-sided version with a factor $2$.
+
+      **Inverted form.** For i.i.d. $X_i\in[0,1]$ and $\bar X_n = S/n + \mu$, we have $v = n$ and
+      $\P(|\bar X_n-\mu|\ge t)\le 2e^{-2nt^2}$. Setting the right side to $\delta$ and solving,
+      $t = \sqrt{\log(2/\delta)/(2n)}$: with probability at least $1-\delta$,
+      $$
+      |\bar X_n - \mu| \le \sqrt{\frac{\log(2/\delta)}{2n}} .
+      $$
+
+  - id: ci-bernstein-crossover
+    title: Locating the Bernstein crossover
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [bernstein, hoeffding, crossover, comparison]
+    statement: |
+      Let $X_1,\dots,X_n$ be i.i.d. Bernoulli$(p)$ with $p = 0.01$, centred, so $|X_i|\le1$ and
+      $\sigma^2 = np(1-p)$.
+
+      1. At which deviation $t$ do the two terms $2\sigma^2$ and $\tfrac23 Mt$ in Bernstein's
+         denominator become equal?
+      2. For $n = 10^4$ and $t = 20$, compare the Hoeffding and Bernstein bounds numerically.
+      3. Explain in one sentence when each inequality is the right tool.
+    hints:
+      - |
+        Bernstein: $\exp(-t^2/(2\sigma^2 + \frac23Mt))$ with $M=1$; Hoeffding for $[0,1]$ variables: $\exp(-2t^2/n)$.
+    solution: |
+      Here $M = 1$ and $\sigma^2 = np(1-p) = 10^4\times0.0099 = 99$.
+
+      **1. Crossover.** $2\sigma^2 = \tfrac23t$ gives $t = 3\sigma^2 = 297$. For $t\ll297$ the variance
+      term dominates and Bernstein is Gaussian; beyond it the bound becomes exponential in $t$.
+
+      **2. Numerical comparison at $t=20$.**
+      $$
+      \text{Bernstein: } \exp\left(-\frac{400}{2(99)+\tfrac23(20)}\right) = \exp\left(-\frac{400}{211.3}\right) = e^{-1.89} \approx 0.151 .
+      $$
+      $$
+      \text{Hoeffding: } \exp\left(-\frac{2(400)}{10^4}\right) = e^{-0.08} \approx 0.923 .
+      $$
+      Bernstein is better by a factor of six here. The gap widens for larger $t$ within the Gaussian
+      regime: at $t = 60$, Bernstein gives $e^{-15.0}\approx3\times10^{-7}$ and Hoeffding gives
+      $e^{-0.72}\approx0.49$.
+
+      **3. When to use which.** Use Bernstein whenever the variance is much smaller than the squared
+      range (rare events, sparse data, low-noise residuals), because Hoeffding sees only the range and
+      implicitly assumes the worst-case variance $M^2/4$ — here $0.25$ versus the true $0.0099$, a
+      factor of $25$ thrown away per summand.
+
+  - id: ci-mcdiarmid-median
+    title: Applying McDiarmid to a median
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [mcdiarmid, bounded differences, median, order statistics]
+    statement: |
+      Let $X_1,\dots,X_n$ be independent with values in $[0,1]$ and let $f(X)$ be the sample median.
+      Determine the bounded-differences constants $c_i$ and deduce a concentration bound for the sample
+      median around its mean. Compare with the constants for the sample mean.
+    hints:
+      - Changing one observation moves the median by at most the gap to the next order statistic, but you need a worst-case bound valid for all configurations.
+      - Consider what happens when $n$ is odd and you move one point from $0$ to $1$.
+    solution: |
+      **Bounded differences.** Suppose $n$ is odd and change $x_i$ to $x_i'$. The median is the
+      $\lceil n/2\rceil$-th order statistic. Moving a single point changes the ordering by at most one
+      position, so the new median is either the old one, the next order statistic above it, or the next
+      below. Since all values lie in $[0,1]$, the change is at most $1$; more usefully, the change is
+      at most the spacing between consecutive order statistics, which is at most $1$ in the worst case.
+      So $c_i = 1$ is valid but gives a bound that does not improve with $n$.
+
+      The right statement: the median of $n$ points in $[0,1]$ changes by at most
+      $\max_j(x_{(j+1)}-x_{(j)})$ when one point moves, which is data-dependent. For a
+      **distribution-free** bound we must take $c_i=1$, and McDiarmid gives
+      $$
+      \P\big(|f(X) - \E f(X)|\ge t\big) \le 2e^{-2t^2/n},
+      $$
+      which is vacuous for $t = O(1)$ and large $n$.
+
+      **Comparison with the mean.** For $f(X) = \bar X_n$, changing one coordinate changes $f$ by at
+      most $1/n$, so $c_i = 1/n$, $\sum_ic_i^2 = 1/n$, and McDiarmid gives $2e^{-2nt^2}$ — the
+      Hoeffding bound.
+
+      **The lesson.** McDiarmid's power depends entirely on the $c_i$ being small. A statistic that can
+      be moved a constant amount by a single observation does not concentrate via this route. Medians
+      *do* concentrate, but proving it requires a different argument (order-statistic or
+      Dvoretzky–Kiefer–Wolfowitz bounds), because the bounded-differences constant is a worst case that
+      the median's typical behaviour does not reflect. This is a good example of a tool being
+      inapplicable rather than the conclusion being false.
+
+  - id: ci-azuma-random-walk
+    title: Azuma for a random walk with drift
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [azuma, martingale, random walk]
+    statement: |
+      Let $Y_1,Y_2,\dots$ be adapted to a filtration with $|Y_k|\le1$ and $\E[Y_k\mid\mathcal F_{k-1}] = \mu_k$,
+      where $\mu_k$ is $\mathcal F_{k-1}$-measurable. Set $S_n = \sum_{k\le n}Y_k$ and $M_n = \sum_{k\le n}\mu_k$.
+      Prove that
+      $$
+      \P\big(S_n - M_n \ge t\big) \le \exp\left(-\frac{t^2}{8n}\right).
+      $$
+      Note carefully that the $Y_k$ are neither independent nor identically distributed.
+    hints:
+      - Show that $Z_n = S_n - M_n$ is a martingale.
+      - Bound the increments and apply Azuma–Hoeffding.
+    solution: |
+      **Martingale.** Let $Z_n = S_n - M_n$ with $Z_0 = 0$. Then
+      $$
+      \E[Z_n\mid\mathcal F_{n-1}] = Z_{n-1} + \E[Y_n\mid\mathcal F_{n-1}] - \mu_n = Z_{n-1},
+      $$
+      using that $\mu_n$ is $\mathcal F_{n-1}$-measurable. So $(Z_n)$ is a martingale with increments
+      $D_n = Y_n - \mu_n$.
+
+      **Increment bound.** $|Y_n|\le1$ gives $|\mu_n| = |\E[Y_n\mid\mathcal F_{n-1}]|\le1$, so
+      $|D_n|\le2$, i.e. $c_n = 2$.
+
+      **Azuma.** With $\sum_{k\le n}c_k^2 = 4n$,
+      $$
+      \P(Z_n\ge t)\le\exp\left(-\frac{t^2}{2\cdot4n}\right) = \exp\left(-\frac{t^2}{8n}\right).
+      $$
+
+      **What was used.** Only that each increment is conditionally centred and bounded. The $Y_k$ may
+      depend arbitrarily on the past — this covers, for instance, the reward sequence of an adaptive
+      algorithm, the loss sequence of an online learner, or the gradient-noise sequence of SGD, none
+      of which is i.i.d. That generality is exactly why martingale concentration is the tool of choice
+      for sequential processes.
+
+  - id: ci-chernoff-legendre
+    title: The Chernoff exponent is a Legendre transform
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [chernoff, legendre, large deviations, rate function]
+    statement: |
+      Let $X_1,\dots,X_n$ be i.i.d. with cumulant generating function
+      $\psi(\lambda) = \log\E e^{\lambda X_1}$ finite near $0$. Show that the Chernoff bound for
+      $\bar X_n$ reads
+      $$
+      \P(\bar X_n \ge a) \le e^{-n\psi^*(a)}, \qquad \psi^*(a) = \sup_{\lambda>0}\big(\lambda a - \psi(\lambda)\big),
+      $$
+      and compute $\psi^*$ explicitly for (i) $X_1\sim\Ncal(0,\sigma^2)$ and (ii) $X_1$ Bernoulli$(p)$.
+      Verify in each case that $\psi^*(a)$ is non-negative, zero exactly at $a = \E X_1$, and convex.
+    hints:
+      - The CGF of a sum of i.i.d. variables is $n\psi(\lambda)$, and the CGF of the average rescales the argument.
+      - For the Bernoulli, the answer is the KL divergence between two Bernoullis.
+    solution: |
+      **Setup.** $\E e^{\lambda n\bar X_n} = \big(\E e^{\lambda X_1}\big)^n = e^{n\psi(\lambda)}$, so
+      Chernoff at level $a$ gives, for $\lambda>0$,
+      $$
+      \P(\bar X_n\ge a) = \P\big(n\bar X_n \ge na\big) \le e^{-\lambda na}e^{n\psi(\lambda)}
+      = e^{-n(\lambda a - \psi(\lambda))}.
+      $$
+      Optimising over $\lambda>0$ gives $e^{-n\psi^*(a)}$.
+
+      **(i) Gaussian.** $\psi(\lambda) = \lambda^2\sigma^2/2$, so
+      $\lambda a - \lambda^2\sigma^2/2$ is maximised at $\lambda = a/\sigma^2$ with value
+      $$
+      \psi^*(a) = \frac{a^2}{2\sigma^2}.
+      $$
+      Thus $\P(\bar X_n\ge a)\le e^{-na^2/(2\sigma^2)}$, which is sharp for Gaussians.
+
+      **(ii) Bernoulli$(p)$.** $\psi(\lambda) = \log\big(1-p+pe^\lambda\big)$. Differentiating,
+      $\psi'(\lambda) = pe^\lambda/(1-p+pe^\lambda)$, and setting this equal to $a\in(0,1)$ gives
+      $e^\lambda = \frac{a(1-p)}{p(1-a)}$. Substituting back,
+      $$
+      \psi^*(a) = a\log\frac{a}{p} + (1-a)\log\frac{1-a}{1-p} = \mathrm{KL}\big(\text{Ber}(a)\,\|\,\text{Ber}(p)\big).
+      $$
+
+      **Properties.** $\psi^*$ is a supremum of affine functions of $a$, hence convex. Non-negativity:
+      taking $\lambda=0$ in the supremum gives $\psi^*(a)\ge0$. And $\psi^*(a) = 0$ exactly at
+      $a = \psi'(0) = \E X_1$, since the supremum of $\lambda a - \psi(\lambda)$ is attained at
+      $\lambda=0$ precisely when $a = \psi'(0)$, where the value is $0$.
+
+      This is Cramér's theorem in miniature: the Chernoff exponent is the large-deviation rate
+      function, and for the Bernoulli it is exactly a KL divergence — which is why the sharp form of
+      Hoeffding's inequality is the KL bound
+      $\P(\bar X_n\ge a)\le e^{-n\mathrm{KL}(a\|p)}$, strictly better than $e^{-2n(a-p)^2}$.
+
+  - id: ci-simulate-bounds
+    title: Simulate and compare the concentration inequalities
+    topic: high-dimensional-probability/concentration-inequalities
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [simulation, hoeffding, bernstein, comparison]
+    statement: |
+      Write code that, for a given distribution on $[0,1]$ and sample size $n$, estimates
+      $\P(|\bar X_n - \mu| \ge t)$ by Monte Carlo and plots it against the Markov, Chebyshev, Hoeffding
+      and Bernstein bounds on a logarithmic axis.
+
+      1. Verify that all four curves lie above the empirical one for every $t$.
+      2. Identify, for Bernoulli$(0.5)$ and for Bernoulli$(0.05)$, which bound is tightest in which
+         range of $t$.
+      3. Explain what limits the resolution of the empirical curve, and how to see that limit in the plot.
+    hints:
+      - |
+        Vectorise the Monte Carlo: draw an (trials × n) array and take row means.
+      - The empirical probability cannot resolve values below roughly 1/trials.
+    solution: |
+      ```python
+      import numpy as np
+
+      def compare(n=40, p=0.5, trials=50_000, seed=0):
+          rng = np.random.default_rng(seed)
+          X = rng.random((trials, n)) < p          # Bernoulli(p)
+          dev = np.abs(X.mean(axis=1) - p)
+          ts = np.linspace(0.01, 0.35, 40)
+          emp = np.array([(dev >= t).mean() for t in ts])
+
+          sigma2 = p * (1 - p)                      # per-sample variance
+          b = 1.0                                   # range
+          hoeff = 2 * np.exp(-2 * n * ts**2 / b**2)
+          cheb = sigma2 / (n * ts**2)
+          bern = 2 * np.exp(-n * ts**2 / (2 * sigma2 + 2 * b * ts / 3))
+          markov = dev.mean() / ts
+          return ts, emp, markov, cheb, hoeff, bern
+      ```
+
+      **1. Validity.** All four are upper bounds, so the empirical curve must lie below each. If it
+      does not, the Monte Carlo estimate is at fault (too few trials, or a bug) — this is a useful
+      correctness check on the simulation itself.
+
+      **2. Which is tightest.**
+      - |
+        Bernoulli$(0.5)$: variance $0.25$ is comparable to the squared range $1$, so Hoeffding and
+        Bernstein are within a small factor of each other. Chebyshev wins only for very small $t$
+        (where all exponential bounds exceed $1$ anyway) and loses badly beyond about $t = 2\sigma/\sqrt n$.
+      - |
+        Bernoulli$(0.05)$: variance $0.0475$ is twenty times smaller than the Hoeffding-implied
+        worst case, and Bernstein is correspondingly tighter throughout — by orders of magnitude at
+        moderate $t$.
+
+      **3. Monte Carlo resolution.** With $T$ trials, the empirical probability is a multiple of $1/T$,
+      so it cannot distinguish any value below about $1/T$; below that it reads exactly $0$ and the
+      log-scale curve falls off the plot. Flooring the empirical curve at $1/(4T)$ and marking that
+      level makes the limit visible, and prevents misreading "the empirical probability is zero" as
+      "the bound is infinitely loose".
+
+  - id: hd-norm-concentration-constant
+    title: Concentration of the norm — the transfer step
+    topic: high-dimensional-probability/concentration-of-the-norm
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [norm concentration, transfer, elementary inequality]
+    statement: |
+      Prove the elementary inequality $|z-1| \le |z^2-1|$ for all $z\ge0$, and explain precisely how it
+      converts a concentration bound for $\|X\|_2^2/d$ around $1$ into a concentration bound for
+      $\|X\|_2$ around $\sqrt d$ with **no dimension-dependent loss**.
+    hints:
+      - Factor $z^2-1$.
+      - Apply the inequality with $z = \|X\|_2/\sqrt d$ and track the scaling carefully.
+    solution: |
+      **Inequality.** For $z\ge0$,
+      $$
+      |z^2-1| = |z-1|\,|z+1| \ge |z-1|,
+      $$
+      since $z+1\ge1$. (It is an equality only at $z=0$.)
+
+      **Transfer.** Apply with $z = \|X\|_2/\sqrt d$:
+      $$
+      \left|\frac{\|X\|_2}{\sqrt d}-1\right| \le \left|\frac{\|X\|_2^2}{d}-1\right| =: |Z| .
+      $$
+      Multiply both sides by $\sqrt d$:
+      $$
+      \big|\|X\|_2 - \sqrt d\big| \le \sqrt d\,|Z| .
+      $$
+      Therefore
+      $$
+      \P\big(\big|\|X\|_2-\sqrt d\big|\ge t\big) \le \P\Big(|Z| \ge \frac{t}{\sqrt d}\Big).
+      $$
+      Now $Z = \frac1d\sum_i(X_i^2-1)$ is an average of $d$ centred sub-exponential terms, and
+      Bernstein gives
+      $$
+      \P\big(|Z|\ge u\big)\le2\exp\Big[-cd\min\big(u^2/K^4,\ u/K^2\big)\Big].
+      $$
+      With $u = t/\sqrt d$, the first branch becomes $d\cdot t^2/(dK^4) = t^2/K^4$ — **the $d$
+      cancels exactly**.
+
+      **Why it cancels.** The squared norm has fluctuations of order $\sqrt d$ (ordinary CLT scaling
+      for a sum of $d$ terms). The map $s\mapsto\sqrt s$ has derivative $1/(2\sqrt d)$ at $s\approx d$,
+      so it contracts those fluctuations by $1/\sqrt d$, leaving $O(1)$. The inequality
+      $|z-1|\le|z^2-1|$ is the non-asymptotic, constant-free version of that derivative computation.
+
+  - id: hd-orthogonality-union
+    title: How many nearly-orthogonal directions fit in R^d?
+    topic: high-dimensional-probability/concentration-of-the-norm
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [near-orthogonality, union bound, packing]
+    statement: |
+      Fix $\eps\in(0,1)$. Show that there exist $N = e^{c d\eps^2}$ unit vectors in $\R^d$ with all
+      pairwise inner products at most $\eps$ in absolute value, for an absolute constant $c>0$. Compute
+      the value of $N$ for $d=768$ and $\eps=0.2$.
+    hints:
+      - Draw $N$ independent uniform directions and bound the probability that some pair fails.
+      - Use the tail bound $\P(|\langle u,v\rangle|\ge\eps)\le2e^{-d\eps^2/2}$ and a union bound over pairs.
+      - The construction succeeds as soon as the failure probability is below 1 — this is the probabilistic method.
+    solution: |
+      Draw $u_1,\dots,u_N$ independently and uniformly on $S^{d-1}$. For a fixed pair $i\ne j$,
+      $$
+      \P\big(|\langle u_i,u_j\rangle|\ge\eps\big)\le2e^{-d\eps^2/2}.
+      $$
+      By the union bound over the $\binom N2 \le N^2/2$ pairs,
+      $$
+      \P\big(\exists i\ne j:\ |\langle u_i,u_j\rangle|\ge\eps\big) \le N^2e^{-d\eps^2/2}.
+      $$
+      This is strictly less than $1$ as soon as
+      $$
+      N < e^{d\eps^2/4},
+      $$
+      in which case a configuration with all pairwise inner products below $\eps$ **exists** — the
+      probabilistic method: an event of positive probability contains at least one realisation.
+
+      **Numerically.** At $d=768$, $\eps=0.2$: $d\eps^2/4 = 768\times0.04/4 = 7.68$, so
+      $N \approx e^{7.68}\approx2100$.
+
+      **Comments.** The bound is exponential in $d$, which is the reason embedding spaces can host
+      enormous vocabularies of nearly-distinguishable directions. It is also crude: a sharper packing
+      argument (via spherical caps and their measure) improves the constant in the exponent
+      substantially, and the true maximum for $\eps$ bounded away from $0$ is $e^{\Theta(d\eps^2\log(1/\eps))}$.
+      The qualitative conclusion — exponentially many, with the exponent proportional to $d\eps^2$ —
+      is what matters for retrieval.
+
+  - id: hd-shell-volume
+    title: Volume concentrates near the boundary
+    topic: high-dimensional-probability/concentration-of-the-norm
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [volume, ball, shell, high dimension]
+    statement: |
+      1. What fraction of the volume of the unit ball in $\R^d$ lies at radius less than $1-\eps$?
+      2. Find the $\eps$ for which that fraction is $1\%$, as a function of $d$, and evaluate it for
+         $d = 3, 100, 1000$.
+      3. What fraction of the volume of the unit cube $[-1,1]^d$ lies inside the inscribed ball? Evaluate
+         for $d = 2,10,100$ and comment.
+    hints:
+      - Volume scales as the $d$-th power of the radius.
+      - For part 3, use $\operatorname{vol}(B^d) = \pi^{d/2}/\Gamma(d/2+1)$ and $\operatorname{vol}([-1,1]^d)=2^d$.
+    solution: |
+      **1.** $\operatorname{vol}((1-\eps)B^d)/\operatorname{vol}(B^d) = (1-\eps)^d \le e^{-\eps d}$.
+
+      **2.** Solve $(1-\eps)^d = 0.01$, i.e. $\eps = 1 - 0.01^{1/d}$.
+      - |
+        $d=3$: $\eps = 1-0.01^{1/3} = 1-0.215 = 0.785$. The inner $21.5\%$ of the radius holds $1\%$ of the volume.
+      - |
+        $d=100$: $\eps = 1 - 0.01^{0.01} = 1-0.955 = 0.045$.
+      - |
+        $d=1000$: $\eps = 1-0.01^{0.001} = 1 - 0.99541 = 0.0046$.
+
+      So in $\R^{1000}$, $99\%$ of the ball's volume is in the outermost $0.46\%$ of the radius.
+
+      **3.** The ratio is
+      $$
+      \frac{\operatorname{vol}(B^d)}{2^d} = \frac{\pi^{d/2}}{2^d\,\Gamma(d/2+1)} .
+      $$
+      - |
+        $d=2$: $\pi/4 \approx 0.785$.
+      - |
+        $d=10$: $\pi^5/(2^{10}\cdot120) \approx 0.0025$.
+      - |
+        $d=100$: $\approx 1.9\times10^{-70}$.
+
+      **Comment.** The inscribed ball, which in two dimensions occupies most of the square, occupies
+      essentially none of the cube in high dimension: the volume of the cube lives in its corners, of
+      which there are $2^d$, each at distance $\sqrt d$ from the centre while the ball has radius $1$.
+      This is the cleanest illustration that shape matters enormously in high dimension, and that
+      uniform sampling from a cube is nothing like uniform sampling from a ball.
+
+  - id: hd-cap-simulation
+    title: Simulate the measure of a spherical cap
+    topic: high-dimensional-probability/concentration-of-the-norm
+    difficulty: intermediate
+    type: coding
+    estimated_time: 30m
+    tags: [sphere, cap, simulation, concentration]
+    statement: |
+      Estimate by simulation the fraction of the uniform measure on $S^{d-1}$ lying in the cap
+      $\{u : \langle u,\theta\rangle \ge t\}$, for $d \in \{3, 10, 100, 1000\}$ and
+      $t\in\{0.1, 0.3, 0.5\}$. Compare with the bound $e^{-dt^2/2}$ and with the exact density
+      $\propto(1-s^2)^{(d-3)/2}$. Explain why naive Monte Carlo fails for large $d$ and moderate $t$,
+      and what to do about it.
+    hints:
+      - Sample uniformly on the sphere by normalising a Gaussian vector.
+      - By rotational invariance you may take $\theta = e_1$ and look only at the first coordinate.
+      - For rare events, integrate the exact density numerically instead of sampling.
+    solution: |
+      ```python
+      import numpy as np
+      from scipy import integrate
+
+      def cap_mc(d, t, n=200_000, seed=0):
+          rng = np.random.default_rng(seed)
+          g = rng.standard_normal((n, d))
+          u1 = g[:, 0] / np.linalg.norm(g, axis=1)   # first coord of a uniform direction
+          return (u1 >= t).mean()
+
+      def cap_exact(d, t):
+          f = lambda s: (1 - s**2)**((d - 3) / 2)
+          num, _ = integrate.quad(f, t, 1)
+          den, _ = integrate.quad(f, -1, 1)
+          return num / den
+      ```
+
+      **Results (indicative).**
+
+      | $d$ | $t=0.1$ | $t=0.3$ | $t=0.5$ |
+      | --- | --- | --- | --- |
+      | $3$ | $0.45$ | $0.35$ | $0.25$ |
+      | $10$ | $0.38$ | $0.19$ | $0.05$ |
+      | $100$ | $0.16$ | $1.4\times10^{-3}$ | $1.5\times10^{-8}$ |
+      | $1000$ | $8\times10^{-4}$ | $8\times10^{-21}$ | $\approx10^{-56}$ |
+
+      The bound $e^{-dt^2/2}$ tracks the exponent correctly but is loose by a polynomial factor.
+
+      **Why Monte Carlo fails.** With $n$ samples the estimator cannot resolve probabilities below
+      $\approx1/n$, and it returns exactly $0$ below that. At $d=100$, $t=0.5$ the true value is
+      $10^{-8}$: one would need $10^{10}$ samples for a single expected hit. This is the standard
+      rare-event problem.
+
+      **Remedies.** (i) Numerical integration of the exact one-dimensional density, as above — correct
+      to machine precision and instant. (ii) Importance sampling: draw $u_1$ from a tilted density
+      concentrated near $t$ and reweight. (iii) Work with the exponent rather than the probability.
+      In this case (i) is available because rotational invariance reduces the problem to one dimension,
+      which is the general lesson: exploit the symmetry before reaching for simulation.
+
+  - id: hd-distance-contrast
+    title: Distance contrast in high dimension
+    topic: high-dimensional-probability/concentration-of-the-norm
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [nearest neighbour, contrast, concentration, curse]
+    statement: |
+      Let $x, x_1,\dots,x_N$ be i.i.d. with independent coordinates of mean $0$, variance $1$ and
+      bounded $\psi_2$ norm in $\R^d$. Prove that with probability at least $1-\delta$,
+      $$
+      \frac{\max_i\|x_i-x\|_2}{\min_i\|x_i-x\|_2} \le 1 + C\sqrt{\frac{\log(N/\delta)}{d}}
+      $$
+      for an absolute constant $C$, provided $d \gtrsim \log(N/\delta)$. Interpret the result for
+      $N = 10^6$ and $d = 100$.
+    hints:
+      - Each $x_i - x$ has independent coordinates of variance 2, so the norm concentrates around $\sqrt{2d}$.
+      - Union bound the concentration over the $N$ points to get a window containing all distances.
+      - The ratio of the window endpoints is what you need.
+    solution: |
+      **Step 1: concentration for one distance.** The vector $x_i - x$ has independent coordinates with
+      mean $0$ and variance $2$, and bounded $\psi_2$ norm. By the norm concentration theorem,
+      $$
+      \P\Big(\big|\,\|x_i-x\|_2 - \sqrt{2d}\,\big| \ge s\Big) \le 2e^{-cs^2}.
+      $$
+
+      **Step 2: union bound over the $N$ points.** Setting $2Ne^{-cs^2} = \delta$ gives
+      $s = \sqrt{\log(2N/\delta)/c} =: s_\delta$. With probability at least $1-\delta$, **all** $N$
+      distances lie in the window
+      $$
+      \big[\sqrt{2d}-s_\delta,\ \sqrt{2d}+s_\delta\big].
+      $$
+
+      **Step 3: the ratio.** On that event,
+      $$
+      \frac{\max_i\|x_i-x\|_2}{\min_i\|x_i-x\|_2} \le \frac{\sqrt{2d}+s_\delta}{\sqrt{2d}-s_\delta}
+      = 1 + \frac{2s_\delta}{\sqrt{2d}-s_\delta} \le 1 + C\sqrt{\frac{\log(N/\delta)}{d}}
+      $$
+      provided $s_\delta \le \tfrac12\sqrt{2d}$, i.e. $d\gtrsim\log(N/\delta)$.
+
+      **Interpretation.** At $N = 10^6$, $\delta = 0.05$, $d = 100$: $\log(N/\delta)\approx16.8$, so the
+      contrast is bounded by $1 + C\sqrt{0.168} \approx 1+0.41C$. Depending on the constant, the
+      farthest point is within a factor of about $1.5$–$2$ of the nearest. The *relative* difference
+      between the best and worst match is small, so a nearest-neighbour rule has little to work with —
+      and any error in the distance computation, or any noise in the features, can reorder the list.
+
+      **Scope.** The hypothesis of independent, identically scaled coordinates is what drives the
+      result. Real data violates it, which is why nearest-neighbour search is more useful in practice
+      than this calculation suggests — see the intrinsic-dimension discussion.
+
+  - id: net-volumetric-lower
+    title: The volumetric lower bound on covering numbers
+    topic: high-dimensional-probability/nets-covering-and-packing
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [covering number, volume, lower bound]
+    statement: |
+      Prove that any $\eps$-net of the unit ball $B^d$ in the Euclidean metric has at least
+      $\eps^{-d}$ points, and that a maximal $\eps$-separated set has at most $(3/\eps)^d$. Deduce
+      $\log N(B^d,\|\cdot\|_2,\eps) = \Theta(d\log(1/\eps))$ for $\eps$ bounded away from $1$.
+    hints:
+      - For the lower bound, compare the volume of the ball with the total volume of the covering balls.
+      - For the upper bound, use disjointness of half-radius balls around a separated set.
+    solution: |
+      **Lower bound.** Let $\Ncal$ be an $\eps$-net. The balls $y+\eps B^d$, $y\in\Ncal$, cover $B^d$,
+      so
+      $$
+      \operatorname{vol}(B^d) \le \sum_{y\in\Ncal}\operatorname{vol}(\eps B^d) = |\Ncal|\,\eps^d\operatorname{vol}(B^d),
+      $$
+      using that volume scales as the $d$-th power of a dilation. Dividing, $|\Ncal|\ge\eps^{-d}$.
+
+      **Upper bound.** Let $\mathcal P$ be a maximal $\eps$-separated subset of $B^d$; by maximality it
+      is an $\eps$-net. The balls $x+\tfrac\eps2B^d$, $x\in\mathcal P$, are pairwise **disjoint**
+      (centres more than $\eps$ apart) and all lie inside $(1+\tfrac\eps2)B^d$. Comparing volumes,
+      $$
+      |\mathcal P|\left(\frac\eps2\right)^d\operatorname{vol}(B^d) \le \left(1+\frac\eps2\right)^d\operatorname{vol}(B^d),
+      $$
+      so $|\mathcal P| \le \big(\tfrac{2+\eps}{\eps}\big)^d \le (3/\eps)^d$ for $\eps\le1$.
+
+      **Conclusion.** $\eps^{-d} \le N(B^d,\|\cdot\|_2,\eps)\le(3/\eps)^d$, so
+      $$
+      d\log\frac1\eps \le \log N \le d\log\frac3\eps = d\log\frac1\eps + d\log3 .
+      $$
+      Both sides are $\Theta(d\log(1/\eps))$. The metric entropy is **linear in the dimension** and
+      only logarithmic in the accuracy — the fact that makes net arguments affordable, since a union
+      bound costs $\log N \approx d\log(1/\eps)$ which is polynomial in $d$, not exponential.
+
+  - id: net-operator-norm-net
+    title: The operator norm on a net
+    topic: high-dimensional-probability/nets-covering-and-packing
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [net, operator norm, approximation]
+    statement: |
+      Let $\Ncal$ be an $\eps$-net of $S^{d-1}$ with $\eps<1$. Prove that for any $A\in\R^{m\times d}$,
+      $$
+      \sup_{x\in\Ncal}\|Ax\|_2 \le \|A\| \le \frac{1}{1-\eps}\sup_{x\in\Ncal}\|Ax\|_2 .
+      $$
+      For a symmetric $A$, prove the analogous statement for the quadratic form with
+      $\|A\| \le (1-2\eps)^{-1}\sup_{x\in\Ncal}|x^\top Ax|$ when $\eps<1/2$.
+    hints:
+      - Take $x^\star$ attaining the operator norm and approximate it by a net point.
+      - For the symmetric case, expand $x^\top Ax - y^\top Ay$ and bound each term.
+    solution: |
+      **Vector form.** The left inequality is immediate since $\Ncal\subseteq S^{d-1}$. For the right,
+      let $x^\star\in S^{d-1}$ attain $\|Ax^\star\|_2 = \|A\|$ (the sphere is compact and the map
+      continuous). Choose $y\in\Ncal$ with $\|x^\star-y\|_2\le\eps$. Then
+      $$
+      \|A\| = \|Ax^\star\|_2 \le \|Ay\|_2 + \|A(x^\star-y)\|_2 \le \sup_{z\in\Ncal}\|Az\|_2 + \eps\|A\|,
+      $$
+      using the definition of the operator norm on the vector $x^\star-y$. Rearranging gives the claim.
+
+      **Symmetric form.** For symmetric $A$, $\|A\| = \sup_{x\in S^{d-1}}|x^\top Ax|$ by the Rayleigh
+      quotient. Let $x^\star$ attain it and $y\in\Ncal$ with $\|x^\star-y\|_2\le\eps$. Then
+      $$
+      |x^{\star\top}Ax^\star - y^\top Ay| = \big|x^{\star\top}A(x^\star - y) + (x^\star-y)^\top Ay\big|
+      \le \|A\|\,\eps\,\|x^\star\|_2 + \eps\,\|A\|\,\|y\|_2 = 2\eps\|A\| ,
+      $$
+      using Cauchy–Schwarz and $\|Az\|_2\le\|A\|\|z\|_2$. Therefore
+      $$
+      \|A\| \le \sup_{y\in\Ncal}|y^\top Ay| + 2\eps\|A\| ,
+      $$
+      which rearranges to the stated bound for $\eps<1/2$. Taking $\eps=1/4$ gives the convenient
+      factor $2$.
+
+      This lemma plus the volumetric bound plus a tail bound for a *fixed* $x$ is the entire recipe for
+      bounding the spectral norm of a random matrix.
+
+  - id: net-sparse-covering
+    title: Covering numbers of the set of sparse unit vectors
+    topic: high-dimensional-probability/nets-covering-and-packing
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [sparsity, covering number, compressed sensing]
+    statement: |
+      Let $\mathcal S_{s} = \{x\in\R^p : \|x\|_2\le1,\ \|x\|_0\le s\}$ be the set of $s$-sparse vectors
+      in the unit ball. Prove that
+      $$
+      \log N\big(\mathcal S_s, \|\cdot\|_2, \eps\big) \le s\log\frac{ep}{s} + s\log\frac3\eps .
+      $$
+      Compare with $\log N(B^p,\|\cdot\|_2,\eps) \approx p\log(3/\eps)$ and explain the consequence for
+      sample complexity.
+    hints:
+      - Cover each of the $\binom ps$ coordinate subspaces separately.
+      - Within a fixed support of size $s$, the set is an $s$-dimensional ball.
+      - Use $\binom ps \le (ep/s)^s$.
+    solution: |
+      For each support set $T\subseteq\{1,\dots,p\}$ with $|T|=s$, the vectors in $\mathcal S_s$
+      supported on $T$ form a copy of the unit ball $B^s$ in the $s$-dimensional subspace $\R^T$. By
+      the volumetric bound, that ball has an $\eps$-net of size at most $(3/\eps)^s$.
+
+      Taking the union of these nets over all supports gives an $\eps$-net of $\mathcal S_s$ (every
+      $s$-sparse vector lies in one of the subspaces), of size at most
+      $$
+      \binom ps\left(\frac3\eps\right)^s \le \left(\frac{ep}{s}\right)^s\left(\frac3\eps\right)^s ,
+      $$
+      using the standard bound $\binom ps\le(ep/s)^s$. Taking logarithms gives the claim.
+
+      **Comparison.** The full ball has $\log N \approx p\log(3/\eps)$ — linear in the ambient
+      dimension. The sparse set has $\log N \approx s\log(p/s) + s\log(3/\eps)$ — linear in the
+      **sparsity**, with only a logarithmic dependence on $p$.
+
+      **Consequence.** In every net-based argument, the union-bound cost is $\log N$ and must be beaten
+      by a concentration exponent of order $n$ (the sample size). So:
+      - dense estimation needs $n \gtrsim p$;
+      - $s$-sparse estimation needs $n \gtrsim s\log(p/s)$.
+
+      That is exactly the sample complexity of compressed sensing and of the lasso, and this covering
+      computation is where it comes from.
+
+  - id: net-gaussian-width-sphere
+    title: Gaussian width of the sphere and of the sparse set
+    topic: high-dimensional-probability/nets-covering-and-packing
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [gaussian width, sphere, sparsity]
+    statement: |
+      1. Show that the Gaussian width of the unit sphere $S^{d-1}$ satisfies
+         $w(S^{d-1}) = \E\|g\|_2 \in [\sqrt{d-1},\sqrt d]$.
+      2. Show that for the set of $s$-sparse unit vectors,
+         $w(\mathcal S_s) \le C\sqrt{s\log(ep/s)}$.
+    hints:
+      - For (1), $\sup_{x\in S^{d-1}}\langle g,x\rangle = \|g\|_2$.
+      - |
+        For (2), decompose over supports: for a fixed support the supremum is the norm of the restricted Gaussian, and then take a maximum over supports using Massart-type bounds.
+    solution: |
+      **1.** By definition $w(S^{d-1}) = \E\sup_{x\in S^{d-1}}\langle g,x\rangle$, and the supremum of a
+      linear functional over the unit sphere is the norm of its representer:
+      $\sup_{\|x\|_2=1}\langle g,x\rangle = \|g\|_2$. So $w(S^{d-1}) = \E\|g\|_2$, and by the
+      expected-norm proposition this lies in $[\sqrt{d-1},\sqrt d]$.
+
+      **2.** Write $\mathcal S_s = \bigcup_{|T|=s}\{x\in B^T\}$ over the $\binom ps$ supports. Then
+      $$
+      \sup_{x\in\mathcal S_s}\langle g,x\rangle = \max_{|T|=s}\ \sup_{x\in B^T}\langle g,x\rangle
+      = \max_{|T|=s}\|g_T\|_2 ,
+      $$
+      where $g_T$ is $g$ restricted to $T$. Each $\|g_T\|_2$ is a $1$-Lipschitz function of $g$, so by
+      Gaussian concentration $\|g_T\|_2 - \E\|g_T\|_2$ is sub-Gaussian with an absolute constant, and
+      $\E\|g_T\|_2\le\sqrt s$. By Massart's maximal inequality over the $\binom ps$ supports,
+      $$
+      \E\max_{|T|=s}\|g_T\|_2 \le \sqrt s + C\sqrt{\log\binom ps} \le \sqrt s + C\sqrt{s\log\frac{ep}{s}}
+      \le C'\sqrt{s\log\frac{ep}{s}} .
+      $$
+
+      **Why it matters.** Gaussian width is the single scalar controlling the number of measurements
+      needed to recover a signal constrained to a set: roughly $n\gtrsim w(K)^2$. For the whole sphere
+      that is $n\gtrsim d$; for the $s$-sparse set it is $n\gtrsim s\log(p/s)$. The two computations
+      above are, in one line each, the reason sparse recovery is possible.
+
+  - id: jl-chi-squared-mgf
+    title: The chi-squared moment generating function and its Chernoff bound
+    topic: high-dimensional-probability/johnson-lindenstrauss
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [chi-squared, mgf, chernoff, jl]
+    statement: |
+      Let $S = \sum_{i=1}^kZ_i^2$ with $Z_i$ i.i.d. standard normal.
+
+      1. Show $\E e^{\lambda S} = (1-2\lambda)^{-k/2}$ for $\lambda<1/2$.
+      2. Derive the upper tail bound $\P(S \ge (1+\eps)k) \le \exp\big(\tfrac k2(\log(1+\eps)-\eps)\big)$.
+      3. Show the exponent is at most $-k\eps^2/8$ for $\eps\in(0,1)$.
+    hints:
+      - Compute $\E e^{\lambda Z^2}$ for a single standard normal by completing the square.
+      - Choose $\lambda = \eps/(2(1+\eps))$ in the Chernoff bound, which is the optimiser.
+      - Use $\log(1+u) \le u - u^2/2 + u^3/3$.
+    solution: |
+      **1.** For $\lambda<1/2$,
+      $$
+      \E e^{\lambda Z^2} = \frac{1}{\sqrt{2\pi}}\int_\R e^{\lambda z^2 - z^2/2}dz
+      = \frac{1}{\sqrt{2\pi}}\int_\R e^{-z^2(1-2\lambda)/2}dz = \frac{1}{\sqrt{1-2\lambda}},
+      $$
+      recognising the integral of a Gaussian density with variance $(1-2\lambda)^{-1}$. By
+      independence, $\E e^{\lambda S} = (1-2\lambda)^{-k/2}$.
+
+      **2.** Chernoff at level $(1+\eps)k$, for $\lambda\in(0,1/2)$:
+      $$
+      \P\big(S\ge(1+\eps)k\big) \le e^{-\lambda(1+\eps)k}(1-2\lambda)^{-k/2}.
+      $$
+      Take $\lambda = \dfrac{\eps}{2(1+\eps)}$, so $1-2\lambda = \dfrac{1}{1+\eps}$. The exponent
+      becomes
+      $$
+      -\frac{\eps k}{2} + \frac k2\log(1+\eps) = \frac k2\big(\log(1+\eps)-\eps\big).
+      $$
+      (One checks this $\lambda$ is the exact minimiser by differentiating.)
+
+      **3.** For $u\in(0,1)$, $\log(1+u)\le u - \tfrac{u^2}{2}+\tfrac{u^3}{3}$, so
+      $$
+      \log(1+\eps)-\eps \le -\frac{\eps^2}{2}+\frac{\eps^3}{3} = -\eps^2\left(\frac12-\frac\eps3\right)
+      \le -\frac{\eps^2}{4}
+      $$
+      whenever $\eps\le3/4$. Then $\tfrac k2\cdot(-\eps^2/4) = -k\eps^2/8$. For
+      $\eps\in[3/4,1)$ a direct numerical check of $\tfrac12(\log(1+\eps)-\eps)$ against $-\eps^2/8$
+      confirms the bound. This is the estimate that produces the $k\eps^2$ in the JL exponent.
+
+  - id: jl-prove-lemma
+    title: Prove the Johnson–Lindenstrauss lemma
+    topic: high-dimensional-probability/johnson-lindenstrauss
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [johnson-lindenstrauss, union bound, concentration, flagship]
+    statement: |
+      Prove the Johnson–Lindenstrauss lemma from first principles: for any $x_1,\dots,x_N\in\R^D$ and
+      $\eps\in(0,1)$, if $A\in\R^{k\times D}$ has i.i.d. $\Ncal(0,1/k)$ entries and
+      $k \ge 24\eps^{-2}\log N$, then with probability at least $1-1/N$,
+      $$
+      (1-\eps)\|x_i-x_j\|_2^2 \le \|Ax_i-Ax_j\|_2^2 \le (1+\eps)\|x_i-x_j\|_2^2 \quad\text{for all } i,j .
+      $$
+      Your proof must establish the single-vector concentration statement, not merely cite it, and must
+      state clearly where the independence and the fixed-in-advance point set are used.
+    hints:
+      - Reduce to unit vectors by homogeneity, then identify the distribution of $\|Ax\|_2^2$ exactly.
+      - The distribution is a scaled chi-squared with $k$ degrees of freedom; get its tail from its MGF.
+      - Finish with a union bound over the pairs, and count the exponents to see where $\eps^{-2}\log N$ comes from.
+    solution: |
+      **Step 1: reduce to unit vectors.** Both sides of the conclusion are homogeneous of degree $2$ in
+      $x_i-x_j$, so it suffices to prove, for each fixed unit vector $x$,
+      $$
+      \P\big(\big|\|Ax\|_2^2 - 1\big|\ge\eps\big) \le 2e^{-k\eps^2/8}.
+      $$
+
+      **Step 2: identify the distribution.** Let $a_1^\top,\dots,a_k^\top$ be the rows of $A$. Each
+      $\langle a_r,x\rangle$ is a linear combination of independent $\Ncal(0,1/k)$ entries with
+      coefficients $x_j$, hence Gaussian with mean $0$ and variance $\frac1k\|x\|_2^2 = \frac1k$. The
+      rows are independent, so
+      $$
+      \|Ax\|_2^2 = \sum_{r=1}^k\langle a_r,x\rangle^2 = \frac1k\sum_{r=1}^kZ_r^2, \qquad Z_r\ \text{i.i.d.}\ \Ncal(0,1),
+      $$
+      i.e. $k\|Ax\|_2^2\sim\chi^2_k$. Note $\E\|Ax\|_2^2 = 1$: the $1/k$ variance is exactly the
+      normalisation that makes the projection unbiased.
+
+      **Step 3: chi-squared tails.** With $S = \sum_rZ_r^2$ and $\E e^{\lambda S} = (1-2\lambda)^{-k/2}$
+      for $\lambda<1/2$:
+
+      *Upper.* Chernoff with $\lambda = \eps/(2(1+\eps))$ gives
+      $$
+      \P\big(S\ge(1+\eps)k\big)\le\exp\left(\frac k2\big(\log(1+\eps)-\eps\big)\right)\le e^{-k\eps^2/8},
+      $$
+      using $\log(1+u)\le u-\tfrac{u^2}2+\tfrac{u^3}3$ and $\eps<1$.
+
+      *Lower.* Chernoff with $\lambda = -\eps/(2(1-\eps))<0$ gives
+      $$
+      \P\big(S\le(1-\eps)k\big)\le\exp\left(\frac k2\big(\eps+\log(1-\eps)\big)\right)\le e^{-k\eps^2/4}\le e^{-k\eps^2/8},
+      $$
+      using $\log(1-u)\le -u-\tfrac{u^2}2$.
+
+      Adding the two, and recalling $\|Ax\|_2^2 = S/k$, gives Step 1's claim.
+
+      **Step 4: union bound.** For each pair $i<j$, apply Step 1 to the **fixed** vector
+      $(x_i-x_j)/\|x_i-x_j\|_2$ — legitimate precisely because the point set does not depend on $A$.
+      Let $E_{ij}$ be the failure event. Then
+      $$
+      \P\Big(\bigcup_{i<j}E_{ij}\Big) \le \binom N2\cdot 2e^{-k\eps^2/8} \le N^2e^{-k\eps^2/8}.
+      $$
+      With $k\ge24\eps^{-2}\log N$ we get $k\eps^2/8\ge3\log N$, so the right side is at most
+      $N^2e^{-3\log N} = N^{-1}$.
+
+      **Where the hypotheses are used.**
+      - |
+        *Independence of the rows*: to factor the chi-squared MGF in Step 3.
+      - |
+        *Gaussianity and rotational invariance*: to reduce an arbitrary $x$ to the unit case in Step 2,
+        so the guarantee is oblivious to the data.
+      - |
+        *Fixed point set*: in Step 4. If $x_i$ were chosen after seeing $A$, the events $E_{ij}$ would
+        not be about fixed vectors and the bound would be void.
+
+      **Exponent count.** Failure probability per pair $e^{-k\eps^2/8}$ must beat $N^{-2}$, giving
+      $k\eps^2\gtrsim\log N$. The $\eps^{-2}$ is the Gaussian shape of the concentration; the $\log N$
+      is the union bound over pairs. Neither depends on $D$.
+
+  - id: jl-dimension-arithmetic
+    title: Johnson–Lindenstrauss dimension arithmetic
+    topic: high-dimensional-probability/johnson-lindenstrauss
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [jl, dimension, arithmetic, practice]
+    statement: |
+      Using $k \ge 24\eps^{-2}\log N$:
+
+      1. Compute the required $k$ for $N=10^3, 10^6, 10^9$ at $\eps = 0.1$.
+      2. Compute the required $k$ for $N = 10^6$ at $\eps = 0.5, 0.1, 0.01$.
+      3. A team wants to compress $10^6$ vectors from $D = 4096$ to $k = 256$. What distortion does the
+         lemma guarantee? Is the guarantee useful?
+    solution: |
+      **1. Varying $N$ at $\eps = 0.1$** ($\eps^{-2} = 100$):
+      - |
+        $N=10^3$: $k \ge 24\cdot100\cdot\log(10^3) = 2400\times6.91 \approx 16{,}600$.
+      - |
+        $N=10^6$: $k \ge 2400\times13.8 \approx 33{,}200$.
+      - |
+        $N=10^9$: $k \ge 2400\times20.7 \approx 49{,}700$.
+
+      Tripling the number of *orders of magnitude* of points triples $k$ — the $\log N$ dependence is
+      extremely mild.
+
+      **2. Varying $\eps$ at $N=10^6$** ($\log N \approx 13.8$):
+      - |
+        $\eps=0.5$: $k \ge 24\cdot4\cdot13.8 \approx 1{,}330$.
+      - |
+        $\eps=0.1$: $k \ge 33{,}200$.
+      - |
+        $\eps=0.01$: $k \ge 3{,}320{,}000$.
+
+      The $\eps^{-2}$ dependence is brutal: ten times better accuracy costs a hundred times the
+      dimension.
+
+      **3. The proposed compression.** Solve $256 = 24\eps^{-2}\times13.8$ for $\eps$:
+      $$
+      \eps = \sqrt{\frac{24\times13.8}{256}} = \sqrt{1.29} \approx 1.14 .
+      $$
+      Since $\eps>1$ the guarantee is **vacuous** — a distortion factor of $1\pm1.14$ permits the
+      squared distance to be anything from $0$ to $2.14$ times the truth.
+
+      **Is it useless in practice?** No, and this is worth stating carefully. The lemma is a
+      *worst-case* guarantee over the worst pair; empirically, random projection to $k=256$ typically
+      preserves *typical* distances to a few percent, as the JL experiment shows — the mean distortion
+      behaves far better than the maximum. The lemma's conclusion fails, but the practice can still be
+      sound. What one loses is the guarantee, and with it the right to claim the worst pair is safe.
+
+  - id: jl-rademacher-projection
+    title: Rademacher projections work too
+    topic: high-dimensional-probability/johnson-lindenstrauss
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [jl, rademacher, sub-gaussian, database-friendly]
+    statement: |
+      Let $A\in\R^{k\times D}$ have i.i.d. entries $A_{rj} = \eps_{rj}/\sqrt k$ with $\eps_{rj}$
+      Rademacher signs. Prove that for a fixed unit $x$,
+      $$
+      \P\big(\big|\|Ax\|_2^2-1\big|\ge\eps\big)\le2e^{-ck\eps^2}
+      $$
+      for an absolute constant $c$. Where does the proof differ from the Gaussian case, and what is
+      gained in practice?
+    hints:
+      - $\langle a_r, x\rangle$ is no longer exactly Gaussian, but it is sub-Gaussian with a parameter you can compute.
+      - Then $\langle a_r,x\rangle^2$ is sub-exponential, and Bernstein applies to the sum.
+      - The rows are still independent, which is what the argument needs.
+    solution: |
+      **Step 1: each row projection is sub-Gaussian.** For a fixed unit $x$,
+      $$
+      \langle a_r,x\rangle = \frac{1}{\sqrt k}\sum_{j=1}^D\eps_{rj}x_j .
+      $$
+      This is a weighted sum of independent Rademacher signs, hence sub-Gaussian with parameter
+      $\frac{1}{\sqrt k}\|x\|_2 = \frac{1}{\sqrt k}$ by the sum rule. Also
+      $\E\langle a_r,x\rangle^2 = \frac1k\sum_jx_j^2 = \frac1k$, so the projection is unbiased:
+      $\E\|Ax\|_2^2 = 1$.
+
+      **Step 2: squares are sub-exponential.** By the square lemma,
+      $\|\langle a_r,x\rangle^2\|_{\psi_1} = \|\langle a_r,x\rangle\|_{\psi_2}^2 \le C/k$, and
+      centring costs a constant.
+
+      **Step 3: Bernstein.** $\|Ax\|_2^2 - 1 = \sum_{r=1}^k\big(\langle a_r,x\rangle^2 - \tfrac1k\big)$
+      is a sum of $k$ independent, centred, sub-exponential terms each with $\psi_1$ norm $O(1/k)$.
+      Bernstein for sub-exponential summands gives
+      $$
+      \P\left(\Big|\sum_r(\cdot)\Big|\ge\eps\right)\le2\exp\left[-c\min\left(\frac{\eps^2}{k\cdot(1/k)^2},\ \frac{\eps}{1/k}\right)\right]
+      = 2\exp\big[-c\min(k\eps^2,\ k\eps)\big],
+      $$
+      which for $\eps<1$ is $2e^{-ck\eps^2}$.
+
+      **What differs.** In the Gaussian case the distribution of $\|Ax\|_2^2$ is *exactly*
+      $\chi^2_k/k$ for every $x$, by rotational invariance, so the tail is computed exactly. Rademacher
+      entries have no rotational invariance, so one must argue through sub-Gaussianity and lose
+      explicit constants. The conclusion has the same shape.
+
+      **What is gained.** Rademacher (and sparse variants, where each entry is $0$ with probability
+      $2/3$ and $\pm\sqrt3$ otherwise) projections need no floating-point multiplication — the product
+      $Ax$ is a sum and difference of coordinates — and the matrix stores in one or two bits per entry.
+      Achlioptas called these "database-friendly" projections for exactly this reason. Structured
+      variants such as the subsampled Hadamard transform go further, reducing the cost from $O(kD)$ to
+      $O(D\log D)$.
+
+  - id: jl-inner-product-corollary
+    title: From distance preservation to inner-product preservation
+    topic: high-dimensional-probability/johnson-lindenstrauss
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [jl, polarisation, inner product, kernels]
+    statement: |
+      Assume a linear map $A$ satisfies $(1-\eps)\|v\|_2^2 \le \|Av\|_2^2 \le (1+\eps)\|v\|_2^2$ for all
+      $v$ in the set $\{x_i\pm x_j\}$. Prove that for all $i,j$,
+      $$
+      \big|\langle Ax_i,Ax_j\rangle - \langle x_i,x_j\rangle\big| \le \frac\eps2\big(\|x_i\|_2^2+\|x_j\|_2^2\big).
+      $$
+      Deduce that unit vectors have their cosine similarities preserved to additive $\eps$.
+    hints:
+      - Use the polarisation identity $4\langle u,v\rangle = \|u+v\|_2^2 - \|u-v\|_2^2$.
+      - Apply the upper bound to $x_i+x_j$ and the lower bound to $x_i-x_j$, then the other way round.
+      - The parallelogram law will tidy the result.
+    solution: |
+      By polarisation, $4\langle Ax_i,Ax_j\rangle = \|A(x_i+x_j)\|_2^2 - \|A(x_i-x_j)\|_2^2$.
+
+      **Upper bound.** Apply the upper distortion bound to $x_i+x_j$ and the lower one to $x_i-x_j$:
+      $$
+      4\langle Ax_i,Ax_j\rangle \le (1+\eps)\|x_i+x_j\|_2^2 - (1-\eps)\|x_i-x_j\|_2^2
+      = 4\langle x_i,x_j\rangle + \eps\big(\|x_i+x_j\|_2^2+\|x_i-x_j\|_2^2\big).
+      $$
+      The parallelogram law gives
+      $\|x_i+x_j\|_2^2+\|x_i-x_j\|_2^2 = 2\|x_i\|_2^2+2\|x_j\|_2^2$, so
+      $$
+      \langle Ax_i,Ax_j\rangle \le \langle x_i,x_j\rangle + \frac\eps2\big(\|x_i\|_2^2+\|x_j\|_2^2\big).
+      $$
+
+      **Lower bound.** Symmetric: apply the lower bound to $x_i+x_j$ and the upper to $x_i-x_j$.
+
+      **Unit vectors.** If $\|x_i\|_2=\|x_j\|_2=1$ the right-hand side is $\eps$, so
+      $|\langle Ax_i,Ax_j\rangle - \langle x_i,x_j\rangle|\le\eps$. Since the cosine of unit vectors is
+      the inner product, the cosine similarity is preserved to additive $\eps$ — up to the fact that
+      $Ax_i$ is not exactly a unit vector, which contributes a further $O(\eps)$ after renormalising.
+
+      **Consequence.** A random projection approximately preserves the entire Gram matrix, hence every
+      kernel method's solution, every linear classifier's margins, and every cosine-similarity ranking
+      — provided the relevant gaps exceed $\eps$.
+
+  - id: jl-implement-projection
+    title: Implement random projection and measure the distortion
+    topic: high-dimensional-probability/johnson-lindenstrauss
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [jl, implementation, distortion, empirical]
+    statement: |
+      Implement Gaussian random projection and measure, for a cloud of $N$ points in $\R^D$:
+
+      1. The maximum and mean pairwise distortion as a function of $k$.
+      2. Verify that the maximum distortion decays like $1/\sqrt k$ and that the mean decays likewise
+         but with a much smaller constant.
+      3. Verify that varying $D$ at fixed $k$ barely changes the distortion.
+      4. Compare Gaussian entries with Rademacher entries.
+    hints:
+      - Scale the entries by $1/\sqrt k$ so that the squared norm is unbiased.
+      - Compute all pairwise squared distances with a single matrix product, not a double loop.
+      - Plot on log–log axes and fit a slope.
+    solution: |
+      ```python
+      import numpy as np
+
+      def distortions(N=60, D=400, k=64, seed=0, kind="gaussian"):
+          rng = np.random.default_rng(seed)
+          X = rng.standard_normal((N, D))
+          if kind == "gaussian":
+              A = rng.standard_normal((D, k)) / np.sqrt(k)
+          else:                                   # Rademacher
+              A = rng.choice([-1.0, 1.0], size=(D, k)) / np.sqrt(k)
+          Y = X @ A
+
+          def sqdists(M):
+              g = (M * M).sum(1)
+              return np.maximum(g[:, None] + g[None, :] - 2 * M @ M.T, 0)
+
+          d0, d1 = sqdists(X), sqdists(Y)
+          iu = np.triu_indices(N, 1)
+          ratio = d1[iu] / d0[iu]
+          return np.abs(ratio - 1)
+      ```
+
+      **Expected findings.**
+
+      1. **Maximum versus mean.** Both decay, but the maximum sits well above the mean — typically by a
+         factor of $3$–$5$ for $N=60$ (i.e. $1770$ pairs). That gap is the union bound made visible: it
+         grows like $\sqrt{\log\binom N2}$.
+
+      2. **The $1/\sqrt k$ rate.** Fitting $\log(\text{max distortion})$ against $\log k$ gives a slope
+         near $-0.5$. This is the $\eps\propto k^{-1/2}$ of the lemma, equivalently $k\propto\eps^{-2}$.
+
+      3. **Independence of $D$.** Sweeping $D$ from $100$ to $2000$ at fixed $k$ moves the curves
+         negligibly. The guarantee genuinely does not involve the ambient dimension — only $k$ and the
+         number of points.
+
+      4. **Gaussian versus Rademacher.** Indistinguishable at these sizes, consistent with the
+         sub-Gaussian analysis: only the $\psi_2$ norm of the entries enters, and it is the same up to
+         constants.
+
+      **A check worth running.** Confirm $\E\|Ax\|_2^2 = \|x\|_2^2$ empirically. If you forget the
+      $1/\sqrt k$ scaling, distances are systematically inflated by a factor $k$ and every curve is
+      wrong in a way that is easy to mistake for a bug elsewhere.

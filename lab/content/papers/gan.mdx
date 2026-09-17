@@ -1,0 +1,79 @@
+---
+title: Generative Adversarial Nets
+authors: Ian J. Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, Yoshua Bengio
+year: 2014
+venue: NeurIPS
+url: https://arxiv.org/abs/1406.2661
+arxiv: '1406.2661'
+field: deep-learning
+tags: [gan, minimax, jensen-shannon, generative model]
+problem: Generative models trained by maximum likelihood require a tractable likelihood or a variational bound, both of which constrain the model class.
+contribution: A minimax game between a generator and a discriminator whose equilibrium minimises the Jensen–Shannon divergence to the data distribution, requiring no tractable likelihood at all.
+prerequisites:
+  - probability/expectation-and-conditioning
+  - advanced-optimization/duality-and-kkt
+  - deep-learning/approximation-and-backpropagation
+descendants: [diffusion]
+related: [vae, diffusion]
+---
+
+## What problem does this paper solve?
+
+Generative modelling without a tractable density. A GAN's generator is a deterministic map
+$G:\R^k\to\Xcal$ pushing a simple noise distribution forward; its density is not available in closed
+form, and maximum likelihood is therefore unusable.
+
+## What mathematical objects are introduced?
+
+The minimax objective
+$$
+\min_G\max_D\ \E_{x\sim p_{\text{data}}}\big[\log D(x)\big] + \E_{z\sim p_z}\big[\log\big(1-D(G(z))\big)\big].
+$$
+
+## What assumptions are made?
+
+That $D$ and $G$ have unlimited capacity and that the inner maximisation is solved exactly — both
+required for the equilibrium analysis and both false in practice.
+
+## What equations matter?
+
+For fixed $G$ with induced distribution $p_G$, the optimal discriminator is
+$$
+D^\star(x) = \frac{p_{\text{data}}(x)}{p_{\text{data}}(x)+p_G(x)},
+$$
+obtained by maximising the integrand pointwise. Substituting back gives the generator's objective as
+$$
+2\,\mathrm{JSD}(p_{\text{data}}\,\|\,p_G) - \log4 ,
+$$
+minimised exactly when $p_G = p_{\text{data}}$.
+
+## What theorem or result is important?
+
+The equilibrium characterisation above: the unique global optimum of the game is $p_G = p_{\text{data}}$
+with $D^\star\equiv\tfrac12$. This is a genuine theorem, and its proof is the pointwise maximisation
+plus the definition of Jensen–Shannon divergence.
+
+## What proof techniques are used?
+
+Pointwise optimisation of an integral; convexity of the objective in $p_G$ for the convergence
+argument.
+
+## What prior mathematics is required?
+
+KL and Jensen–Shannon divergences; minimax problems and the gap between $\min\max$ and $\max\min$;
+pushforward measures.
+
+## Limitations
+
+The theorem is about the equilibrium of the idealised game. Gradient descent–ascent on a non-convex
+non-concave objective need not converge to it, and does not: mode collapse, oscillation and
+discriminator overpowering are the standard failure modes. When $p_G$ and $p_{\text{data}}$ have
+disjoint support the JSD is constant and the gradient vanishes — the observation that motivated
+Wasserstein GANs.
+
+## Why it mattered
+
+It introduced adversarial training, dominated image generation for five years, and remains the
+canonical example of a learning objective defined by a game rather than a likelihood. Its
+displacement by <TopicRef id="deep-learning/approximation-and-backpropagation">diffusion
+models</TopicRef> was driven precisely by the training instability the theory did not control.

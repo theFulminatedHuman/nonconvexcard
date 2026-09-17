@@ -1,0 +1,73 @@
+---
+title: 'Adam: A Method for Stochastic Optimization'
+authors: Diederik P. Kingma, Jimmy Ba
+year: 2015
+venue: ICLR
+url: https://arxiv.org/abs/1412.6980
+arxiv: '1412.6980'
+field: stochastic-optimization
+tags: [adam, adaptive methods, optimiser, bias correction]
+problem: SGD requires careful per-problem learning-rate tuning, and AdaGrad's monotonically accumulating denominator makes its effective step decay too aggressively on non-stationary objectives.
+contribution: Exponential moving averages of the gradient and of its square, with explicit bias correction, giving a per-coordinate step that is invariant to gradient rescaling and requires little tuning.
+prerequisites:
+  - stochastic-optimization/adaptive-methods
+  - stochastic-optimization/sgd-convergence
+descendants: []
+related: [scaling-laws, instructgpt]
+---
+
+## What problem does this paper solve?
+
+Practical optimisation of non-stationary stochastic objectives with sparse or badly-scaled gradients,
+without per-layer learning-rate tuning.
+
+## What mathematical objects are introduced?
+
+First and second moment estimates with bias correction:
+$$
+m_t = \beta_1m_{t-1}+(1-\beta_1)g_t, \quad
+v_t = \beta_2v_{t-1}+(1-\beta_2)g_t^2, \quad
+\theta_{t+1} = \theta_t - \eta\frac{m_t/(1-\beta_1^t)}{\sqrt{v_t/(1-\beta_2^t)}+\eps}.
+$$
+
+## What assumptions are made?
+
+The convergence analysis in the paper assumes convex $f_t$, bounded gradients, and a condition on
+$\beta_1,\beta_2$. Those hypotheses turn out not to be sufficient.
+
+## What equations matter?
+
+The <TopicRef id="stochastic-optimization/adaptive-methods">bias-correction derivation</TopicRef>:
+$\E m_t = (1-\beta_1^t)\E g$, so the division by $1-\beta_1^t$ is exactly unbiasing. And the
+scale invariance: replacing $g$ by $cg$ leaves $m_t/\sqrt{v_t}$ unchanged, which is why Adam is
+insensitive to loss scaling.
+
+## What theorem or result is important?
+
+The paper states an $O(\sqrt T)$ regret bound. **That theorem is false as stated**: Reddi, Kale and
+Kumar give a convex counterexample on which Adam's average regret does not vanish, and the error in
+the original proof is in the handling of the changing preconditioner. Their AMSGrad variant, using a
+running maximum of $v_t$, restores a correct proof.
+
+## What proof techniques are used?
+
+An online-convex-optimisation regret argument in the style of AdaGrad's analysis.
+
+## What prior mathematics is required?
+
+Exponential moving averages and their bias; the
+<TopicRef id="stochastic-optimization/adaptive-methods">AdaGrad regret argument</TopicRef>; the
+distinction between expectation and high-probability guarantees.
+
+## Limitations
+
+The published convergence proof is incorrect. $L^2$ regularisation and weight decay are not
+equivalent under Adam's preconditioner, which AdamW later fixed. Adam sometimes generalises worse
+than tuned SGD with momentum on vision benchmarks, an effect that is documented and not explained.
+
+## Why it mattered
+
+It is the default optimiser for essentially all language-model training. It is also the clearest
+example in the field of a method whose empirical value is established and whose theoretical
+justification was wrong — and which nobody stopped using when that was discovered, for entirely
+defensible reasons.

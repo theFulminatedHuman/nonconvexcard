@@ -1,0 +1,322 @@
+---
+title: Empirical Risk Minimisation and Uniform Convergence
+summary: Why minimising training error can work, why it needs a uniform bound, and the finite-class and PAC guarantees that follow.
+field: learning-theory
+level: 3
+order: 10
+prerequisites: [high-dimensional-probability/concentration-inequalities]
+tags: [erm, uniform convergence, pac learning, generalisation, symmetrisation]
+estimated_time: 3h
+claims:
+  - id: erm-decomposition
+    kind: proposition
+    title: Excess risk decomposition for ERM
+    summary: The excess risk of ERM is bounded by twice the uniform deviation plus the approximation error of the class.
+    proved: true
+    tags: [erm, decomposition]
+  - id: finite-class
+    kind: theorem
+    title: Generalisation bound for a finite hypothesis class
+    summary: For a class of size N the uniform deviation is of order the square root of log N over n.
+    proved: true
+    tags: [finite class, union bound, hoeffding]
+  - id: realizable-case
+    kind: theorem
+    title: Faster rate in the realizable case
+    summary: When some hypothesis has zero risk the rate improves from 1/sqrt n to log N over n.
+    proved: true
+    tags: [realizable, fast rate]
+  - id: pac-def
+    kind: definition
+    title: PAC learnability
+    summary: A class is PAC learnable if a polynomial sample suffices to get low risk with high confidence.
+    proved: false
+    tags: [pac, learnability]
+  - id: no-free-lunch
+    kind: theorem
+    title: No free lunch
+    summary: Without restricting the hypothesis class no algorithm can generalise, so some inductive bias is mathematically necessary.
+    proved: true
+    tags: [no free lunch, inductive bias]
+  - id: uniform-convergence-not-necessary
+    kind: empirical
+    title: Uniform convergence is not necessary for generalisation
+    summary: Overparameterised models can generalise while the uniform deviation over their hypothesis class is vacuous.
+    proved: false
+    tags: [caveat, deep learning, vacuous bounds]
+references:
+  - key: shalev-shwartz-ben-david
+    title: 'Understanding Machine Learning: From Theory to Algorithms'
+    authors: Shai Shalev-Shwartz and Shai Ben-David
+    year: 2014
+    kind: book
+    url: https://www.cs.huji.ac.il/~shais/UnderstandingMachineLearning/
+    note: The standard modern textbook for this material; the exposition here is written independently.
+  - key: mohri-rostamizadeh-talwalkar
+    title: Foundations of Machine Learning
+    authors: Mehryar Mohri, Afshin Rostamizadeh and Ameet Talwalkar
+    year: 2018
+    kind: book
+    url: https://cs.nyu.edu/~mohri/mlbook/
+  - key: vapnik-1998
+    title: Statistical Learning Theory
+    authors: Vladimir N. Vapnik
+    year: 1998
+    kind: book
+  - key: nagarajan-kolter
+    title: Uniform convergence may be unable to explain generalization in deep learning
+    authors: Vaishnavh Nagarajan and J. Zico Kolter
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1902.04742
+---
+
+## The setup
+
+Data $(X,Y)\sim\Dcal$ on $\Xcal\times\Ycal$, a hypothesis class
+$\Hcal \subseteq \{h : \Xcal\to\Ycal\}$, a loss $\ell(h(x),y) \in [0,1]$. Define
+
+$$
+\underbrace{R(h) = \E_{\Dcal}\big[\ell(h(X),Y)\big]}_{\text{risk}},
+\qquad
+\underbrace{\hat R_n(h) = \frac1n\sum_{i=1}^n \ell(h(x_i),y_i)}_{\text{empirical risk}} .
+$$
+
+**Empirical risk minimisation** returns $\hat h \in \argmin_{h\in\Hcal}\hat R_n(h)$.
+
+<Intuition>
+For a *fixed* $h$, $\hat R_n(h)$ is an average of $n$ i.i.d. bounded variables with mean $R(h)$, so
+<TopicRef id="high-dimensional-probability/concentration-inequalities">Hoeffding</TopicRef> gives
+$|\hat R_n(h)-R(h)| \lesssim \sqrt{\log(1/\delta)/n}$. But $\hat h$ is *not* fixed — it was chosen by
+looking at the data, so it is correlated with the very sample used to evaluate it. The whole subject
+exists to handle that correlation, and the standard device is to bound the deviation **uniformly**
+over $\Hcal$, so that whichever $h$ the algorithm picks is covered.
+</Intuition>
+
+<Proposition id="erm-decomposition" title="Excess risk decomposition for ERM">
+Let $h^\star \in \argmin_{h\in\Hcal}R(h)$ and let
+$$
+\Delta_n = \sup_{h\in\Hcal}\big|R(h)-\hat R_n(h)\big|
+$$
+be the uniform deviation. Then
+$$
+R(\hat h) - \inf_{h\in\Hcal}R(h) \le 2\Delta_n,
+$$
+and therefore
+$$
+R(\hat h) - \underbrace{\inf_{\text{all }h}R(h)}_{\text{Bayes risk}}
+\le \underbrace{2\Delta_n}_{\text{estimation error}} + \underbrace{\Big(\inf_{h\in\Hcal}R(h) - \inf_{\text{all }h}R(h)\Big)}_{\text{approximation error}} .
+$$
+</Proposition>
+
+<Proof>
+Chain three inequalities:
+$$
+R(\hat h) \le \hat R_n(\hat h) + \Delta_n
+\le \hat R_n(h^\star) + \Delta_n
+\le R(h^\star) + 2\Delta_n .
+$$
+The first and third are the definition of $\Delta_n$; the middle is the definition of $\hat h$ as an
+empirical minimiser. Subtracting $R(h^\star) = \inf_{h\in\Hcal}R(h)$ gives the first claim, and adding
+and subtracting the Bayes risk gives the second.
+</Proof>
+
+<KeyIdea>
+This three-line argument is the reason the whole subject is about $\Delta_n$. It also displays the
+fundamental tension: enlarging $\Hcal$ decreases the approximation error and increases $\Delta_n$.
+That is the honest statement of the bias–variance trade for ERM — and note that it is a statement
+about *this bound*, not about the true risk, which is exactly the loophole the double-descent
+phenomenon exploits.
+</KeyIdea>
+
+## Finite classes
+
+<Theorem id="finite-class" title="Generalisation bound for a finite hypothesis class">
+Let $|\Hcal| = N$ and $\ell\in[0,1]$. With probability at least $1-\delta$ over the sample,
+$$
+\Delta_n = \sup_{h\in\Hcal}\big|R(h)-\hat R_n(h)\big| \le \sqrt{\frac{\log(2N/\delta)}{2n}},
+$$
+and consequently $R(\hat h)\le\inf_{h\in\Hcal}R(h) + 2\sqrt{\frac{\log(2N/\delta)}{2n}}$.
+</Theorem>
+
+<Proof>
+Fix $h\in\Hcal$. The variables $\ell(h(x_i),y_i)$ are i.i.d. in $[0,1]$ with mean $R(h)$, so
+Hoeffding's inequality gives, for any $t>0$,
+$$
+\P\big(|R(h)-\hat R_n(h)| \ge t\big)\le 2e^{-2nt^2}.
+$$
+Union bound over the $N$ hypotheses:
+$$
+\P\big(\Delta_n \ge t\big) \le 2Ne^{-2nt^2}.
+$$
+Setting the right side to $\delta$ and solving for $t$ gives $t = \sqrt{\log(2N/\delta)/(2n)}$.
+The risk bound follows from the decomposition proposition.
+</Proof>
+
+<Assumptions>
+Bounded loss, i.i.d. sample, and a hypothesis class **fixed before seeing the data**. The last is the
+one most easily violated in practice: any hyperparameter chosen by looking at the test set
+effectively enlarges $\Hcal$, and the bound must be inflated accordingly.
+</Assumptions>
+
+<Note title="Reading the bound">
+$\sqrt{\log N/n}$: the dependence on the class size is *logarithmic*, so doubling the number of
+hypotheses costs almost nothing. A class of $2^{10^6}$ hypotheses — the number of functions
+representable by a million binary parameters — gives $\sqrt{10^6\log2/n}$, needing $n \sim 10^6$ for a
+non-trivial bound. That is the parameter-counting bound, and it is roughly the intuition that
+"you need as many examples as parameters".
+</Note>
+
+<Theorem id="realizable-case" title="Faster rate in the realizable case">
+Suppose some $h^\star\in\Hcal$ has $R(h^\star)=0$ and the loss is the zero-one loss. Then with
+probability at least $1-\delta$, any ERM solution $\hat h$ (which necessarily has $\hat R_n(\hat h)=0$)
+satisfies
+$$
+R(\hat h) \le \frac{\log(N/\delta)}{n} .
+$$
+</Theorem>
+
+<Proof>
+Call $h$ **bad** if $R(h)>\eps$. A bad $h$ has zero empirical risk only if all $n$ samples are
+classified correctly by it, which happens with probability $(1-R(h))^n \le (1-\eps)^n \le e^{-n\eps}$
+by independence. Union bounding over the at most $N$ bad hypotheses,
+$$
+\P\big(\exists \text{ bad } h \text{ with }\hat R_n(h)=0\big) \le Ne^{-n\eps}.
+$$
+Since $h^\star$ has zero empirical risk, ERM returns some hypothesis with zero empirical risk; on the
+complement of the above event, every such hypothesis has risk at most $\eps$. Setting
+$Ne^{-n\eps}=\delta$ gives $\eps = \log(N/\delta)/n$.
+</Proof>
+
+<KeyIdea>
+$1/n$ instead of $1/\sqrt n$ — a genuinely different rate, obtained by replacing Hoeffding's
+two-sided bound with the exact one-sided multiplicative bound available when the variance is small.
+This is the simplest instance of a **fast rate** under a low-noise condition, and it is the reason
+interpolating classifiers are not automatically suspect: when the problem is realizable, fitting the
+training data exactly is the right thing to do.
+</KeyIdea>
+
+## PAC learnability and the necessity of inductive bias
+
+<Definition id="pac-def" title="PAC learnability">
+$\Hcal$ is **agnostically PAC learnable** if there is a function
+$n_\Hcal(\eps,\delta)$, polynomial in $1/\eps$ and $1/\delta$, and an algorithm $\mathcal{A}$, such
+that for every distribution $\Dcal$ and every $n \ge n_\Hcal(\eps,\delta)$,
+$$
+\P\Big(R(\mathcal{A}(S)) \le \inf_{h\in\Hcal}R(h)+\eps\Big) \ge 1-\delta .
+$$
+</Definition>
+
+<Theorem id="no-free-lunch" title="No free lunch">
+Let $\Xcal$ be a domain of size $2m$ and consider the zero-one loss with $\Ycal=\{0,1\}$ and
+$\Hcal$ the class of **all** functions $\Xcal\to\{0,1\}$. For every algorithm $\mathcal{A}$ using
+$n \le m$ samples there is a distribution $\Dcal$ on which
+$$
+\E_{S\sim\Dcal^n}\big[R(\mathcal{A}(S))\big] \ge \frac14,
+$$
+while some $h\in\Hcal$ has $R(h)=0$.
+</Theorem>
+
+<Proof>
+Let $\Dcal_f$ be, for each of the $2^{2m}$ functions $f : \Xcal\to\{0,1\}$, the distribution that is
+uniform on $\Xcal$ in $x$ and deterministic $y = f(x)$. Each $\Dcal_f$ is realizable by $f \in \Hcal$.
+
+Average the algorithm's risk over $f$ chosen uniformly at random. Given a sample $S$ of size
+$n \le m$, the algorithm has seen at most $n$ of the $2m$ domain points, so at least $m$ points are
+unseen. For an unseen point $x$, the value $f(x)$ is independent of $S$ and uniform on $\{0,1\}$, so
+$\mathcal{A}(S)$ predicts it correctly with probability exactly $1/2$. Hence
+$$
+\E_f\E_S\big[R(\mathcal{A}(S))\big] \ge \P(X \text{ unseen})\cdot\frac12 \ge \frac{m}{2m}\cdot\frac12 = \frac14 .
+$$
+An average over $f$ of at least $1/4$ means some particular $f$ achieves at least $1/4$, which is the
+claim.
+</Proof>
+
+<KeyIdea>
+Inductive bias is not a regrettable practical compromise; it is a mathematical necessity. Learning is
+impossible over the class of all functions, so *every* working learning algorithm encodes
+assumptions about which functions are plausible — through the hypothesis class, the regulariser, the
+architecture, or the optimiser's implicit preferences. "This model has no assumptions built in" is
+always false. The interesting question is never whether there is an inductive bias but what it is,
+which is why the implicit-bias results on the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page matter so
+much.
+</KeyIdea>
+
+## From finite to infinite classes
+
+The finite-class bound is useless for $\Hcal$ infinite — every interesting class, including all
+linear classifiers. Two routes out, both developed on the
+<TopicRef id="learning-theory/vc-dimension-and-rademacher">next page</TopicRef>:
+
+1. **Combinatorial.** Replace $N$ by the number of distinct *labellings* the class can produce on $n$ points, the growth function $\Pi_\Hcal(n)$. Sauer's lemma bounds this by $O(n^{d})$ where $d$ is the VC dimension, so $\log \Pi_\Hcal(n) = O(d\log n)$ takes the place of $\log N$.
+2. **Analytic.** Bound $\E\Delta_n$ directly by the Rademacher complexity of the class, which is a scale-sensitive measure that does not require finiteness at all.
+
+The bridge to both is **symmetrisation**, which replaces the unknown population risk by a second
+independent sample:
+
+<Lemma id="symmetrisation" title="Symmetrisation">
+Let $\mathcal{G}$ be a class of functions $\Xcal\to[0,1]$. Then
+$$
+\E_S\left[\sup_{g\in\mathcal{G}}\Big(\E g - \frac1n\sum_i g(x_i)\Big)\right]
+\le 2\,\E_{S,\eps}\left[\sup_{g\in\mathcal{G}}\frac1n\sum_{i=1}^n\eps_i g(x_i)\right],
+$$
+where $\eps_i$ are independent Rademacher signs.
+</Lemma>
+
+<Proof>
+Let $S' = (x_1',\dots,x_n')$ be an independent "ghost sample" from the same distribution, so
+$\E g = \E_{S'}\frac1n\sum_ig(x_i')$. Then
+$$
+\E_S\sup_g\Big(\E g - \tfrac1n\textstyle\sum_i g(x_i)\Big)
+= \E_S\sup_g\ \E_{S'}\Big[\tfrac1n\textstyle\sum_i\big(g(x_i')-g(x_i)\big)\Big]
+\le \E_{S,S'}\sup_g \tfrac1n\textstyle\sum_i\big(g(x_i')-g(x_i)\big),
+$$
+moving the supremum inside the expectation (Jensen, since $\sup$ is convex).
+
+Now for each $i$ independently, swapping $x_i$ and $x_i'$ leaves the joint distribution unchanged
+while flipping the sign of the $i$-th term. Hence for any fixed signs $\eps\in\{\pm1\}^n$,
+$$
+\E_{S,S'}\sup_g \tfrac1n\textstyle\sum_i\big(g(x_i')-g(x_i)\big)
+= \E_{S,S'}\sup_g \tfrac1n\textstyle\sum_i\eps_i\big(g(x_i')-g(x_i)\big),
+$$
+and averaging over uniformly random $\eps$ preserves the equality. Finally split the supremum of the
+difference into the two suprema,
+$$
+\sup_g\tfrac1n\textstyle\sum_i\eps_i\big(g(x_i')-g(x_i)\big)
+\le \sup_g\tfrac1n\textstyle\sum_i\eps_ig(x_i') + \sup_g\tfrac1n\textstyle\sum_i(-\eps_i)g(x_i),
+$$
+and note both terms have the same expectation by symmetry of $\eps$, giving the factor $2$.
+</Proof>
+
+## What uniform convergence cannot do
+
+<Claim kind="empirical" id="uniform-convergence-not-necessary" title="Uniform convergence is not necessary for generalisation">
+There are settings — including realistic overparameterised networks — where the trained model
+generalises well while the uniform deviation $\Delta_n$ over any hypothesis class containing it is
+close to its maximum possible value, making every uniform-convergence bound vacuous.
+</Claim>
+
+<NotSaid>
+Nagarajan and Kolter construct explicit examples where the generalisation gap of the learned
+predictor is small but *any* bound derived by uniform convergence over a class containing the
+algorithm's possible outputs is near-trivial — even when the class is restricted to exactly the
+hypotheses the algorithm can return on samples of that size. The obstruction is not looseness of the
+union bound; it is that the two-sided uniform deviation is genuinely large.
+
+What follows and what does not:
+
+- Uniform convergence remains **sufficient**: when the bound is non-vacuous, it is a real guarantee, and for classical model classes it is the right tool.
+- It is not **necessary**, so the failure of a uniform bound is not evidence that a model will generalise badly.
+- Explaining generalisation in the overparameterised regime therefore requires algorithm-dependent analysis — stability, PAC-Bayes with a data-dependent prior, margin-based bounds, or implicit-bias characterisations — not a better bound on $\Delta_n$.
+
+This is an active research area, and there is no settled answer.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="lt-erm-decomposition" />
+<ProblemRef id="lt-finite-class-bound" />
+<ProblemRef id="lt-realizable-rate" />
+<ProblemRef id="lt-no-free-lunch" />
+<ProblemRef id="lt-symmetrisation" />

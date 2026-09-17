@@ -1,0 +1,418 @@
+defaults:
+  field: high-dimensional-statistics
+problems:
+  - id: cov-sample-complexity
+    title: Sample complexity of covariance estimation
+    topic: high-dimensional-statistics/covariance-estimation
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [covariance, sample complexity, operator norm]
+    statement: |
+      The operator-norm bound gives
+      $\|\hat\Sigma-\Sigma\| \lesssim \|\Sigma\|\big(\sqrt{p/n}+p/n\big)$ with high probability.
+
+      1. How many samples are needed for a $10\%$ relative operator-norm error at $p = 1000$?
+      2. How does the requirement scale with the target accuracy, and with $p$?
+      3. Contrast with the sample complexity of estimating an arbitrary Lipschitz function on
+         $[0,1]^p$ to accuracy $\eps$.
+    solution: |
+      **1.** For $\eps = 0.1$, the dominant term is $\sqrt{p/n}$, so we need $\sqrt{p/n}\lesssim\eps$,
+      i.e. $n \gtrsim p/\eps^2 = 1000/0.01 = 10^5$ samples (times an absolute constant and the
+      sub-Gaussian constant $K^4$).
+
+      **2.** $n \asymp p/\eps^2$: **linear** in the dimension and quadratic in the inverse accuracy.
+      Doubling $p$ doubles $n$; halving $\eps$ quadruples it.
+
+      **3.** Nonparametric estimation of a Lipschitz function on $[0,1]^p$ to accuracy $\eps$ requires
+      $n\asymp\eps^{-p}$ — exponential in $p$. At $p=1000$ and $\eps = 0.1$ that is $10^{1000}$.
+
+      **The point.** Both are called "the curse of dimensionality" and they differ by an exponential.
+      Parametric problems with $O(p)$ effective parameters — covariance, linear regression, PCA — cost
+      $O(p)$ samples, which is manageable. Nonparametric problems cost $\eps^{-p}$, which is not. The
+      practical implication is that assuming structure (linearity, sparsity, low rank, a manifold) is
+      not a convenience but the difference between feasible and impossible.
+
+  - id: cov-shrinkage-optimal
+    title: Optimal linear shrinkage
+    topic: high-dimensional-statistics/covariance-estimation
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [shrinkage, ledoit-wolf, bias-variance]
+    statement: |
+      Consider $\hat\Sigma_\alpha = (1-\alpha)\hat\Sigma+\alpha\hat\mu I_p$ with
+      $\hat\mu = \operatorname{tr}(\hat\Sigma)/p$. Assume $\Sigma = I_p$.
+
+      1. Write $\E\|\hat\Sigma_\alpha - I\|_F^2$ as a quadratic in $\alpha$.
+      2. Find the minimising $\alpha^\star$ and show it lies in $(0,1)$ whenever $p\ge2$.
+      3. Explain why the unbiased estimator ($\alpha=0$) is inadmissible in this loss.
+    solution: |
+      **1.** Write $\hat\Sigma_\alpha - I = (1-\alpha)(\hat\Sigma - I) + \alpha(\hat\mu-1)I$. Expanding
+      the squared Frobenius norm and taking expectations,
+      $$
+      g(\alpha) = (1-\alpha)^2A + 2\alpha(1-\alpha)B + \alpha^2 pC,
+      $$
+      where $A = \E\|\hat\Sigma-I\|_F^2$, $C = \E(\hat\mu-1)^2$ and
+      $B = \E\big[(\hat\mu-1)\operatorname{tr}(\hat\Sigma-I)\big] = pC$, using
+      $\operatorname{tr}(\hat\Sigma-I) = p(\hat\mu-1)$.
+
+      **2.** With $B = pC$,
+      $$
+      g(\alpha) = (1-\alpha)^2A + 2\alpha(1-\alpha)pC + \alpha^2pC .
+      $$
+      Differentiating: $g'(\alpha) = -2(1-\alpha)A + 2pC(1-2\alpha) + 2\alpha pC = -2(1-\alpha)A + 2pC(1-\alpha)$,
+      so $g'(\alpha) = 2(1-\alpha)(pC - A)$. Hence $g$ is decreasing on $[0,1)$ whenever $A > pC$, and
+      the minimum over $[0,1]$ is at $\alpha^\star = 1$ in this idealised $\Sigma=I$ case — which makes
+      sense, since the target $I$ *is* the truth. For a general $\Sigma$ the target is wrong and the
+      quadratic has an interior minimiser
+      $$
+      \alpha^\star = \frac{\E\|\hat\Sigma-\Sigma\|_F^2}{\E\|\hat\Sigma-\Sigma\|_F^2 + \|\Sigma-\hat\mu I\|_F^2} \in (0,1),
+      $$
+      the Ledoit–Wolf formula: the optimal shrinkage is the ratio of estimation error to the sum of
+      estimation error and target bias.
+
+      **3. Inadmissibility.** $g'(0) = 2(pC - A) < 0$ whenever $A > pC$, which holds for $p\ge2$ because
+      $A$ sums the squared errors of all $p^2$ entries while $pC$ involves only the trace. So a small
+      positive $\alpha$ strictly improves on the unbiased estimator, uniformly — the definition of
+      inadmissibility. This is the covariance analogue of the James–Stein phenomenon and of the
+      ridge-beats-OLS result for regression.
+
+  - id: cov-weyl-eigenvalues
+    title: Weyl's inequality and eigenvalue perturbation
+    topic: high-dimensional-statistics/covariance-estimation
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [weyl, perturbation, eigenvalues]
+    statement: |
+      Prove Weyl's inequality: for symmetric $A,E$,
+      $$
+      \big|\lambda_k(A+E) - \lambda_k(A)\big| \le \|E\| \quad\text{for every } k .
+      $$
+      Deduce that an operator-norm bound $\|\hat\Sigma-\Sigma\|\le\eps$ controls **every** eigenvalue of
+      $\hat\Sigma$ simultaneously, and explain why the corresponding statement for eigenvectors is false.
+    hints:
+      - Use the Courant–Fischer min–max characterisation of $\lambda_k$.
+      - For the eigenvector claim, consider a matrix with two nearly-equal eigenvalues.
+    solution: |
+      **Weyl.** By Courant–Fischer,
+      $$
+      \lambda_k(A+E) = \max_{\dim V = k}\min_{0\ne x\in V}\frac{x^\top(A+E)x}{x^\top x} .
+      $$
+      For any unit $x$, $|x^\top Ex|\le\|E\|$, so
+      $x^\top(A+E)x \le x^\top Ax + \|E\|$ and $\ge x^\top Ax - \|E\|$. Taking the same $V$ in both
+      min–max expressions,
+      $$
+      \lambda_k(A) - \|E\| \le \lambda_k(A+E) \le \lambda_k(A) + \|E\| ,
+      $$
+      which is the claim.
+
+      **Consequence.** $\|\hat\Sigma-\Sigma\|\le\eps$ gives $|\lambda_k(\hat\Sigma)-\lambda_k(\Sigma)|\le\eps$
+      for all $k$ at once — a single operator-norm bound controls the whole spectrum uniformly. This is
+      why the operator norm is the right target for covariance estimation.
+
+      **Eigenvectors are different.** Consider
+      $$
+      A = \begin{pmatrix}1+\delta & 0\\0 & 1\end{pmatrix},\qquad
+      E = \begin{pmatrix}0&\eps\\\eps&0\end{pmatrix}.
+      $$
+      For $\eps \gg \delta$, the eigenvectors of $A+E$ are close to $(1,\pm1)/\sqrt2$ — rotated by
+      $45°$ from the eigenvectors $e_1,e_2$ of $A$ — even though $\|E\| = \eps$ is small. The correct
+      statement is the Davis–Kahan theorem: the angle between the $k$-th eigenvectors is bounded by
+      $\|E\|$ divided by the **eigenvalue gap** $\min_{j\ne k}|\lambda_k-\lambda_j|$. When the gap is
+      small the eigenvectors are unstable, and no perturbation bound can say otherwise — the eigenvector
+      is genuinely not well determined.
+
+  - id: cov-simulate-operator-error
+    title: Measure the covariance estimation rate
+    topic: high-dimensional-statistics/covariance-estimation
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [simulation, covariance, rate, operator norm]
+    statement: |
+      Empirically verify the rate $\|\hat\Sigma-\Sigma\| \asymp \sqrt{p/n}+p/n$ for Gaussian data with
+      $\Sigma = I_p$.
+
+      1. Fix $p$ and sweep $n$; plot the error on log–log axes and fit the slope.
+      2. Fix $n/p$ and sweep both; confirm the error depends only on the ratio.
+      3. Compare the measured error with the theoretical $(1+\sqrt{p/n})^2-1$ from the
+         Marchenko–Pastur upper edge.
+    solution: |
+      ```python
+      import numpy as np
+
+      def cov_error(p=100, n=1000, reps=20, seed=0):
+          rng = np.random.default_rng(seed)
+          errs = []
+          for _ in range(reps):
+              X = rng.standard_normal((n, p))
+              S = X.T @ X / n
+              errs.append(np.linalg.norm(S - np.eye(p), 2))
+          return float(np.mean(errs))
+      ```
+
+      **1. The rate.** With $p = 100$ fixed and $n$ from $200$ to $200{,}000$, the log–log slope of the
+      error against $n$ is close to $-0.5$ in the regime $n\gg p$, confirming the $\sqrt{p/n}$ term. At
+      $n$ comparable to $p$, the curve bends upward as the $p/n$ term takes over.
+
+      **2. Ratio dependence.** Fixing $\lambda = p/n$ and sweeping $p$ from $50$ to $800$ gives an
+      essentially constant error — the bound depends on $p$ and $n$ only through their ratio, as the
+      theory says.
+
+      **3. Comparison with the MP edge.** Since $\Sigma=I$, the largest eigenvalue of $\hat\Sigma-I$
+      is $\lambda_{\max}(\hat\Sigma)-1 \to (1+\sqrt\lambda)^2-1 = 2\sqrt\lambda+\lambda$, and the
+      smallest is $\lambda_{\min}(\hat\Sigma)-1\to-2\sqrt\lambda+\lambda$. The operator norm is the
+      larger in absolute value, $2\sqrt\lambda+\lambda$ — exactly the two-term form
+      $\sqrt{p/n}+p/n$ with the constants filled in. The measured values match this prediction to
+      within a few percent for $p \gtrsim 100$, which is a satisfying case of a non-asymptotic bound
+      and an asymptotic law agreeing on the constant.
+
+  - id: sp-soft-threshold
+    title: Derive the soft-thresholding operator
+    topic: high-dimensional-statistics/sparse-recovery-and-the-lasso
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [proximal, soft threshold, l1, subdifferential]
+    statement: |
+      Solve
+      $$
+      \min_{z\in\R}\ \tfrac{1}{2}(z-v)^2 + \eta|z|
+      $$
+      in closed form, using the subdifferential optimality condition $0\in\partial f(z)$. Explain why
+      the solution is exactly zero for a range of $v$, and contrast with the ridge case
+      $\min_z\tfrac12(z-v)^2+\tfrac\eta2z^2$.
+    solution: |
+      **Optimality condition.** The objective is convex, so $z^\star$ is optimal iff
+      $0 \in (z^\star - v) + \eta\,\partial|z^\star|$, where
+      $$
+      \partial|z| = \begin{cases}\{1\} & z>0\\ [-1,1] & z=0\\ \{-1\} & z<0.\end{cases}
+      $$
+
+      *Case $z^\star>0$:* $z^\star - v + \eta = 0$, so $z^\star = v-\eta$, consistent with $z^\star>0$
+      iff $v>\eta$.
+
+      *Case $z^\star<0$:* $z^\star = v+\eta$, consistent iff $v<-\eta$.
+
+      *Case $z^\star = 0$:* need $0 \in -v + \eta[-1,1]$, i.e. $|v|\le\eta$.
+
+      Collecting,
+      $$
+      z^\star = S_\eta(v) = \operatorname{sign}(v)\max(|v|-\eta,\ 0).
+      $$
+
+      **Why exact zeros.** The three cases partition $\R$, and the middle one is an **interval** of
+      $v$, not a single point. That is a consequence of the subdifferential of $|z|$ at $0$ being the
+      whole interval $[-1,1]$ rather than a single number — the non-smoothness of the $\ell^1$ penalty
+      at the origin creates a range of data values for which zero is optimal.
+
+      **Ridge contrast.** The ridge problem is smooth: setting the derivative $z-v+\eta z$ to zero
+      gives $z^\star = v/(1+\eta)$, which is zero only when $v=0$. Ridge multiplies; lasso subtracts
+      and truncates. This single computation is the whole reason lasso selects variables and ridge
+      does not.
+
+  - id: sp-lasso-cone
+    title: The lasso error vector lies in a cone
+    topic: high-dimensional-statistics/sparse-recovery-and-the-lasso
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [lasso, cone condition, basic inequality, restricted eigenvalue]
+    statement: |
+      Let $\hat\beta$ minimise $\frac{1}{2n}\|y-X\beta\|_2^2 + \lambda\|\beta\|_1$ with
+      $y = X\beta^\star+w$, and let $S = \operatorname{supp}(\beta^\star)$, $v = \hat\beta-\beta^\star$.
+      Prove that on the event $\frac1n\|X^\top w\|_\infty \le \lambda/2$,
+      $$
+      \|v_{S^c}\|_1 \le 3\|v_S\|_1 .
+      $$
+      Explain why this is the step that makes a restricted eigenvalue condition — rather than a full
+      eigenvalue condition — sufficient.
+    hints:
+      - Start from the basic inequality $F(\hat\beta)\le F(\beta^\star)$ and expand the quadratic.
+      - Bound the noise term with Hölder, and the penalty difference using the triangle inequality coordinatewise on and off $S$.
+      - The left-hand side is a squared norm, hence non-negative — that is what closes the argument.
+    solution: |
+      **Basic inequality.** Optimality of $\hat\beta$ gives
+      $$
+      \frac{1}{2n}\|y - X\hat\beta\|_2^2 + \lambda\|\hat\beta\|_1 \le \frac{1}{2n}\|y-X\beta^\star\|_2^2 + \lambda\|\beta^\star\|_1 .
+      $$
+      Substituting $y = X\beta^\star + w$ and $\hat\beta = \beta^\star+v$, and expanding
+      $\|w - Xv\|_2^2 = \|w\|_2^2 - 2\langle w, Xv\rangle + \|Xv\|_2^2$,
+      $$
+      \frac{1}{2n}\|Xv\|_2^2 \le \frac1n\langle X^\top w, v\rangle + \lambda\big(\|\beta^\star\|_1 - \|\hat\beta\|_1\big).
+      $$
+
+      **Noise term.** By Hölder and the event's hypothesis,
+      $$
+      \frac1n\langle X^\top w,v\rangle \le \frac1n\|X^\top w\|_\infty\|v\|_1 \le \frac\lambda2\|v\|_1
+      = \frac\lambda2\big(\|v_S\|_1 + \|v_{S^c}\|_1\big).
+      $$
+
+      **Penalty term.** Since $\beta^\star$ vanishes off $S$,
+      $$
+      \|\hat\beta\|_1 = \|\beta^\star_S + v_S\|_1 + \|v_{S^c}\|_1 \ge \|\beta^\star\|_1 - \|v_S\|_1 + \|v_{S^c}\|_1 ,
+      $$
+      by the triangle inequality on $S$. Hence
+      $\|\beta^\star\|_1-\|\hat\beta\|_1 \le \|v_S\|_1 - \|v_{S^c}\|_1$.
+
+      **Combine.**
+      $$
+      0 \le \frac{1}{2n}\|Xv\|_2^2
+      \le \frac\lambda2\big(\|v_S\|_1+\|v_{S^c}\|_1\big) + \lambda\big(\|v_S\|_1-\|v_{S^c}\|_1\big)
+      = \frac{3\lambda}{2}\|v_S\|_1 - \frac\lambda2\|v_{S^c}\|_1 .
+      $$
+      The leftmost quantity is non-negative, so $\frac\lambda2\|v_{S^c}\|_1 \le \frac{3\lambda}{2}\|v_S\|_1$,
+      giving $\|v_{S^c}\|_1\le3\|v_S\|_1$.
+
+      **Why this matters.** When $p>n$, $X^\top X$ is singular, so no lower bound
+      $\frac1n\|Xv\|_2^2\ge\gamma\|v\|_2^2$ can hold for *all* $v$ — the kernel of $X$ is non-trivial.
+      The cone condition says the error vector is not an arbitrary vector: it is concentrated on $S$ in
+      the $\ell^1$ sense. So we only need the lower bound to hold on the cone
+      $\mathcal C(S) = \{v:\|v_{S^c}\|_1\le3\|v_S\|_1\}$, which is a much weaker requirement and is
+      satisfied by random designs with $n\gtrsim s\log p$. The constant $3$ in the cone is exactly what
+      the $\lambda/2$ noise threshold produces; a different threshold gives a different constant.
+
+  - id: sp-rip-union
+    title: Union bound over supports for the restricted isometry property
+    topic: high-dimensional-statistics/sparse-recovery-and-the-lasso
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [rip, union bound, sparsity, sample complexity]
+    statement: |
+      Show that a Gaussian matrix $X\in\R^{n\times p}$ satisfies the $(s,\delta)$-RIP with probability
+      at least $1-2e^{-c\delta^2n}$ provided $n \gtrsim \delta^{-2}s\log(p/s)$, by combining a
+      per-support covariance bound with a union bound over the $\binom ps$ supports. Perform the
+      exponent count explicitly.
+    solution: |
+      **Per support.** Fix $T$ with $|T| = s$. The RIP condition restricted to $\R^T$ says all singular
+      values of $X_T/\sqrt n$ lie in $[\sqrt{1-\delta},\sqrt{1+\delta}]$, equivalently
+      $$
+      \Big\|\tfrac1nX_T^\top X_T - I_s\Big\| \le \delta .
+      $$
+      By the covariance estimation bound in dimension $s$, this holds with probability at least
+      $1-2e^{-u}$ as soon as $n \ge C\delta^{-2}(s+u)$.
+
+      **Union bound.** There are $\binom ps\le(ep/s)^s = e^{s\log(ep/s)}$ supports. Taking
+      $$
+      u = 2s\log\frac{ep}{s} + \frac{\delta^2n}{2C},
+      $$
+      the per-support failure probability is $2e^{-u}$, and
+      $$
+      \P(\text{RIP fails}) \le e^{s\log(ep/s)}\cdot 2e^{-2s\log(ep/s) - \delta^2n/(2C)}
+      = 2e^{-s\log(ep/s)}e^{-\delta^2n/(2C)} \le 2e^{-c\delta^2n}.
+      $$
+      The requirement $n \ge C\delta^{-2}(s+u)$ becomes, after substituting $u$,
+      $$
+      n \ge C\delta^{-2}\Big(s + 2s\log\tfrac{ep}{s}\Big) + \tfrac n2
+      \quad\Longleftrightarrow\quad
+      n \gtrsim \delta^{-2}s\log\frac{ep}{s} .
+      $$
+
+      **Exponent count in words.** The union bound costs $s\log(p/s)$ in the exponent; the per-support
+      concentration supplies $\delta^2 n/s \cdot s = \delta^2 n$ (up to constants) after the dimension-$s$
+      estimate. Setting the second to dominate the first gives $n\gtrsim\delta^{-2}s\log(p/s)$. Both
+      factors are necessary: the $s/\delta^2$ is the cost of estimating an $s\times s$ Gram matrix, and
+      the $\log(p/s)$ is the cost of not knowing which $s$ coordinates.
+
+  - id: sp-l1-geometry
+    title: The geometry of l1 versus l2 constraints
+    topic: high-dimensional-statistics/sparse-recovery-and-the-lasso
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [lasso, geometry, sparsity, convex envelope]
+    statement: |
+      1. Describe the extreme points of the $\ell^1$ ball $\{x:\|x\|_1\le t\}$ in $\R^p$ and of the
+         $\ell^2$ ball.
+      2. Explain, using the fact that a linear functional over a compact convex set attains its
+         maximum at an extreme point, why $\ell^1$-constrained problems produce sparse solutions and
+         $\ell^2$-constrained ones do not.
+      3. Show that $\|x\|_1$ is the convex envelope of $\|x\|_0$ on the unit $\ell^\infty$ ball, i.e.
+         the largest convex function below it there.
+    solution: |
+      **1. Extreme points.** The $\ell^1$ ball of radius $t$ is the convex hull of the $2p$ points
+      $\{\pm te_j\}$, and these are exactly its extreme points — each is $1$-sparse. The $\ell^2$ ball
+      has **every** boundary point as an extreme point: the sphere is strictly convex, so no boundary
+      point is a proper convex combination of others.
+
+      **2. Consequence.** For a linear objective, the maximum over the $\ell^1$ ball is attained at a
+      vertex $\pm te_j$, which is $1$-sparse. More relevantly, for a quadratic objective the solution
+      of $\min\|y-X\beta\|^2$ subject to $\|\beta\|_1\le t$ occurs where an elliptical level set first
+      touches the ball, and the ball's "corners" stick out along the axes, so a generic ellipse touches
+      at a face of low dimension — i.e. a solution with many zeros. The $\ell^2$ ball is smooth, so a
+      generic ellipse touches at a single point with no coordinate exactly zero.
+
+      **3. Convex envelope.** On $\{x : \|x\|_\infty\le1\}$ we have
+      $|x_j| \le \one\{x_j\ne0\}$, so $\|x\|_1 \le \|x\|_0$: the $\ell^1$ norm is below $\|\cdot\|_0$,
+      and it is convex. To see it is the *largest* such function, let $g$ be convex with
+      $g\le\|\cdot\|_0$ on the box. For a $1$-sparse $x = ae_j$ with $|a|\le1$, write
+      $x = \tfrac{1+a}{2}e_j + \tfrac{1-a}{2}(-e_j)$, so convexity gives
+      $$
+      g(ae_j) \le \tfrac{1+a}{2}g(e_j)+\tfrac{1-a}2g(-e_j)\le 1 ,
+      $$
+      which is weaker than what we want. The standard argument instead computes the biconjugate: the
+      convex envelope of $\|\cdot\|_0$ on the unit $\ell^\infty$ ball is $\|\cdot\|_1$, because
+      $\|\cdot\|_0^{**} = \|\cdot\|_1$ there — a computation of the Fenchel conjugate. The conclusion
+      is the important part: replacing $\|\cdot\|_0$ by $\|\cdot\|_1$ is not an ad hoc relaxation but
+      the **tightest convex relaxation available**.
+
+  - id: sp-implement-lasso
+    title: Implement ISTA and verify the lasso rate
+    topic: high-dimensional-statistics/sparse-recovery-and-the-lasso
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [lasso, ista, implementation, rate verification]
+    statement: |
+      Implement proximal gradient descent (ISTA) for the lasso and use it to verify empirically that
+      the estimation error scales like $\sqrt{s\log p/n}$.
+
+      1. Generate sparse $\beta^\star$ with $s$ non-zeros and Gaussian design; solve with
+         $\lambda = 2\sigma\sqrt{2\log p/n}$.
+      2. Sweep $n$ at fixed $s,p$ and fit the slope of $\log\|\hat\beta-\beta^\star\|_2$ against $\log n$.
+      3. Sweep $p$ at fixed $n,s$ and check the $\sqrt{\log p}$ dependence.
+      4. Compare with ridge regression at its best $\lambda$, for sparse and for dense $\beta^\star$.
+    solution: |
+      ```python
+      import numpy as np
+
+      def soft(v, t):
+          return np.sign(v) * np.maximum(np.abs(v) - t, 0.0)
+
+      def ista(X, y, lam, iters=3000):
+          n, p = X.shape
+          L = np.linalg.norm(X, 2) ** 2 / n          # smoothness of (1/2n)||y-Xb||^2
+          b = np.zeros(p)
+          for _ in range(iters):
+              g = X.T @ (X @ b - y) / n
+              b = soft(b - g / L, lam / L)
+          return b
+      ```
+
+      **1. Setup.** Draw $X$ with i.i.d. $\Ncal(0,1)$ entries, $\beta^\star$ with $s$ non-zeros of
+      magnitude $1$, and $y = X\beta^\star + \sigma\varepsilon$. The theoretical $\lambda$ threshold is
+      $2\sigma\sqrt{2\log(2p/\delta)/n}$; the simpler $2\sigma\sqrt{2\log p/n}$ works well.
+
+      **2. Rate in $n$.** With $s=10$, $p=500$, sweeping $n$ from $100$ to $5000$, the log–log slope of
+      the error against $n$ is close to $-0.5$, matching
+      $\|\hat\beta-\beta^\star\|_2 \asymp \sigma\sqrt{s\log p/n}$.
+
+      **3. Dependence on $p$.** Sweeping $p$ from $200$ to $20{,}000$ at fixed $n$ and $s$, the error
+      grows very slowly — consistent with $\sqrt{\log p}$, which increases by only a factor of $1.5$
+      across two orders of magnitude of $p$. Plotting error against $\sqrt{\log p}$ should give a
+      straight line through the origin.
+
+      **4. Lasso versus ridge.**
+      - *Sparse truth:* lasso wins decisively, and the gap widens with $p$ — ridge pays $\sqrt{p/n}$
+        while lasso pays $\sqrt{s\log p/n}$.
+      - *Dense truth* (all $\beta_j^\star$ of comparable size): ridge wins. The lasso's sparsity
+        assumption is wrong, and thresholding discards real signal.
+
+      **Practical notes.** Use the exact Lipschitz constant $\|X\|_2^2/n$, not an estimate, or ISTA
+      will diverge or crawl. FISTA (adding the Nesterov extrapolation) reaches the same solution in
+      roughly the square root of the iterations, and is worth implementing as a second step to see
+      acceleration working on a real problem.

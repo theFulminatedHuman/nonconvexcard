@@ -1,0 +1,260 @@
+---
+title: Lagrangian Duality and the KKT Conditions
+summary: Weak and strong duality, Slater's condition, and the five KKT conditions — set up so that the SVM derivation is a direct application.
+field: advanced-optimization
+level: 2
+order: 10
+prerequisites: [optimization/convex-sets-and-functions]
+tags: [duality, lagrangian, kkt, slater, complementary slackness]
+estimated_time: 3h
+claims:
+  - id: weak-duality
+    kind: theorem
+    title: Weak duality
+    summary: The dual optimum never exceeds the primal optimum, with no convexity assumed.
+    proved: true
+    tags: [duality, weak]
+  - id: dual-concave
+    kind: proposition
+    title: The dual function is always concave
+    summary: The dual is a pointwise infimum of affine functions, hence concave regardless of the primal problem.
+    proved: true
+    tags: [concavity, dual function]
+  - id: slater
+    kind: theorem
+    title: Strong duality under Slater's condition
+    summary: For a convex problem with a strictly feasible point the duality gap is zero.
+    proved: false
+    tags: [strong duality, slater]
+  - id: kkt
+    kind: theorem
+    title: Karush–Kuhn–Tucker conditions
+    summary: Under strong duality the five KKT conditions are necessary, and for convex problems they are also sufficient.
+    proved: true
+    tags: [kkt, optimality conditions, complementary slackness]
+  - id: complementary-slackness
+    kind: corollary
+    title: Complementary slackness
+    summary: At optimum, every inactive constraint has zero multiplier and every nonzero multiplier marks an active constraint.
+    proved: true
+    tags: [complementary slackness, support vectors]
+references:
+  - key: boyd-vandenberghe-4
+    title: Convex Optimization
+    authors: Stephen Boyd and Lieven Vandenberghe
+    year: 2004
+    kind: book
+    url: https://web.stanford.edu/~boyd/cvxbook/
+    note: Chapter 5 is the standard treatment; Slater's theorem is proved there and quoted here.
+  - key: rockafellar
+    title: Convex Analysis
+    authors: R. Tyrrell Rockafellar
+    year: 1970
+    kind: book
+    note: The foundational reference for conjugate duality.
+  - key: bertsekas-nlp
+    title: Nonlinear Programming
+    authors: Dimitri P. Bertsekas
+    year: 2016
+    kind: book
+---
+
+## The primal problem and its Lagrangian
+
+Consider
+$$
+p^\star = \min_{x\in\R^d} f_0(x) \quad\text{subject to}\quad
+f_i(x)\le0\ (i=1,\dots,m), \quad h_j(x)=0\ (j=1,\dots,r).
+$$
+
+<Definition id="lagrangian" title="Lagrangian and dual function">
+The **Lagrangian** is
+$$
+\mathcal{L}(x,\alpha,\nu) = f_0(x) + \sum_{i=1}^m \alpha_i f_i(x) + \sum_{j=1}^r \nu_j h_j(x),
+$$
+with $\alpha \in \R^m_{\ge0}$ and $\nu\in\R^r$. The **dual function** is
+$$
+g(\alpha,\nu) = \inf_{x}\mathcal{L}(x,\alpha,\nu),
+$$
+and the **dual problem** is $d^\star = \max_{\alpha\ge0,\nu} g(\alpha,\nu)$.
+</Definition>
+
+<Intuition>
+The multipliers are prices. Instead of forbidding a constraint violation, charge $\alpha_i$ per unit
+of violation of $f_i(x) \le 0$ and let $x$ range freely. If the prices are right, the unconstrained
+buyer chooses to satisfy the constraints anyway. The dual problem is the search for the prices that
+make that happen, and the duality gap measures whether prices can do the job at all.
+</Intuition>
+
+<Proposition id="dual-concave" title="The dual function is always concave">
+$g$ is concave on $\R^m_{\ge0}\times\R^r$, regardless of any property of $f_0, f_i, h_j$. It may take
+the value $-\infty$.
+</Proposition>
+
+<Proof>
+For fixed $x$, the map $(\alpha,\nu)\mapsto \mathcal{L}(x,\alpha,\nu)$ is affine. $g$ is the pointwise
+infimum of this family over $x$, and a pointwise infimum of affine functions is concave: for
+$(\alpha,\nu) = \theta(\alpha_1,\nu_1) + (1-\theta)(\alpha_2,\nu_2)$,
+$$
+g(\alpha,\nu) = \inf_x\Big[\theta\mathcal{L}(x,\alpha_1,\nu_1)+(1-\theta)\mathcal{L}(x,\alpha_2,\nu_2)\Big]
+\ge \theta\inf_x\mathcal{L}(x,\alpha_1,\nu_1)+(1-\theta)\inf_x\mathcal{L}(x,\alpha_2,\nu_2),
+$$
+using that the infimum of a sum is at least the sum of the infima.
+</Proof>
+
+<KeyIdea>
+This is remarkable and is the practical reason duality matters: **the dual of an arbitrarily nasty
+problem is a concave maximisation**, hence a convex problem. Sometimes the dual is tractable when the
+primal is not, and sometimes — as in the <TopicRef id="machine-learning/support-vector-machines">SVM</TopicRef> —
+the dual is where the interesting structure (kernels, support vectors) becomes visible.
+</KeyIdea>
+
+<Theorem id="weak-duality" title="Weak duality">
+$d^\star \le p^\star$, with no assumptions on $f_0,f_i,h_j$.
+</Theorem>
+
+<Proof>
+Let $x$ be primal feasible and $(\alpha,\nu)$ dual feasible ($\alpha\ge0$). Then
+$$
+\mathcal{L}(x,\alpha,\nu) = f_0(x) + \underbrace{\sum_i\alpha_if_i(x)}_{\le0} + \underbrace{\sum_j\nu_jh_j(x)}_{=0} \le f_0(x),
+$$
+the first bracket because each $\alpha_i \ge 0$ and each $f_i(x)\le0$, and the second because
+$h_j(x) = 0$. Taking the infimum over $x$ on the left,
+$$
+g(\alpha,\nu) = \inf_{x'}\mathcal{L}(x',\alpha,\nu) \le \mathcal{L}(x,\alpha,\nu) \le f_0(x).
+$$
+This holds for every feasible $x$ and every dual feasible $(\alpha,\nu)$, so
+$\max_{\alpha,\nu}g \le \min_x f_0$.
+</Proof>
+
+<Theorem id="slater" title="Strong duality under Slater's condition">
+Suppose $f_0,\dots,f_m$ are convex, the $h_j$ are affine, and there exists a **strictly feasible**
+point: some $\tilde x$ in the relative interior of the domain with $f_i(\tilde x)<0$ for all $i$ with
+$f_i$ not affine, and $h_j(\tilde x)=0$. Then $d^\star = p^\star$, and if $p^\star$ is finite the dual
+optimum is attained.
+</Theorem>
+
+Quoted from Boyd–Vandenberghe, where it is proved via a separating-hyperplane argument applied to the
+set $\{(u,v,s) : \exists x,\ f_i(x)\le u_i,\ h_j(x)=v_j,\ f_0(x)\le s\}$. Slater's condition is mild
+and is satisfied by every problem in this laboratory that uses duality — in particular by the soft-margin
+SVM, where any $\xi_i$ large enough is strictly feasible.
+
+<Note title="When strong duality fails">
+Convexity alone is not enough. The problem $\min e^{-x}$ subject to $x^2/y \le 0$ over $y > 0$ is
+convex with $p^\star = 1$ and $d^\star = 0$: a genuine gap. Non-convex problems typically have gaps —
+that is exactly what makes them hard — although some do not, and the ones that do not are often
+solvable.
+</Note>
+
+## The KKT conditions
+
+<Theorem id="kkt" title="Karush–Kuhn–Tucker conditions">
+Suppose $f_0,f_i,h_j$ are differentiable and strong duality holds with both optima attained, at
+$x^\star$ and $(\alpha^\star,\nu^\star)$. Then
+
+$$
+\begin{aligned}
+&\text{(1) primal feasibility:} && f_i(x^\star)\le0,\quad h_j(x^\star)=0;\\
+&\text{(2) dual feasibility:} && \alpha_i^\star\ge0;\\
+&\text{(3) complementary slackness:} && \alpha_i^\star f_i(x^\star)=0 \ \ \forall i;\\
+&\text{(4) stationarity:} && \nabla f_0(x^\star) + \sum_i\alpha_i^\star\nabla f_i(x^\star) + \sum_j\nu_j^\star\nabla h_j(x^\star)=0 .
+\end{aligned}
+$$
+
+Conversely, if the problem is convex and $(x,\alpha,\nu)$ satisfies (1)–(4), then $x$ is primal
+optimal, $(\alpha,\nu)$ is dual optimal, and the duality gap is zero.
+</Theorem>
+
+<Proof>
+**Necessity.** Strong duality and attainment give
+$$
+f_0(x^\star) = p^\star = d^\star = g(\alpha^\star,\nu^\star)
+= \inf_x \mathcal{L}(x,\alpha^\star,\nu^\star)
+\le \mathcal{L}(x^\star,\alpha^\star,\nu^\star)
+= f_0(x^\star) + \sum_i\alpha_i^\star f_i(x^\star),
+$$
+the last equality using $h_j(x^\star)=0$. So $\sum_i\alpha_i^\star f_i(x^\star)\ge0$. But each term is
+a product of a non-negative $\alpha_i^\star$ and a non-positive $f_i(x^\star)$, hence non-positive.
+A sum of non-positive terms that is $\ge0$ forces every term to vanish: that is (3).
+
+Consequently the chain of inequalities above is tight, so
+$\mathcal{L}(x^\star,\alpha^\star,\nu^\star) = \inf_x\mathcal{L}(x,\alpha^\star,\nu^\star)$: the point
+$x^\star$ minimises the Lagrangian over all $x$. Since $\mathcal{L}(\cdot,\alpha^\star,\nu^\star)$ is
+differentiable, its gradient vanishes at an interior minimiser, which is (4). Conditions (1) and (2)
+are feasibility of the two optima.
+
+**Sufficiency in the convex case.** Assume (1)–(4) with $f_0,f_i$ convex and $h_j$ affine. Then
+$\mathcal{L}(\cdot,\alpha,\nu)$ is convex (a non-negative combination of convex functions plus an
+affine one), so the stationarity condition (4) implies $x$ is a global minimiser of the Lagrangian by
+the <TopicRef id="optimization/convex-sets-and-functions">stationary-point proposition</TopicRef>.
+Hence
+$$
+g(\alpha,\nu) = \mathcal{L}(x,\alpha,\nu) = f_0(x) + \sum_i\alpha_if_i(x) + \sum_j\nu_jh_j(x) = f_0(x),
+$$
+where the last step uses (3) and (1). So the dual objective at $(\alpha,\nu)$ equals the primal
+objective at $x$; by weak duality $g(\alpha,\nu)\le p^\star \le f_0(x)$, and both ends are equal, so
+both are optimal.
+</Proof>
+
+<Corollary id="complementary-slackness" title="Complementary slackness">
+At an optimum, for each $i$,
+$$
+\alpha_i^\star>0 \implies f_i(x^\star)=0
+\qquad\text{and}\qquad
+f_i(x^\star)<0 \implies \alpha_i^\star=0 .
+$$
+</Corollary>
+
+<Proof>
+Both are contrapositives of $\alpha_i^\star f_i(x^\star)=0$.
+</Proof>
+
+<KeyIdea>
+Complementary slackness is the mathematical origin of **sparsity in the dual**. In the
+<TopicRef id="machine-learning/support-vector-machines">SVM</TopicRef> the constraints are
+$y_i(w^\top x_i + b)\ge1$, one per training point. Complementary slackness says $\alpha_i > 0$ only
+for points with $y_i(w^\top x_i+b)=1$ — the points exactly on the margin. Every other point has
+$\alpha_i = 0$ and drops out of the solution entirely. "Support vector" is not a heuristic notion; it
+is the name for a constraint with a non-zero multiplier.
+</KeyIdea>
+
+## Worked example: the dual of a quadratic program
+
+<Derivation title="Dual of min ½xᵀQx + cᵀx subject to Ax ≤ b, with Q ≻ 0">
+<Step why="Form the Lagrangian with multiplier α ≥ 0 for the inequality constraints.">
+$$
+\mathcal{L}(x,\alpha) = \tfrac12x^\top Qx + c^\top x + \alpha^\top(Ax - b).
+$$
+</Step>
+<Step why="Q ≻ 0 makes the Lagrangian strictly convex in x, so the inner minimisation is solved by setting the gradient to zero.">
+$$
+\nabla_x\mathcal{L} = Qx + c + A^\top\alpha = 0
+\quad\Longrightarrow\quad
+x^\star(\alpha) = -Q^{-1}(c + A^\top\alpha).
+$$
+</Step>
+<Step why="Substitute back. The quadratic evaluates to minus half the squared Q-inverse norm of the combined linear term.">
+$$
+g(\alpha) = -\tfrac12(c+A^\top\alpha)^\top Q^{-1}(c+A^\top\alpha) - b^\top\alpha .
+$$
+</Step>
+<Step why="The dual problem is a maximisation of a concave quadratic over the non-negative orthant — itself a quadratic program, but with the inequality constraints replaced by simple sign constraints.">
+$$
+d^\star = \max_{\alpha\ge0}\ \left\{-\tfrac12\alpha^\top AQ^{-1}A^\top\alpha - \alpha^\top(AQ^{-1}c + b) - \tfrac12 c^\top Q^{-1}c\right\}.
+$$
+</Step>
+<Step why="Slater's condition holds whenever some x satisfies Ax < b, so the gap is zero and the primal solution is recovered from the dual optimum through the stationarity map of step 2.">
+$x^\star = -Q^{-1}(c + A^\top\alpha^\star)$.
+</Step>
+</Derivation>
+
+Note the structural change: the primal has $m$ general linear inequality constraints; the dual has
+only $\alpha\ge0$. The constraint complexity has moved into the quadratic form $AQ^{-1}A^\top$. That
+trade is exactly what the SVM dual exploits, where $AQ^{-1}A^\top$ becomes the kernel matrix.
+
+## Problems
+
+<ProblemRef id="du-weak-duality" />
+<ProblemRef id="du-qp-dual" />
+<ProblemRef id="du-complementary-slackness" />
+<ProblemRef id="du-duality-gap-example" />

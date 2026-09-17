@@ -1,0 +1,318 @@
+---
+title: Trees, Bagging and Boosting
+summary: Impurity and greedy splitting, the exact variance algebra behind bagging, and boosting derived as functional gradient descent.
+field: machine-learning
+level: 2
+order: 60
+prerequisites: [machine-learning/linear-and-ridge-regression, optimization/gradient-descent-convergence]
+tags: [decision tree, entropy, gini, bagging, random forest, adaboost, gradient boosting]
+estimated_time: 3h
+papers: [xgboost]
+claims:
+  - id: impurity-concavity
+    kind: proposition
+    title: Any concave impurity gives non-negative information gain
+    summary: A split can never increase a concave impurity measure in expectation, which is what makes greedy splitting well posed.
+    proved: true
+    tags: [entropy, gini, concavity, information gain]
+  - id: bagging-variance
+    kind: proposition
+    title: Bagging variance algebra
+    summary: Averaging B correlated predictors leaves the correlated part of the variance untouched, which is exactly what feature subsampling attacks.
+    proved: true
+    tags: [bagging, variance, correlation, random forest]
+  - id: adaboost-exponential
+    kind: theorem
+    title: AdaBoost is coordinate descent on the exponential loss
+    summary: The AdaBoost weights and coefficients are exactly the exact line search and greedy coordinate choice for the exponential loss.
+    proved: true
+    tags: [adaboost, exponential loss, coordinate descent]
+  - id: adaboost-training-error
+    kind: theorem
+    title: AdaBoost drives training error to zero exponentially
+    summary: If every weak learner beats chance by a fixed margin the training error decays geometrically in the number of rounds.
+    proved: true
+    tags: [adaboost, training error, weak learning]
+  - id: gradient-boosting
+    kind: proposition
+    title: Gradient boosting is gradient descent in function space
+    summary: Each round fits a base learner to the negative functional gradient of the loss at the current model.
+    proved: true
+    tags: [gradient boosting, functional gradient]
+  - id: boosting-overfitting
+    kind: empirical
+    title: Boosting resists overfitting longer than the training error suggests
+    summary: Test error often keeps improving after training error reaches zero, which margin theory partially explains.
+    proved: false
+    tags: [margin theory, overfitting, empirical]
+references:
+  - key: breiman-bagging
+    title: Bagging Predictors
+    authors: Leo Breiman
+    year: 1996
+    kind: paper
+  - key: breiman-rf
+    title: Random Forests
+    authors: Leo Breiman
+    year: 2001
+    kind: paper
+  - key: freund-schapire
+    title: A Decision-Theoretic Generalization of On-Line Learning and an Application to Boosting
+    authors: Yoav Freund and Robert E. Schapire
+    year: 1997
+    kind: paper
+  - key: friedman-gbm
+    title: "Greedy Function Approximation: A Gradient Boosting Machine"
+    authors: Jerome H. Friedman
+    year: 2001
+    kind: paper
+  - key: chen-guestrin
+    title: 'XGBoost: A Scalable Tree Boosting System'
+    authors: Tianqi Chen and Carlos Guestrin
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1603.02754
+---
+
+## Trees and impurity
+
+A decision tree partitions $\Xcal$ by recursive axis-aligned splits and predicts a constant in each
+leaf. Growing it optimally is NP-hard, so the standard algorithm is greedy: at each node choose the
+split maximising the decrease in an impurity measure.
+
+<Definition id="impurity-def" title="Impurity measures">
+For a node with class distribution $p = (p_1,\dots,p_C)$:
+$$
+\text{entropy } H(p) = -\sum_c p_c\log p_c,
+\qquad
+\text{Gini } G(p) = 1-\sum_cp_c^2 = \sum_c p_c(1-p_c),
+\qquad
+\text{misclassification } M(p) = 1-\max_cp_c .
+$$
+</Definition>
+
+<Proposition id="impurity-concavity" title="Concave impurity gives non-negative information gain">
+Let $\Phi$ be concave on the probability simplex. A split of a node into children with weights
+$w_L+w_R=1$ and distributions $p_L,p_R$ satisfying $w_Lp_L + w_Rp_R = p$ has
+$$
+\text{gain} = \Phi(p) - \big(w_L\Phi(p_L) + w_R\Phi(p_R)\big) \ge 0 ,
+$$
+with equality iff $\Phi$ is affine along the segment $[p_L,p_R]$. Entropy and Gini are strictly
+concave; misclassification error is concave but piecewise affine.
+</Proposition>
+
+<Proof>
+Concavity of $\Phi$ gives $\Phi(w_Lp_L+w_Rp_R) \ge w_L\Phi(p_L)+w_R\Phi(p_R)$, and the left side is
+$\Phi(p)$ by the weighting identity. Strict concavity gives strict inequality unless $p_L=p_R$.
+
+Entropy: $H$ is a sum of $-p\log p$, each strictly concave. Gini: $G$ is $1 - \norm p_2^2$, and
+$-\norm\cdot_2^2$ is strictly concave. Misclassification: $M = 1-\max_cp_c$ is concave as one minus a
+maximum of linear functions, but it is affine on each region where the argmax is constant.
+</Proof>
+
+<KeyIdea>
+This is why entropy and Gini are used and misclassification error is not, despite being the quantity
+we actually care about: because $M$ is piecewise affine, many splits have **exactly zero** gain under
+it, and the greedy algorithm has no signal to follow. A strictly concave surrogate always prefers a
+split that makes the children purer, even when it does not change the majority class in either. The
+choice of surrogate is driven by the optimisation, not by the statistics — the same pattern as the
+hinge and logistic losses standing in for the zero-one loss.
+</KeyIdea>
+
+## Bagging and random forests
+
+<Proposition id="bagging-variance" title="Bagging variance algebra">
+Let $\hat f_1,\dots,\hat f_B$ be predictors each with variance $\sigma^2$ and pairwise correlation
+$\rho$ at a fixed input. The average $\bar f = \frac1B\sum_b\hat f_b$ has
+$$
+\Var(\bar f) = \rho\sigma^2 + \frac{1-\rho}{B}\sigma^2 \xrightarrow[B\to\infty]{} \rho\sigma^2 .
+$$
+</Proposition>
+
+<Proof>
+$$
+\Var\left(\frac1B\sum_b\hat f_b\right)
+= \frac{1}{B^2}\left[\sum_b\Var(\hat f_b) + \sum_{b\ne b'}\Cov(\hat f_b,\hat f_{b'})\right]
+= \frac{1}{B^2}\Big[B\sigma^2 + B(B-1)\rho\sigma^2\Big],
+$$
+which simplifies to $\sigma^2\big(\rho + (1-\rho)/B\big)$.
+</Proof>
+
+<KeyIdea>
+The limit is $\rho\sigma^2$, not $0$. Averaging removes only the *independent* part of the variance;
+the correlated part survives no matter how many trees you grow. So after a few hundred trees, further
+averaging is wasted, and the only way to improve is to **reduce $\rho$**.
+
+That single observation is the entire design of random forests: in addition to bootstrap resampling
+(which decorrelates through the data), split on a random subset of $m \ll p$ features at each node
+(which decorrelates through the algorithm). The cost is an increase in $\sigma^2$ — each tree is
+worse — and the trade is favourable because the $\rho$ term dominates for large $B$. Breiman's $m$ of
+$\sqrt p$ for classification is a tuning of exactly this trade.
+</KeyIdea>
+
+## AdaBoost
+
+<Algorithm title="AdaBoost">
+<ol>
+<li><strong>Initialise</strong> weights $w_i^{(1)} = 1/n$.</li>
+<li><strong>For</strong> $t = 1,\dots,T$:</li>
+<li>  fit a weak classifier $h_t\in\{\pm1\}^\Xcal$ minimising the weighted error $\eps_t = \sum_i w_i^{(t)}\one\{h_t(x_i)\ne y_i\}$;</li>
+<li>  set $\beta_t = \tfrac12\log\dfrac{1-\eps_t}{\eps_t}$;</li>
+<li>  reweight $w_i^{(t+1)} \propto w_i^{(t)}\exp\big(-\beta_ty_ih_t(x_i)\big)$ and renormalise.</li>
+<li><strong>Output</strong> $F_T(x) = \sum_{t\le T}\beta_th_t(x)$, classified by $\sign F_T$.</li>
+</ol>
+</Algorithm>
+
+<Theorem id="adaboost-exponential" title="AdaBoost is coordinate descent on the exponential loss">
+Consider minimising
+$$
+\mathcal{E}(F) = \frac1n\sum_{i=1}^n\exp\big(-y_iF(x_i)\big)
+$$
+over additive models $F = \sum_t\beta_th_t$. Then at each round, the $h$ minimising
+$\mathcal{E}(F_{t-1}+\beta h)$ to first order in $\beta$ is the minimiser of the weighted error with
+weights $w_i^{(t)}\propto e^{-y_iF_{t-1}(x_i)}$, and the exact minimising step size is
+$\beta_t = \tfrac12\log\frac{1-\eps_t}{\eps_t}$.
+</Theorem>
+
+<Proof>
+**The weights.** Write $w_i \propto e^{-y_iF_{t-1}(x_i)}$, normalised to sum to $1$. Then
+$$
+\mathcal{E}(F_{t-1}+\beta h) \propto \sum_i w_i e^{-\beta y_ih(x_i)}
+= e^{-\beta}\!\!\sum_{i : h(x_i)=y_i}\!\! w_i + e^{\beta}\!\!\sum_{i:h(x_i)\ne y_i}\!\! w_i
+= e^{-\beta}(1-\eps) + e^\beta\eps ,
+$$
+where $\eps = \sum_{i:h(x_i)\ne y_i}w_i$ is the weighted error, and we used
+$y_ih(x_i)\in\{\pm1\}$. For any fixed $\beta>0$ this is increasing in $\eps$, so the best $h$ is the
+one minimising weighted error — which is exactly step 3.
+
+**The step size.** Minimise $\varphi(\beta) = e^{-\beta}(1-\eps)+e^\beta\eps$ over $\beta$:
+$$
+\varphi'(\beta) = -e^{-\beta}(1-\eps) + e^\beta\eps = 0
+\ \Longleftrightarrow\
+e^{2\beta} = \frac{1-\eps}{\eps}
+\ \Longleftrightarrow\
+\beta = \frac12\log\frac{1-\eps}{\eps},
+$$
+which is step 4. And the reweighting in step 5 is precisely the update of $w_i\propto e^{-y_iF_t(x_i)}$
+given $F_t = F_{t-1}+\beta_th_t$.
+</Proof>
+
+<KeyIdea>
+AdaBoost was invented from a learning-theoretic question ("can weak learners be combined into a
+strong one?") and only later recognised as coordinate descent on the exponential loss. The
+recognition is what generalised it: once you know the algorithm is minimising a loss by greedy
+stagewise fitting, you can swap the loss, and gradient boosting is what you get.
+</KeyIdea>
+
+<Theorem id="adaboost-training-error" title="AdaBoost drives training error to zero exponentially">
+If each weak learner satisfies $\eps_t \le \tfrac12-\gamma$ for some $\gamma>0$, then the training
+error of $F_T$ satisfies
+$$
+\frac1n\sum_i\one\{\sign F_T(x_i)\ne y_i\} \le \exp\big(-2\gamma^2T\big) .
+$$
+</Theorem>
+
+<Proof>
+**Step 1: the loss dominates the error.** $\one\{u\le0\}\le e^{-u}$ for all $u$, so
+$$
+\frac1n\sum_i\one\{y_iF_T(x_i)\le0\} \le \frac1n\sum_ie^{-y_iF_T(x_i)} = \mathcal{E}(F_T)
+= \prod_{t=1}^T Z_t ,
+$$
+where $Z_t$ is the normalisation constant of the reweighting at round $t$ — the product telescopes
+because $\mathcal{E}(F_T) = \prod_t Z_t \cdot \mathcal{E}(F_0)$ and $\mathcal{E}(F_0)=1$.
+
+**Step 2: bound each $Z_t$.** From the computation in the previous proof,
+$Z_t = e^{-\beta_t}(1-\eps_t) + e^{\beta_t}\eps_t$, and substituting the optimal
+$\beta_t$ gives $e^{\beta_t} = \sqrt{(1-\eps_t)/\eps_t}$, hence
+$$
+Z_t = 2\sqrt{\eps_t(1-\eps_t)} .
+$$
+
+**Step 3: the weak learning assumption.** With $\eps_t = \tfrac12-\gamma_t$ and $\gamma_t\ge\gamma$,
+$$
+Z_t = 2\sqrt{\left(\tfrac12-\gamma_t\right)\left(\tfrac12+\gamma_t\right)} = \sqrt{1-4\gamma_t^2}
+\le e^{-2\gamma_t^2}\le e^{-2\gamma^2},
+$$
+using $\sqrt{1-u}\le e^{-u/2}$. Multiplying over $t$ gives $\prod_tZ_t \le e^{-2\gamma^2T}$.
+</Proof>
+
+## Gradient boosting
+
+<Proposition id="gradient-boosting" title="Gradient boosting is gradient descent in function space">
+Let $L(y,F)$ be differentiable in $F$ and consider minimising
+$\frac1n\sum_iL(y_i,F(x_i))$ over $F$ in the span of a base class $\mathcal{B}$. Regard the objective
+as a function of the vector $\big(F(x_1),\dots,F(x_n)\big)\in\R^n$; its negative gradient has
+components
+$$
+r_i = -\frac{\partial L(y_i,F(x_i))}{\partial F(x_i)} .
+$$
+Fitting $h_t\in\mathcal{B}$ by least squares to $(x_i,r_i)$ and taking
+$F_t = F_{t-1}+\nu\beta_th_t$ is a projected gradient step in this $n$-dimensional space, with
+$\nu$ the learning rate.
+</Proposition>
+
+<Proof>
+The objective depends on $F$ only through its values on the training points, so it is a function
+$\R^n\to\R$ and its gradient is the vector $(-r_i)$. An unconstrained gradient step would set
+$F(x_i) \leftarrow F(x_i)+\nu r_i$, which is not realisable by an element of $\mathcal{B}$. The
+closest realisable direction in the Euclidean metric on $\R^n$ is
+$$
+h_t = \argmin_{h\in\mathcal{B}}\sum_{i=1}^n\big(r_i - h(x_i)\big)^2,
+$$
+which is exactly the least-squares fit to the residuals — i.e. the projection of the gradient onto
+the base class. The coefficient $\beta_t$ is then chosen by line search along that direction.
+</Proof>
+
+Reading the residuals for common losses:
+
+| Loss $L(y,F)$ | Negative gradient $r_i$ |
+| --- | --- |
+| $\tfrac12(y-F)^2$ | $y_i - F_i$ — the ordinary residual |
+| $\log(1+e^{-yF})$ | $y_i\,\sigma(-y_iF_i)$ — residual weighted by uncertainty |
+| $e^{-yF}$ | $y_ie^{-y_iF_i}$ — recovers AdaBoost |
+| $\abs{y-F}$ | $\sign(y_i-F_i)$ — robust, ignores outlier magnitude |
+
+<Note title="XGBoost in one line of mathematics">
+XGBoost replaces the first-order step with a second-order one: expand
+$L(y_i, F_i + h(x_i))$ to second order in $h$,
+$$
+\sum_i\left[g_ih(x_i) + \tfrac12 h_ih(x_i)^2\right] + \Omega(h),
+\qquad g_i = \partial_F L,\ h_i = \partial^2_F L ,
+$$
+and minimise this weighted quadratic plus a tree-complexity penalty $\Omega$ exactly over tree
+structures. Because the objective is now a sum of per-leaf quadratics, the optimal leaf value has a
+closed form $-\sum_{i\in\text{leaf}}g_i / (\sum_{i\in\text{leaf}}h_i+\lambda)$ and the split gain does
+too — which is what makes the greedy search fast. The relationship to plain gradient boosting is
+exactly the relationship of
+<TopicRef id="advanced-optimization/second-order-methods">Newton's method</TopicRef> to gradient
+descent.
+</Note>
+
+<Claim kind="empirical" id="boosting-overfitting" title="Boosting resists overfitting longer than expected">
+Boosted ensembles often continue to improve on test data long after the training error has reached
+zero, and adding hundreds more rounds frequently does not hurt.
+</Claim>
+
+<NotSaid>
+The training-error theorem above says nothing about test error, and a naive capacity argument would
+predict severe overfitting: $T$ rounds of trees is a large hypothesis class. The partial explanation
+is **margin theory**: Schapire and co-authors showed that boosting continues to increase the margin
+distribution $y_iF_T(x_i)/\sum_t\beta_t$ after the training error hits zero, and there are
+margin-based generalisation bounds analogous to the
+<TopicRef id="machine-learning/support-vector-machines">SVM margin bound</TopicRef> that are
+independent of $T$.
+
+This is a genuine explanation but not a complete one: the margin bounds are numerically loose, there
+are constructed examples where a larger minimum margin gives worse generalisation, and boosting with
+a very flexible base learner and noisy labels does overfit. The practical rules — shrinkage
+$\nu\approx0.1$, shallow trees, early stopping on a validation set — are empirical, and gradient
+boosting remains the strongest method on tabular data for reasons that are not fully characterised.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="tr-impurity-concavity" />
+<ProblemRef id="tr-bagging-variance" />
+<ProblemRef id="tr-adaboost-step" />
+<ProblemRef id="tr-adaboost-error" />
+<ProblemRef id="tr-gradient-boosting-residuals" />

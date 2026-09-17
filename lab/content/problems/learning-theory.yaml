@@ -1,0 +1,691 @@
+defaults:
+  field: learning-theory
+problems:
+  - id: lt-erm-decomposition
+    title: The excess risk decomposition for ERM
+    topic: learning-theory/erm-and-uniform-convergence
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [erm, decomposition, uniform convergence]
+    statement: |
+      Prove that the ERM solution satisfies
+      $R(\hat h) - \inf_{h\in\Hcal}R(h)\le2\Delta_n$ where
+      $\Delta_n = \sup_{h\in\Hcal}|R(h)-\hat R_n(h)|$, and explain why the factor $2$ is necessary.
+    solution: |
+      Let $h^\star\in\arg\min_{h\in\Hcal}R(h)$. Chain three inequalities:
+      $$
+      R(\hat h) \ \overset{(1)}{\le}\ \hat R_n(\hat h)+\Delta_n
+      \ \overset{(2)}{\le}\ \hat R_n(h^\star)+\Delta_n
+      \ \overset{(3)}{\le}\ R(h^\star)+2\Delta_n .
+      $$
+      (1) and (3) are the definition of $\Delta_n$ applied at $\hat h$ and at $h^\star$ respectively;
+      (2) is the definition of $\hat h$ as an empirical minimiser. Subtracting $R(h^\star)$ gives the
+      claim.
+
+      **Why the factor $2$.** Two separate errors are being paid. The empirical risk may
+      **underestimate** $R(\hat h)$ — the selected hypothesis looks better on the sample than it is —
+      and it may **overestimate** $R(h^\star)$ — the truly best hypothesis looks worse than it is.
+      Both effects push in the direction of choosing the wrong hypothesis, and each contributes
+      $\Delta_n$. A one-sided bound would control only the first.
+
+      Note also that the argument is completely independent of how $\hat h$ was found: any
+      approximate minimiser with $\hat R_n(\hat h)\le\hat R_n(h^\star)+\epsilon$ gives
+      $R(\hat h)\le R(h^\star)+2\Delta_n+\epsilon$.
+
+  - id: lt-finite-class-bound
+    title: Generalisation for a finite class
+    topic: learning-theory/erm-and-uniform-convergence
+    difficulty: beginner
+    type: proof
+    estimated_time: 30m
+    tags: [finite class, union bound, hoeffding]
+    statement: |
+      Prove that for $|\Hcal| = N$ and losses in $[0,1]$, with probability at least $1-\delta$,
+      $$
+      \sup_{h\in\Hcal}\big|R(h)-\hat R_n(h)\big| \le \sqrt{\frac{\log(2N/\delta)}{2n}} .
+      $$
+      Then compute the sample size needed for $\Delta_n\le0.01$ at $\delta = 0.05$ with
+      $N = 2^{10^6}$ (a million binary parameters).
+    solution: |
+      **Proof.** Fix $h$. The losses $\ell(h(x_i),y_i)$ are i.i.d. in $[0,1]$ with mean $R(h)$, so
+      Hoeffding gives $\P(|R(h)-\hat R_n(h)|\ge t)\le2e^{-2nt^2}$. Union bounding over the $N$
+      hypotheses,
+      $$
+      \P\big(\Delta_n\ge t\big) \le 2Ne^{-2nt^2}.
+      $$
+      Setting the right side to $\delta$ and solving for $t$ gives
+      $t = \sqrt{\log(2N/\delta)/(2n)}$.
+
+      **Numerical.** With $N = 2^{10^6}$, $\log N = 10^6\log2\approx6.93\times10^5$, and
+      $\log(2/\delta) = \log40\approx3.7$, so $\log(2N/\delta)\approx6.93\times10^5$. Then
+      $$
+      n \ge \frac{\log(2N/\delta)}{2t^2} = \frac{6.93\times10^5}{2\times10^{-4}} \approx 3.5\times10^9 .
+      $$
+
+      **Comment.** Roughly $3500$ samples per parameter for a $1\%$ uniform guarantee — the classical
+      "you need more data than parameters" intuition, made quantitative. The logarithmic dependence on
+      $N$ is what keeps this merely expensive rather than impossible: a class ten times larger costs
+      only $\log 10$ more in the numerator. Note also that this bound is **vacuous** for modern
+      networks with $10^9$ parameters trained on $10^6$ examples, which is the starting point of the
+      discussion about whether uniform convergence can explain deep learning at all.
+
+  - id: lt-realizable-rate
+    title: The fast rate in the realizable case
+    topic: learning-theory/erm-and-uniform-convergence
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [realizable, fast rate, multiplicative bound]
+    statement: |
+      Prove that if some $h^\star\in\Hcal$ has zero risk and $|\Hcal|=N$, then any ERM solution
+      satisfies $R(\hat h)\le\log(N/\delta)/n$ with probability at least $1-\delta$ — a $1/n$ rate
+      rather than $1/\sqrt n$. Explain where the improvement comes from.
+    solution: |
+      **Proof.** Call $h$ **bad** if $R(h)>\eps$. For a bad $h$ to have zero empirical risk, it must
+      classify all $n$ samples correctly, which by independence happens with probability
+      $$
+      \big(1-R(h)\big)^n \le (1-\eps)^n \le e^{-n\eps}.
+      $$
+      Union bounding over the at most $N$ bad hypotheses,
+      $$
+      \P\big(\exists\text{ bad }h\text{ with }\hat R_n(h)=0\big) \le Ne^{-n\eps}.
+      $$
+      Since $h^\star$ has zero empirical risk, ERM returns some hypothesis with zero empirical risk. On
+      the complement of the above event, every such hypothesis has risk at most $\eps$. Setting
+      $Ne^{-n\eps} = \delta$ gives $\eps = \log(N/\delta)/n$.
+
+      **Where the improvement comes from.** Hoeffding's two-sided bound $2e^{-2nt^2}$ is calibrated to
+      the worst-case variance $1/4$ of a $[0,1]$ variable. But a hypothesis with small risk $R(h)$ has
+      small variance $R(h)(1-R(h))\approx R(h)$, and the *multiplicative* form of the Chernoff bound
+      exploits this: the probability of seeing zero errors in $n$ trials with error rate $\eps$ is
+      $e^{-n\eps}$, not $e^{-n\eps^2}$.
+
+      This is the simplest instance of a **fast rate under a low-noise condition**. More generally,
+      Bernstein-type conditions relating the variance of the loss to its mean give rates interpolating
+      between $1/\sqrt n$ and $1/n$. It is also the reason interpolating classifiers are not
+      automatically suspect: when the problem really is realizable, fitting exactly is optimal.
+
+  - id: lt-no-free-lunch
+    title: The no-free-lunch theorem
+    topic: learning-theory/erm-and-uniform-convergence
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [no free lunch, inductive bias, lower bound]
+    statement: |
+      Let $|\Xcal| = 2m$ and $\Hcal$ be all functions $\Xcal\to\{0,1\}$. Prove that for any learning
+      algorithm $\mathcal A$ using $n\le m$ samples there is a distribution on which
+      $\E_S\big[R(\mathcal A(S))\big]\ge1/4$, while some $h\in\Hcal$ has zero risk. State the
+      philosophical consequence precisely.
+    solution: |
+      **Construction.** For each $f:\Xcal\to\{0,1\}$ let $\Dcal_f$ be uniform on $\Xcal$ in $x$ with
+      $y = f(x)$ deterministically. Each $\Dcal_f$ is realizable by $f\in\Hcal$, so the Bayes risk is
+      $0$.
+
+      **Averaging argument.** Draw $f$ uniformly from the $2^{2m}$ functions and average the algorithm's
+      risk:
+      $$
+      \E_f\,\E_{S\sim\Dcal_f^n}\big[R(\mathcal A(S))\big]
+      = \E_f\E_S\E_{x}\big[\one\{\mathcal A(S)(x)\ne f(x)\}\big].
+      $$
+      Exchange the order and condition on whether $x$ appears in $S$. Since $|S|=n\le m$ and
+      $|\Xcal| = 2m$, at least $m$ points are unseen, so $\P(x\notin S)\ge m/(2m) = 1/2$.
+
+      For an unseen $x$, the value $f(x)$ is independent of everything the algorithm observed (the
+      labels of the sampled points say nothing about $f(x)$, since $f$ is uniform over all functions
+      and its values at distinct points are independent). So conditionally, $f(x)$ is a fair coin flip
+      and
+      $$
+      \P\big(\mathcal A(S)(x)\ne f(x)\ \big|\ x\notin S\big) = \tfrac12 .
+      $$
+      Therefore
+      $$
+      \E_f\E_S\big[R(\mathcal A(S))\big] \ \ge\ \tfrac12\cdot\tfrac12 = \tfrac14 .
+      $$
+      An average over $f$ of at least $1/4$ implies some particular $f$ achieves at least $1/4$, which
+      is the claim.
+
+      **Consequence, precisely stated.** There is no algorithm that learns *every* target function from
+      a sample smaller than the domain. Therefore every algorithm that works must encode assumptions
+      restricting the set of plausible targets — through the hypothesis class, the regulariser, the
+      architecture, or the optimiser's implicit preferences. "This method makes no assumptions" is
+      always false; the question is only what the assumptions are, and whether they match the problem.
+
+      Note what the theorem does **not** say: it does not say learning is hopeless, nor that all
+      inductive biases are equally good. It says a bias is necessary, and it says nothing about which
+      one to choose.
+
+  - id: lt-symmetrisation
+    title: The symmetrisation lemma
+    topic: learning-theory/erm-and-uniform-convergence
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [symmetrisation, ghost sample, rademacher, flagship]
+    statement: |
+      Prove that for a class $\mathcal G$ of functions into $[0,1]$,
+      $$
+      \E_S\left[\sup_{g\in\mathcal G}\Big(\E g - \frac1n\sum_ig(x_i)\Big)\right]
+      \le 2\,\E_{S,\eps}\left[\sup_{g\in\mathcal G}\frac1n\sum_i\eps_ig(x_i)\right].
+      $$
+      Identify precisely where the ghost sample is introduced, where Jensen is used, and where the
+      symmetry of the Rademacher signs is used.
+    solution: |
+      **Step 1: the ghost sample.** Let $S' = (x_1',\dots,x_n')$ be an independent copy of $S$. Since
+      $\E g = \E_{S'}\big[\frac1n\sum_ig(x_i')\big]$,
+      $$
+      \E_S\sup_g\Big(\E g - \tfrac1n\textstyle\sum_ig(x_i)\Big)
+      = \E_S\sup_g\ \E_{S'}\Big[\tfrac1n\textstyle\sum_i\big(g(x_i')-g(x_i)\big)\Big].
+      $$
+
+      **Step 2: Jensen.** The supremum is a convex functional, so it exchanges with the inner
+      expectation at the cost of an inequality:
+      $$
+      \le\ \E_{S,S'}\sup_g \tfrac1n\textstyle\sum_i\big(g(x_i')-g(x_i)\big).
+      $$
+      (Concretely: $\sup_g\E_{S'}[\cdot]\le\E_{S'}\sup_g[\cdot]$.)
+
+      **Step 3: symmetry.** For each index $i$ independently, the pair $(x_i,x_i')$ has the same joint
+      distribution as $(x_i',x_i)$, because both are i.i.d. from the same law. Swapping them flips the
+      sign of the $i$-th summand. Hence for **any fixed** sign vector $\eps\in\{\pm1\}^n$,
+      $$
+      \E_{S,S'}\sup_g \tfrac1n\textstyle\sum_i\big(g(x_i')-g(x_i)\big)
+      = \E_{S,S'}\sup_g \tfrac1n\textstyle\sum_i\eps_i\big(g(x_i')-g(x_i)\big),
+      $$
+      and therefore also after averaging over uniformly random $\eps$.
+
+      **Step 4: split.** Subadditivity of the supremum gives
+      $$
+      \sup_g\tfrac1n\textstyle\sum_i\eps_i\big(g(x_i')-g(x_i)\big)
+      \le \sup_g\tfrac1n\textstyle\sum_i\eps_ig(x_i') + \sup_g\tfrac1n\textstyle\sum_i(-\eps_i)g(x_i).
+      $$
+      Taking expectations, the two terms are equal by symmetry of $\eps$ (and because $S,S'$ have the
+      same law), each equal to $\E_{S,\eps}\sup_g\frac1n\sum_i\eps_ig(x_i) = \mathfrak R_n(\mathcal G)$.
+      Hence the total is $2\mathfrak R_n(\mathcal G)$.
+
+      **Why this is the right move.** The left-hand side involves the unknown population expectation
+      $\E g$ and is therefore not directly computable. The right-hand side involves only the sample and
+      independent coin flips — it measures how well the class can fit **pure noise** on the observed
+      data. The entire difficulty of a generalisation bound is thereby transferred to a quantity that
+      depends only on the class's richness, and which can be bounded by combinatorial (Sauer) or
+      geometric (norm-based) arguments.
+
+  - id: vc-sauer-proof
+    title: Prove the Sauer–Shelah lemma
+    topic: learning-theory/vc-dimension-and-rademacher
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [sauer, shattering, induction, growth function, flagship]
+    statement: |
+      Prove that a class of VC dimension $d$ has growth function
+      $\Pi_\Hcal(n)\le\sum_{k=0}^d\binom nk \le (en/d)^d$ for $n\ge d$. Use the shifting/induction
+      argument that proves the stronger statement: any set family shatters at least as many sets as it
+      has members.
+    hints:
+      - Prove the stronger claim - the number of sets shattered by a family is at least the size of the family.
+      - Induct on the ground set by splitting the family according to its behaviour on one element.
+      - The two sub-families produce disjoint collections of shattered sets.
+    solution: |
+      **The stronger claim.** For a finite ground set $C$ and a family $\mathcal F\subseteq\{0,1\}^C$,
+      $$
+      |\mathcal F| \le \big|\{B\subseteq C : \mathcal F \text{ shatters } B\}\big| . \tag{$\star$}
+      $$
+      Granting $(\star)$: if $\mathcal F = \Hcal|_C$ has VC dimension $\le d$ it shatters no set of size
+      $>d$, so the right side is at most $\sum_{k\le d}\binom{|C|}{k}$, giving the lemma.
+
+      **Proof of $(\star)$ by induction on $|C|$.** For $|C|=0$ both sides are $1$.
+
+      Let $|C| = n\ge1$, pick $x\in C$ and set $C' = C\setminus\{x\}$. Define
+      $$
+      \mathcal F_0 = \{f|_{C'} : f\in\mathcal F\},
+      \qquad
+      \mathcal F_1 = \{f|_{C'} : \text{both extensions of } f|_{C'} \text{ to } x \text{ lie in }\mathcal F\}.
+      $$
+
+      *Counting.* $|\mathcal F| = |\mathcal F_0|+|\mathcal F_1|$: each restriction in $\mathcal F_0$
+      accounts for at least one member of $\mathcal F$, and those realised by *two* members (i.e. with
+      both extensions present) are counted once more by $\mathcal F_1$.
+
+      *Inductive hypothesis.* Both $\mathcal F_0$ and $\mathcal F_1$ live on $C'$, so
+      $$
+      |\mathcal F_0|\le\#\{B\subseteq C' : \mathcal F_0\text{ shatters }B\},
+      \qquad
+      |\mathcal F_1|\le\#\{B\subseteq C' : \mathcal F_1\text{ shatters }B\}.
+      $$
+
+      *Transferring to $\mathcal F$.* Two observations.
+      - If $\mathcal F_0$ shatters $B\subseteq C'$, so does $\mathcal F$: restriction cannot create labellings that $\mathcal F$ does not already realise on $B$.
+      - If $\mathcal F_1$ shatters $B\subseteq C'$, then $\mathcal F$ shatters $B\cup\{x\}$. Indeed, every labelling of $B$ realised in $\mathcal F_1$ is realised in $\mathcal F$ with **both** possible values at $x$, by the definition of $\mathcal F_1$.
+
+      The two resulting collections of $\mathcal F$-shattered sets are **disjoint**: those from
+      $\mathcal F_1$ all contain $x$, those from $\mathcal F_0$ do not. Hence
+      $$
+      |\mathcal F| = |\mathcal F_0|+|\mathcal F_1| \le \#\{B\subseteq C : \mathcal F\text{ shatters }B\},
+      $$
+      completing the induction.
+
+      **The numerical bound.** For $n\ge d$,
+      $$
+      \sum_{k=0}^d\binom nk \le \left(\frac nd\right)^d\sum_{k=0}^d\binom nk\left(\frac dn\right)^k
+      \le \left(\frac nd\right)^d\left(1+\frac dn\right)^n \le \left(\frac nd\right)^de^d = \left(\frac{en}{d}\right)^d ,
+      $$
+      using $(d/n)^{k-d}\ge1$ for $k\le d$, the binomial theorem, and $1+u\le e^u$.
+
+      **Why the result is striking.** $\Pi_\Hcal(n)$ equals $2^n$ for $n\le d$ and is at most
+      polynomial $O(n^d)$ for $n>d$ — there is **no intermediate behaviour**. That dichotomy is what
+      makes VC theory work: substituting $\log\Pi_\Hcal(n) = O(d\log n)$ for $\log N$ in the
+      finite-class bound gives something useful, whereas $\log2^n = n$ would give nothing.
+
+  - id: vc-halfspace-dimension
+    title: VC dimension of halfspaces
+    topic: learning-theory/vc-dimension-and-rademacher
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [vc dimension, halfspace, radon]
+    statement: |
+      Prove that homogeneous halfspaces $\{x\mapsto\sign\langle w,x\rangle\}$ in $\R^d$ have VC
+      dimension exactly $d$, and that with a bias term the dimension is $d+1$.
+    solution: |
+      **Lower bound: $d$ points are shattered.** Take $x_i = e_i$. For any target labelling
+      $y\in\{\pm1\}^d$ choose $w = y$; then $\sign\langle w,e_i\rangle = \sign(y_i) = y_i$. So the
+      standard basis is shattered, giving $\mathrm{VC}\ge d$.
+
+      **Upper bound: no $d+1$ points are shattered.** Let $x_1,\dots,x_{d+1}\in\R^d$. Being $d+1$
+      vectors in a $d$-dimensional space they are linearly dependent: there are $a_i$, not all zero,
+      with $\sum_ia_ix_i = 0$. Let $P = \{i:a_i>0\}$ and $N = \{i:a_i<0\}$; at least one is non-empty,
+      and we may assume both are (otherwise the argument below runs with an empty sum).
+
+      Consider the labelling $y_i = +1$ on $P$ and $y_i = -1$ on $N$ (arbitrary on $\{a_i = 0\}$).
+      Suppose some $w$ realises it, so $\langle w,x_i\rangle>0$ for $i\in P$ and $<0$ for $i\in N$.
+      Then
+      $$
+      0 = \Big\langle w, \sum_ia_ix_i\Big\rangle = \underbrace{\sum_{i\in P}a_i\langle w,x_i\rangle}_{>0} + \underbrace{\sum_{i\in N}a_i\langle w,x_i\rangle}_{>0} > 0,
+      $$
+      the second sum positive because a negative $a_i$ multiplies a negative inner product. This is a
+      contradiction, so that labelling is unattainable and no $d+1$ points are shattered.
+
+      **With a bias.** Lift to $\R^{d+1}$ via $x\mapsto(x,1)$; affine halfspaces in $\R^d$ correspond to
+      homogeneous halfspaces in $\R^{d+1}$, which have VC dimension $d+1$ by the above. The lower bound
+      is attained by $\{0,e_1,\dots,e_d\}$.
+
+      **A caution.** Here $\mathrm{VC} = $ number of parameters, but that coincidence is not a theorem:
+      the one-parameter class $\{x\mapsto\sign\sin(\omega x)\}$ has infinite VC dimension, as the next
+      problem shows.
+
+  - id: vc-sine-infinite
+    title: A one-parameter class with infinite VC dimension
+    topic: learning-theory/vc-dimension-and-rademacher
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [vc dimension, counterexample, parameter counting]
+    statement: |
+      Show that $\Hcal = \{x\mapsto\sign\sin(\omega x) : \omega>0\}$ shatters arbitrarily large finite
+      subsets of $\R$, hence has infinite VC dimension despite having one real parameter. Conclude that
+      capacity is not parameter count.
+    hints:
+      - Take the points $x_i = 2^{-i}$ for $i = 1,\dots,n$.
+      - Given a target labelling, construct $\omega$ from its binary digits.
+    solution: |
+      **Construction.** Take $x_i = 2^{-i}$ for $i=1,\dots,n$, and a target labelling
+      $y\in\{-1,+1\}^n$. Define bits $b_i = \tfrac{1-y_i}{2}\in\{0,1\}$ (so $b_i=0$ means $y_i=+1$) and
+      set
+      $$
+      \omega = \pi\left(1 + \sum_{j=1}^n b_j2^{j}\right).
+      $$
+      Then
+      $$
+      \omega x_i = \pi\left(2^{-i} + \sum_{j=1}^n b_j2^{j-i}\right)
+      = \pi\Big(\underbrace{\textstyle\sum_{j>i}b_j2^{j-i}}_{\text{even integer}} + b_i + \underbrace{2^{-i}+\textstyle\sum_{j<i}b_j2^{j-i}}_{=:\ r_i\in(0,1)}\Big).
+      $$
+      The first group is an even integer times $\pi$, which does not affect the sign of the sine. So
+      $$
+      \sign\sin(\omega x_i) = \sign\sin\big(\pi(b_i + r_i)\big),
+      $$
+      and since $r_i\in(0,1)$: if $b_i = 0$ the argument is in $(0,\pi)$ and the sine is positive; if
+      $b_i=1$ it is in $(\pi,2\pi)$ and the sine is negative. Hence
+      $\sign\sin(\omega x_i) = y_i$ for every $i$.
+
+      (The check $r_i\in(0,1)$: $r_i = 2^{-i}+\sum_{j<i}b_j2^{j-i} \le 2^{-i}+\sum_{j<i}2^{j-i} = 2^{-i} + 1 - 2^{1-i} < 1$.)
+
+      **Conclusion.** For every $n$ there is a set of $n$ points shattered by $\Hcal$, so
+      $\mathrm{VC}(\Hcal)=\infty$, even though $\Hcal$ is parameterised by a single real number.
+
+      **Why parameter counting fails.** A single real number contains infinitely many bits, and the map
+      $\omega\mapsto$ (labelling) can extract them. VC dimension measures the richness of the set of
+      realisable labellings, not the dimension of the parameterisation. The two agree for "nice"
+      classes such as halfspaces and polynomials, and they can diverge arbitrarily otherwise. This is
+      also a caution for the deep learning setting: counting parameters says nothing directly about
+      capacity in the VC sense, in either direction.
+
+  - id: vc-massart-lemma
+    title: Massart's finite maximal inequality
+    topic: learning-theory/vc-dimension-and-rademacher
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [massart, maximal inequality, rademacher, mgf]
+    statement: |
+      Let $A\subseteq\R^n$ be finite with $\|a\|_2\le r$ for all $a\in A$, and let $\eps$ be a Rademacher
+      vector. Prove
+      $$
+      \E\max_{a\in A}\langle\eps,a\rangle \le r\sqrt{2\log|A|} .
+      $$
+      Deduce a bound on the Rademacher complexity of a class with growth function $\Pi(n)$.
+    solution: |
+      **Proof.** For $\lambda>0$, by Jensen applied to the convex $\exp$,
+      $$
+      \exp\Big(\lambda\,\E\max_a\langle\eps,a\rangle\Big) \le \E\exp\Big(\lambda\max_a\langle\eps,a\rangle\Big)
+      = \E\max_a e^{\lambda\langle\eps,a\rangle} \le \sum_{a\in A}\E e^{\lambda\langle\eps,a\rangle} .
+      $$
+      Each $\langle\eps,a\rangle = \sum_i\eps_ia_i$ is a weighted sum of independent Rademacher signs;
+      by Hoeffding's lemma applied coordinatewise and independence,
+      $$
+      \E e^{\lambda\langle\eps,a\rangle} = \prod_i\E e^{\lambda\eps_ia_i} \le \prod_ie^{\lambda^2a_i^2/2} = e^{\lambda^2\|a\|_2^2/2}\le e^{\lambda^2r^2/2}.
+      $$
+      Hence
+      $$
+      \exp\Big(\lambda\E\max_a\langle\eps,a\rangle\Big) \le |A|e^{\lambda^2r^2/2},
+      $$
+      so taking logarithms and dividing by $\lambda$,
+      $$
+      \E\max_a\langle\eps,a\rangle \le \frac{\log|A|}{\lambda}+\frac{\lambda r^2}{2}.
+      $$
+      Minimising over $\lambda>0$ at $\lambda = \sqrt{2\log|A|}/r$ gives $r\sqrt{2\log|A|}$.
+
+      **Application to a binary class.** Let $A = \Hcal|_S\subseteq\{\pm1\}^n$, so $r = \sqrt n$ and
+      $|A|\le\Pi_\Hcal(n)$. Then
+      $$
+      \hat{\mathfrak R}_S(\Hcal) = \frac1n\,\E\max_{a\in A}\langle\eps,a\rangle
+      \le \frac{\sqrt n\sqrt{2\log\Pi_\Hcal(n)}}{n} = \sqrt{\frac{2\log\Pi_\Hcal(n)}{n}} .
+      $$
+      With Sauer's lemma, $\log\Pi_\Hcal(n)\le d\log(en/d)$, giving
+      $\hat{\mathfrak R}_S(\Hcal)\le\sqrt{2d\log(en/d)/n}$ — the VC bound, recovered through the
+      Rademacher route.
+
+      **Note the $\sqrt{\log|A|}$.** The maximum of $N$ sub-Gaussian variables of parameter $r$ is
+      $O(r\sqrt{\log N})$, not $O(rN)$: taking a maximum over many variables costs only the square root
+      of a logarithm. That is the same phenomenon as the $\log N$ in Johnson–Lindenstrauss, and it is
+      why union bounds over exponentially large sets are still affordable.
+
+  - id: vc-linear-rademacher
+    title: Rademacher complexity of a norm-bounded linear class
+    topic: learning-theory/vc-dimension-and-rademacher
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [rademacher, linear class, dimension free, margin]
+    statement: |
+      Let $\Fcal_B = \{x\mapsto\langle w,x\rangle : \|w\|_2\le B\}$ and suppose $\|x_i\|_2\le R$.
+      Prove $\hat{\mathfrak R}_S(\Fcal_B)\le BR/\sqrt n$, and observe that the bound does not involve
+      the dimension. Explain the consequence for kernel methods.
+    solution: |
+      **Proof.**
+      $$
+      \hat{\mathfrak R}_S(\Fcal_B) = \E_\eps\sup_{\|w\|_2\le B}\frac1n\sum_i\eps_i\langle w,x_i\rangle
+      = \E_\eps\sup_{\|w\|_2\le B}\Big\langle w,\ \frac1n\sum_i\eps_ix_i\Big\rangle
+      = \frac Bn\,\E_\eps\Big\|\sum_i\eps_ix_i\Big\|_2 ,
+      $$
+      using $\sup_{\|w\|_2\le B}\langle w,v\rangle = B\|v\|_2$ (attained at $w = Bv/\|v\|_2$).
+
+      By Jensen (concavity of $\sqrt\cdot$) and independence of the signs,
+      $$
+      \E_\eps\Big\|\sum_i\eps_ix_i\Big\|_2 \le \sqrt{\E_\eps\Big\|\sum_i\eps_ix_i\Big\|_2^2}
+      = \sqrt{\sum_{i,j}\E[\eps_i\eps_j]\langle x_i,x_j\rangle} = \sqrt{\sum_i\|x_i\|_2^2} \le R\sqrt n ,
+      $$
+      since $\E[\eps_i\eps_j] = \delta_{ij}$. Hence
+      $\hat{\mathfrak R}_S(\Fcal_B)\le \frac Bn\cdot R\sqrt n = BR/\sqrt n$.
+
+      **No dimension.** The bound involves only $B$, $R$ and $n$. A linear class in $\R^{10^6}$ with
+      $\|w\|_2\le B$ has the same complexity bound as one in $\R^2$. What limits capacity is the
+      product $BR$, not the number of coordinates.
+
+      **Consequence for kernels.** A kernel method works in a feature space that may be
+      infinite-dimensional, and its VC dimension there is infinite. Yet the Rademacher complexity is
+      $BR/\sqrt n$ with $B = \|f\|_{\Hcal_K}$ and $R = \sup_x\sqrt{K(x,x)}$ — both finite and both
+      controlled by the regulariser. So kernel methods can generalise despite infinite nominal
+      capacity, and the quantity that must be controlled is the RKHS norm. This is exactly what the
+      ridge penalty in kernel ridge regression and the $\frac12\|w\|^2$ in the SVM primal do.
+
+  - id: vc-margin-bound
+    title: Derive the margin generalisation bound
+    topic: learning-theory/vc-dimension-and-rademacher
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [margin bound, contraction, ramp loss, svm]
+    statement: |
+      Let $\Fcal_B$ be the norm-bounded linear class with $\|x_i\|_2\le R$, and fix $\gamma>0$. Prove
+      that with probability at least $1-\delta$, for all $f\in\Fcal_B$,
+      $$
+      \P\big(Yf(X)\le0\big) \le \frac1n\sum_i\one\{y_if(x_i)\le\gamma\} + \frac{2BR}{\gamma\sqrt n} + \sqrt{\frac{\log(1/\delta)}{2n}} .
+      $$
+      Identify the surrogate loss, its Lipschitz constant, and the role of the contraction lemma.
+    solution: |
+      **Step 1: the ramp surrogate.** Define
+      $$
+      \phi_\gamma(u) = \min\Big(1,\ \max\big(0,\ 1-\tfrac u\gamma\big)\Big),
+      $$
+      which is continuous, piecewise linear, $\tfrac1\gamma$-Lipschitz, takes values in $[0,1]$, and
+      satisfies the sandwich
+      $$
+      \one\{u\le0\} \ \le\ \phi_\gamma(u) \ \le\ \one\{u\le\gamma\}.
+      $$
+
+      **Step 2: Rademacher bound on the surrogate class.** Apply the Rademacher generalisation theorem
+      to $\mathcal G = \{(x,y)\mapsto\phi_\gamma(yf(x)) : f\in\Fcal_B\}$, whose members take values in
+      $[0,1]$:
+      $$
+      \E\big[\phi_\gamma(Yf(X))\big] \le \frac1n\sum_i\phi_\gamma(y_if(x_i)) + 2\mathfrak R_n(\mathcal G) + \sqrt{\frac{\log(1/\delta)}{2n}} .
+      $$
+
+      **Step 3: contraction.** Talagrand's lemma gives
+      $\mathfrak R_n(\phi_\gamma\circ\mathcal H)\le\tfrac1\gamma\mathfrak R_n(\mathcal H)$ for the
+      $\tfrac1\gamma$-Lipschitz $\phi_\gamma$, where $\mathcal H = \{(x,y)\mapsto yf(x)\}$. And
+      $\mathfrak R_n(\mathcal H) = \mathfrak R_n(\Fcal_B)$, because the signs $y_i$ can be absorbed into
+      the Rademacher variables: $(\eps_iy_i)_i$ is again an i.i.d. Rademacher vector. So
+      $$
+      \mathfrak R_n(\mathcal G) \le \frac1\gamma\,\mathfrak R_n(\Fcal_B) \le \frac{BR}{\gamma\sqrt n}.
+      $$
+
+      **Step 4: sandwich.** Apply the two sides of the sandwich: the left side of Step 2 is at least
+      $\P(Yf(X)\le0)$, and the empirical term is at most the empirical $\gamma$-margin error. Combining
+      gives the claim.
+
+      **Reading the bound.** It trades empirical margin error against $BR/(\gamma\sqrt n)$. Maximising
+      the margin $\gamma$ at bounded $\|w\|_2$ — exactly the SVM primal — directly minimises the second
+      term, so the SVM objective is derived from, not merely consistent with, this bound. And the
+      absence of the dimension means a kernel SVM in an infinite-dimensional feature space is still
+      covered, provided the margin is large relative to $BR$.
+
+      **Caveats.** $\gamma$ must be fixed before seeing the data (or a union bound over a grid paid);
+      $B$ and $R$ must be known a priori; and the bound is often numerically vacuous at realistic
+      values.
+
+  - id: dd-bias-variance-identity
+    title: The bias–variance decomposition is an identity
+    topic: learning-theory/bias-variance-and-double-descent
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [bias-variance, identity, squared loss]
+    statement: |
+      Prove that for $y = f^\star(x)+\varepsilon$ with $\E[\varepsilon\mid x]=0$,
+      $\Var(\varepsilon\mid x)=\sigma^2$, and an estimator $\hat f_S$ trained on a random sample,
+      $$
+      \E\big[(y-\hat f_S(x))^2\big] = \sigma^2 + \big(\E_S\hat f_S(x)-f^\star(x)\big)^2 + \Var_S\big(\hat f_S(x)\big).
+      $$
+      State explicitly which hypotheses are used and which are not.
+    solution: |
+      **Proof.** Write $\bar f(x) = \E_S\hat f_S(x)$ and decompose
+      $$
+      y - \hat f_S(x) = \varepsilon + \big(f^\star(x)-\bar f(x)\big) + \big(\bar f(x)-\hat f_S(x)\big).
+      $$
+      Square and take expectations over $S$ and $\varepsilon$, which are independent. The three cross
+      terms vanish:
+      - terms involving $\varepsilon$ die because $\E\varepsilon = 0$ and $\varepsilon\perp S$;
+      - the remaining cross term is $2(f^\star(x)-\bar f(x))\,\E_S[\bar f(x)-\hat f_S(x)] = 0$ by definition of $\bar f$.
+
+      The three squares are $\sigma^2$, $\mathrm{bias}^2$ and $\mathrm{variance}$.
+
+      **Hypotheses used.** Squared loss; zero-mean noise independent of the sample; finite second
+      moments. That is all.
+
+      **Hypotheses *not* used.** Nothing about the estimator — it may be any function of the sample,
+      linear or not, convex or not, and may even be randomised (absorb the randomness into $S$).
+      Nothing about the model class, and nothing about how capacity relates to the two terms.
+
+      **The consequence.** The identity is exact algebra. What is *not* implied is the folklore
+      **trade-off** — that increasing capacity must decrease bias and increase variance. That is a
+      description of classical model families, and the double-descent phenomenon is precisely a regime
+      where it fails while the identity above continues to hold exactly.
+
+  - id: dd-minimum-norm
+    title: Gradient descent finds the minimum-norm interpolator
+    topic: learning-theory/bias-variance-and-double-descent
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [implicit bias, minimum norm, gradient descent]
+    statement: |
+      Let $X\in\R^{n\times p}$ with $p>n$ and $\operatorname{rank}(X)=n$. Show that gradient descent on
+      $\tfrac12\|y-X\beta\|_2^2$ from $\beta_0 = 0$ converges to the minimum $\ell^2$-norm solution of
+      $X\beta=y$. What happens for $\beta_0\ne0$?
+    solution: |
+      **Iterates stay in the row space.** The update is
+      $$
+      \beta_{t+1} = \beta_t - \eta X^\top(X\beta_t-y),
+      $$
+      so every increment lies in $\operatorname{range}(X^\top) = \operatorname{row}(X)$. Starting from
+      $\beta_0 = 0$, induction gives $\beta_t\in\operatorname{row}(X)$ for all $t$.
+
+      **The limit interpolates.** With $\eta<2/\|X^\top X\|$ the iteration converges (it is gradient
+      descent on a convex quadratic, contracting on the row space and stationary on the kernel), and
+      the limit $\beta_\infty$ satisfies $X^\top(X\beta_\infty-y)=0$; since
+      $\operatorname{rank}(X)=n$, this forces $X\beta_\infty = y$.
+
+      **Minimality.** Let $\beta'$ be any other interpolator. Then
+      $X(\beta'-\beta_\infty)=0$, i.e. $\beta'-\beta_\infty\in\ker X = \operatorname{row}(X)^\perp$.
+      Since $\beta_\infty\in\operatorname{row}(X)$, the two are orthogonal, and Pythagoras gives
+      $$
+      \|\beta'\|_2^2 = \|\beta_\infty\|_2^2 + \|\beta'-\beta_\infty\|_2^2 \ \ge\ \|\beta_\infty\|_2^2 .
+      $$
+      So $\beta_\infty$ is the minimum-norm interpolator, $\beta_\infty = X^\dagger y$.
+
+      **Non-zero initialisation.** The same argument shows $\beta_\infty - \beta_0\in\operatorname{row}(X)$,
+      so the limit is the interpolator closest to $\beta_0$ in $\ell^2$:
+      $$
+      \beta_\infty = \arg\min\{\|\beta-\beta_0\|_2 : X\beta = y\} = \beta_0 + X^\dagger(y - X\beta_0).
+      $$
+      The implicit bias is towards the *initialisation*, not towards the origin — which is why
+      initialisation is part of the inductive bias of an overparameterised model, and why fine-tuning
+      from a pretrained point behaves differently from training from scratch.
+
+  - id: dd-variance-conditioning
+    title: The interpolation peak is a conditioning phenomenon
+    topic: learning-theory/bias-variance-and-double-descent
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [double descent, conditioning, variance, marchenko-pastur]
+    statement: |
+      For least squares with $p<n$ and fixed design, show that the variance component of the risk is
+      $\sigma^2\operatorname{tr}\big((X^\top X)^{-1}\Sigma\big)$ and that it diverges as
+      $\lambda_{\min}(X^\top X)\to0$. Using Marchenko–Pastur, locate the divergence at $p=n$ and explain
+      why the risk falls again for $p>n$.
+    solution: |
+      **Variance formula.** With $\hat\beta = (X^\top X)^{-1}X^\top y$ and $y = X\beta^\star+\varepsilon$,
+      $$
+      \hat\beta-\beta^\star = (X^\top X)^{-1}X^\top\varepsilon,
+      \qquad
+      \Cov(\hat\beta) = \sigma^2(X^\top X)^{-1}.
+      $$
+      For a test point with second moment $\Sigma = \E[xx^\top]$, the prediction variance is
+      $$
+      \E_x\big[x^\top(\hat\beta-\beta^\star)\big]^2 = \sigma^2\operatorname{tr}\big((X^\top X)^{-1}\Sigma\big)
+      \ \ge\ \frac{\sigma^2\lambda_{\min}(\Sigma)}{\lambda_{\min}(X^\top X)} ,
+      $$
+      which diverges as $\lambda_{\min}(X^\top X)\to0$.
+
+      **Location of the divergence.** For i.i.d. Gaussian design, Marchenko–Pastur gives
+      $\lambda_{\min}(X^\top X)/n \to (1-\sqrt{p/n})^2$, which vanishes exactly at $p = n$. So the
+      variance blows up precisely at the interpolation threshold.
+
+      **Why it falls again for $p>n$.** For $p>n$ the matrix $X^\top X$ is singular and OLS is
+      undefined; the relevant estimator is the minimum-norm interpolator
+      $\hat\beta = X^\top(XX^\top)^{-1}y$. The matrix now inverted is $XX^\top$, of size $n\times n$
+      with aspect ratio $n/p<1$ — which by Marchenko–Pastur is **better conditioned** as $p$ grows
+      beyond $n$. Simultaneously, the minimum-norm constraint keeps $\|\hat\beta\|_2$ small: with more
+      features there are more ways to interpolate, and the cheapest one gets cheaper.
+
+      **Summary.** The peak is not mysterious. It is the conditioning of a square random matrix, and
+      the second descent is the conditioning of an increasingly rectangular one, together with the
+      shrinking norm of the minimum-norm solution. What is *not* explained by this argument is the
+      corresponding phenomenon in deep networks, where the implicit bias is not known to be
+      minimum-$\ell^2$-norm.
+
+  - id: dd-simulate-double-descent
+    title: Reproduce double descent
+    topic: learning-theory/bias-variance-and-double-descent
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [double descent, simulation, random features, minimum norm]
+    statement: |
+      Reproduce the double-descent risk curve for random-feature regression.
+
+      1. Generate data from a linear model in $\R^{d}$, map through $N$ random ReLU features, and fit
+         the minimum-norm least-squares solution as $N$ varies through $n$.
+      2. Plot test risk against $N/n$ and identify the peak.
+      3. Show that adding ridge regularisation with a well-chosen $\lambda$ removes the peak entirely.
+      4. Show that the peak grows with label noise and vanishes as noise $\to0$.
+    solution: |
+      ```python
+      import numpy as np
+
+      def double_descent(n=200, d=20, noise=0.5, Ns=None, seed=0, lam=0.0):
+          rng = np.random.default_rng(seed)
+          beta = rng.standard_normal(d) / np.sqrt(d)
+          Xtr, Xte = rng.standard_normal((n, d)), rng.standard_normal((2000, d))
+          ytr = Xtr @ beta + noise * rng.standard_normal(n)
+          yte = Xte @ beta
+          risks = []
+          for N in Ns:
+              W = rng.standard_normal((d, N)) / np.sqrt(d)
+              Ztr, Zte = np.maximum(Xtr @ W, 0), np.maximum(Xte @ W, 0)
+              if lam > 0:
+                  A = Ztr.T @ Ztr + lam * n * np.eye(N)
+                  w = np.linalg.solve(A, Ztr.T @ ytr)
+              else:
+                  w = np.linalg.pinv(Ztr) @ ytr       # minimum-norm interpolant
+              risks.append(float(np.mean((Zte @ w - yte) ** 2)))
+          return np.array(risks)
+      ```
+
+      **1–2. The curve.** Plotting risk against $N/n$ on a log vertical axis shows the classical
+      U-shape for $N<n$, a sharp spike at $N\approx n$, and a second descent for $N>n$ that can fall
+      *below* the best under-parameterised risk. Use `np.linalg.pinv` (or `lstsq`) rather than a normal
+      -equation solve: at $N\approx n$ the matrix is numerically singular and an explicit inverse
+      produces noise rather than the peak.
+
+      **3. Ridge removes the peak.** With $\lambda$ tuned per $N$ (or even a single well-chosen
+      $\lambda$), the spike disappears and the curve becomes monotone decreasing in $N$. This is
+      important for interpretation: the peak is a property of the *unregularised* minimum-norm
+      estimator, not an intrinsic feature of overparameterisation. Optimal ridge regression never
+      exhibits double descent in this model.
+
+      **4. Noise dependence.** Sweeping `noise` from $0$ to $1$: at zero noise the peak vanishes
+      entirely (there is nothing for the ill-conditioned fit to amplify), and its height grows roughly
+      like $\sigma^2$. This matches the variance formula, in which $\sigma^2$ multiplies the
+      $\operatorname{tr}((X^\top X)^{-1})$ term that diverges.
+
+      **What this does and does not show.** It reproduces the phenomenon and identifies its mechanism
+      in a model where the estimator is known in closed form. It does **not** establish that deep
+      networks exhibit double descent for the same reason — their implicit bias is not
+      minimum-$\ell^2$-norm, and the analogy remains an analogy.

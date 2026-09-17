@@ -1,0 +1,319 @@
+---
+title: Vector Search — Exact and Approximate Nearest Neighbours
+summary: The complexity of exact search, why tree methods fail in high dimension, and the mathematics of LSH, IVF, product quantisation and HNSW.
+field: rag
+level: 3
+order: 20
+prerequisites: [rag/embedding-geometry-and-similarity, machine-learning/nearest-neighbours]
+tags: [ann, nearest neighbour search, lsh, ivf, product quantisation, hnsw, recall]
+estimated_time: 1d
+claims:
+  - id: exact-cost
+    kind: proposition
+    title: Cost of exact nearest-neighbour search
+    summary: Brute force is N d per query with no preprocessing; no known method achieves both sublinear query time and subexponential space in high dimension.
+    proved: true
+    tags: [complexity, brute force]
+  - id: tree-failure
+    kind: proposition
+    title: Why space-partitioning trees fail in high dimension
+    summary: Pruning requires the query ball to miss most cells, and concentration of distances makes that impossible once the dimension exceeds log of the number of points.
+    proved: true
+    tags: [kd-tree, pruning, curse of dimensionality]
+  - id: lsh-def
+    kind: definition
+    title: Locality-sensitive hash family
+    summary: A hash family whose collision probability decreases with distance, with a gap parameter that determines the achievable exponent.
+    proved: false
+    tags: [lsh, hashing]
+  - id: simhash-probability
+    kind: theorem
+    title: Random-hyperplane LSH collision probability
+    summary: The probability that a random hyperplane separates two vectors is their angle divided by pi.
+    proved: true
+    tags: [simhash, lsh, angle]
+  - id: lsh-amplification
+    kind: proposition
+    title: AND/OR amplification and the LSH exponent
+    summary: Concatenating k hashes and using L tables turns the collision gap into a sublinear query exponent.
+    proved: true
+    tags: [amplification, exponent, tradeoff]
+  - id: pq-distortion
+    kind: proposition
+    title: Product quantisation error and compression
+    summary: Splitting the vector into m subspaces with 256 centroids each gives m bytes per vector and an error that is the sum of subspace quantisation errors.
+    proved: true
+    tags: [product quantisation, compression, distortion]
+  - id: hnsw-status
+    kind: empirical
+    title: HNSW has no worst-case guarantee
+    summary: The dominant ANN index in practice is justified by benchmarks and a small-world heuristic, not by a theorem about its recall.
+    proved: false
+    tags: [hnsw, graph, open question]
+  - id: recall-composition
+    kind: proposition
+    title: Recall composes multiplicatively through a pipeline
+    summary: A retrieval stage's recall bounds everything downstream, so a 0.9-recall index caps the whole system at 0.9 regardless of the reranker.
+    proved: true
+    tags: [recall, pipeline, error propagation]
+references:
+  - key: indyk-motwani
+    title: Approximate Nearest Neighbors — Towards Removing the Curse of Dimensionality
+    authors: Piotr Indyk and Rajeev Motwani
+    year: 1998
+    kind: paper
+  - key: charikar-simhash
+    title: Similarity Estimation Techniques from Rounding Algorithms
+    authors: Moses S. Charikar
+    year: 2002
+    kind: paper
+  - key: jegou-pq
+    title: Product Quantization for Nearest Neighbor Search
+    authors: Hervé Jégou, Matthijs Douze and Cordelia Schmid
+    year: 2011
+    kind: paper
+  - key: malkov-yashunin
+    title: 'Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs'
+    authors: Yury A. Malkov and Dmitry A. Yashunin
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1603.09320
+  - key: andoni-indyk-survey
+    title: Approximate Nearest Neighbor Search in High Dimensions
+    authors: Alexandr Andoni, Piotr Indyk and Ilya Razenshteyn
+    year: 2018
+    kind: survey
+    url: https://arxiv.org/abs/1806.09823
+---
+
+## Exact search
+
+<Proposition id="exact-cost" title="Cost of exact nearest-neighbour search">
+For $N$ vectors in $\R^d$, brute-force search costs $O(Nd)$ time per query and $O(Nd)$ space, with no
+preprocessing. Every known data structure achieving query time $o(N)$ for exact nearest neighbour in
+the worst case uses space exponential in $d$ or is no better than brute force once
+$d = \Omega(\log N)$.
+</Proposition>
+
+<Proof>
+The brute-force bound is immediate: compute $N$ inner products of length $d$ and take the maximum.
+Space and time are both $Nd$. The negative statement is the summary of the fine-grained-complexity
+literature and is quoted rather than proved; the accessible half of the phenomenon is the tree-pruning
+obstruction below.
+</Proof>
+
+<Proposition id="tree-failure" title="Why space-partitioning trees fail in high dimension">
+Consider a $k$-d tree or any partition of $\R^d$ into cells, with pruning based on the rule
+"skip a cell whose bounding box is farther than the current best distance $r$". If the data is
+i.i.d. with independent coordinates, then by
+<TopicRef id="high-dimensional-probability/concentration-of-the-norm">distance concentration</TopicRef>
+all $N$ distances lie in a window of width $O(\sqrt{\log N})$ around $\sqrt{2d}$, so
+$$
+\frac{r}{\text{typical distance}} \to 1 ,
+$$
+and the ball of radius $r$ around the query intersects essentially every cell. Pruning eliminates
+nothing and the search degenerates to brute force.
+</Proposition>
+
+<Proof>
+The concentration statement is the proposition on that page: with probability $1-\delta$, all
+distances lie in $\sqrt{2d}\pm C\sqrt{\log(N/\delta)}$. The current best distance $r$ after examining
+any subset is therefore at least $\sqrt{2d}-C\sqrt{\log(N/\delta)}$, while the distance from the
+query to any point is at most $\sqrt{2d}+C\sqrt{\log(N/\delta)}$. A cell can be pruned only if every
+point in it is farther than $r$, which requires the cell to be at distance more than
+$r \approx \sqrt{2d}$ from the query — but no cell containing data is, since all data is at distance
+$\approx\sqrt{2d}$. Hence no cell containing data is pruned.
+</Proof>
+
+<KeyIdea>
+This is the sharpest form of the curse of dimensionality for search: it is not that trees are slow,
+it is that the pruning *criterion* becomes vacuous. Once exact search is hopeless, the only way
+forward is to relax the problem, and every method below relaxes it in one of two ways: return an
+approximately-nearest neighbour ($c$-ANN), or return the true nearest neighbour with probability less
+than one.
+</KeyIdea>
+
+## Locality-sensitive hashing
+
+<Definition id="lsh-def" title="Locality-sensitive hash family">
+A family $\mathcal{H}$ of hash functions is **$(r, cr, p_1, p_2)$-sensitive** for a distance $\rho$ if
+for $h$ drawn uniformly from $\mathcal{H}$,
+$$
+\rho(u,v)\le r \implies \P\big(h(u)=h(v)\big)\ge p_1,
+\qquad
+\rho(u,v)\ge cr \implies \P\big(h(u)=h(v)\big)\le p_2,
+$$
+with $p_1>p_2$. The **exponent** is $\varrho = \dfrac{\log(1/p_1)}{\log(1/p_2)} \in (0,1)$.
+</Definition>
+
+<Theorem id="simhash-probability" title="Random-hyperplane LSH collision probability">
+Let $h_w(u) = \sign\ip wu$ for $w\sim\Ncal(0,I_d)$. Then for any non-zero $u,v$,
+$$
+\P\big(h_w(u)\ne h_w(v)\big) = \frac{\theta(u,v)}{\pi},
+\qquad \theta(u,v) = \arccos\frac{\ip uv}{\norm u\norm v} .
+$$
+</Theorem>
+
+<Proof>
+The event $\{h_w(u)\ne h_w(v)\}$ says the hyperplane $w^\perp$ separates $u$ and $v$. Only the
+component of $w$ in the two-dimensional plane $P = \operatorname{span}(u,v)$ matters, and by
+rotational invariance of the Gaussian, the projection of $w$ onto $P$ is a two-dimensional Gaussian,
+hence uniform in direction.
+
+Within $P$, the separating directions form the union of two arcs, each of angular width $\theta$ —
+the directions lying strictly between $u^\perp$ and $v^\perp$ on either side. The total angular
+measure of separating directions is $2\theta$ out of $2\pi$, so the probability is $\theta/\pi$.
+</Proof>
+
+<KeyIdea>
+The collision probability is $1 - \theta/\pi$, a monotone function of the angle. Combined with the
+<TopicRef id="rag/embedding-geometry-and-similarity">cosine geometry</TopicRef>, that makes SimHash
+the natural LSH family for cosine retrieval: it hashes by direction only, which is exactly what
+cosine similarity measures. A single bit costs one inner product, and $b$ bits give a $b$-bit sketch
+whose Hamming distance estimates the angle unbiasedly with variance $O(1/b)$.
+</KeyIdea>
+
+<Proposition id="lsh-amplification" title="AND/OR amplification and the LSH exponent">
+Concatenate $k$ independent hashes into $g = (h_1,\dots,h_k)$ (an AND, requiring all to match) and
+build $L$ independent tables (an OR, accepting a match in any). Then
+
+- a near pair collides in a given table with probability $p_1^k$, hence in some table with probability $1-(1-p_1^k)^L$;
+- a far pair collides in a given table with probability $p_2^k$, so the expected number of far candidates examined is $LNp_2^k$.
+
+Choosing $k = \log_{1/p_2}N$ and $L = N^{\varrho}$ with $\varrho = \log(1/p_1)/\log(1/p_2)$ gives
+query time $\tilde O(N^\varrho)$ and constant success probability, with space $\tilde O(N^{1+\varrho})$.
+</Proposition>
+
+<Proof>
+With $k = \log_{1/p_2}N$ we get $p_2^k = 1/N$, so the expected far candidates per table is
+$Np_2^k = 1$, and $L$ tables give $O(L)$ candidates. The near-pair collision probability per table is
+$$
+p_1^k = p_1^{\log N/\log(1/p_2)} = N^{-\log(1/p_1)/\log(1/p_2)} = N^{-\varrho},
+$$
+so taking $L = N^\varrho$ makes $1-(1-p_1^k)^L \ge 1-e^{-1}$, a constant. Total query work is $L$ hash
+computations plus $O(L)$ candidate distance evaluations, giving $\tilde O(N^\varrho)$; space is $L$
+tables of $N$ entries.
+</Proof>
+
+<Note title="Reading the exponent">
+$\varrho<1$ is genuinely sublinear, which was the breakthrough of Indyk and Motwani: the curse of
+dimensionality is *removed* for the approximate problem. For SimHash at approximation factor $c$ the
+exponent is roughly $1/c$, so a $2$-approximation costs $\tilde O(\sqrt N)$. Data-dependent hashing
+(Andoni–Razenshteyn) achieves the optimal $\varrho = 1/(2c^2-1)$ for Euclidean distance, and there are
+matching lower bounds — so the approximate problem's complexity is essentially settled, which is a
+striking contrast with the exact one.
+</Note>
+
+## IVF and product quantisation
+
+<Definition id="ivf-def" title="Inverted file index (IVF)">
+Cluster the $N$ vectors into $n_{\text{list}}$ Voronoi cells by $k$-means. At query time, compute
+distances to the $n_{\text{list}}$ centroids, select the $n_{\text{probe}}$ nearest cells, and search
+only those. Expected cost per query:
+$$
+O\!\left(n_{\text{list}}d + \frac{n_{\text{probe}}}{n_{\text{list}}}Nd\right),
+$$
+minimised over $n_{\text{list}}$ at $n_{\text{list}}\asymp\sqrt{N n_{\text{probe}}}$, giving
+$O(\sqrt{Nn_{\text{probe}}}\,d)$.
+</Definition>
+
+<Proposition id="pq-distortion" title="Product quantisation error and compression">
+Split $x\in\R^d$ into $m$ contiguous sub-vectors of dimension $d/m$ and quantise each with its own
+codebook of $2^b$ centroids. Then
+
+- storage is $mb$ bits per vector, independent of $d$ — for $m=8$, $b=8$ that is $8$ bytes, a $384\times$ compression of a $768$-dimensional float32 vector;
+- the squared error decomposes as $\norm{x-\hat x}_2^2 = \sum_{j=1}^m\norm{x^{(j)} - \hat x^{(j)}}_2^2$;
+- the codebook has $m2^b$ centroids representing $2^{mb}$ distinct quantised points.
+</Proposition>
+
+<Proof>
+Storage: $m$ indices of $b$ bits. The error decomposition is additivity of the squared Euclidean norm
+across a partition of the coordinates, which is exactly why the sub-vectors are chosen to partition
+(not overlap). The count: independent choices in each of $m$ blocks give $(2^b)^m$ combinations, while
+only $m2^b$ centroids are stored — the **combinatorial** gain that makes the method work.
+</Proof>
+
+<KeyIdea>
+Product quantisation gets $2^{mb}$ representable points from $m2^b$ stored ones. At $m=8,b=8$ that is
+$2^{64}$ points from $2048$ centroids. And asymmetric distance computation — quantising only the
+database, keeping the query exact — lets the distance to every code be read from $m$ precomputed
+lookup tables of $2^b$ entries, so a distance evaluation is $m$ table lookups and additions rather
+than $d$ multiplications. That is the actual source of the speedup; the compression is what makes the
+index fit in memory.
+</KeyIdea>
+
+## HNSW
+
+<Definition id="hnsw-def" title="Hierarchical navigable small world graph">
+Build a multi-layer proximity graph. Each vector is inserted at a random level
+$\ell\sim\lfloor-\log U/\log M\rfloor$; at each level it is connected to its approximate $M$ nearest
+neighbours among nodes present at that level. Search starts at the top (sparsest) layer, greedily
+descends to the closest node, then drops a layer and repeats, finishing with a best-first search at
+layer $0$ maintaining a candidate list of size $\mathrm{efSearch}$.
+</Definition>
+
+<Claim kind="empirical" id="hnsw-status" title="HNSW has no worst-case guarantee">
+HNSW is the default index in most production vector databases and dominates ANN benchmarks at high
+recall. It has no proof of its recall or query complexity on general data.
+</Claim>
+
+<NotSaid>
+The heuristic justification is the small-world argument: a graph with short-range links (for accuracy)
+and long-range links (for navigation) has $O(\log N)$ greedy routing, by analogy with Kleinberg's
+navigable small-world results. That analogy is not a proof for HNSW: Kleinberg's theorems are about
+specific lattice-plus-power-law-link constructions, and HNSW's links come from the data's own
+geometry.
+
+What is actually known:
+
+- **No recall guarantee.** There is no bound of the form "HNSW with parameters $(M,\mathrm{efSearch})$ achieves recall $\ge1-\delta$", for any nontrivial data assumption.
+- **Adversarial failure is possible and observed.** Greedy graph search can get trapped in a local minimum of the distance function; clustered data with a query between clusters is a realistic hard case.
+- **Construction is $O(N\log N)$ empirically**, not provably, and is expensive in absolute terms; the index is also awkward to update and delete from.
+- **LSH has guarantees but loses on benchmarks.** This is the honest tension: the method with theory is not the method people use, and the method people use has no theory.
+
+So recall is measured, not proved, and measured on the specific corpus and query distribution. A
+recall figure from a public benchmark does not transfer to a different corpus.
+</NotSaid>
+
+<Proposition id="recall-composition" title="Recall composes multiplicatively through a pipeline">
+Let a retrieval pipeline consist of stages with recall $\gamma_1,\dots,\gamma_m$ — where
+$\gamma_i$ is the probability that stage $i$ passes on the relevant document given that it received
+it. Then the end-to-end recall is $\prod_i\gamma_i$, and in particular is at most
+$\min_i\gamma_i$.
+</Proposition>
+
+<Proof>
+The relevant document survives to the end only if every stage passes it. Conditioning stage by stage
+and multiplying the conditional probabilities gives the product; each factor is at most $1$, so the
+product is at most any single factor.
+</Proof>
+
+<KeyIdea>
+This is the most consequential and most ignored fact about RAG system design. A cross-encoder
+reranker cannot recover a document the ANN index did not return: if the index has recall $0.9$, the
+system's ceiling is $0.9$ however good the reranker is. Tuning the reranker while the index silently
+drops $10\%$ of relevant documents is effort spent on the wrong stage.
+
+The same multiplicative structure propagates into generation, quantified on the
+<TopicRef id="rag/retrieval-as-latent-variable-model">latent-variable</TopicRef> page: retrieval
+failure is not a soft degradation but a hard ceiling on the information available to the model.
+</KeyIdea>
+
+## Comparison
+
+| Method | Query time | Space | Guarantee | Metric |
+| --- | --- | --- | --- | --- |
+| Brute force | $O(Nd)$ | $O(Nd)$ | exact | any |
+| LSH (SimHash) | $\tilde O(N^{\varrho})$ | $\tilde O(N^{1+\varrho})$ | $c$-ANN with probability | cosine |
+| IVF | $O(\sqrt{Nn_{\text{probe}}}d)$ | $O(Nd)$ | none | $\ell^2$, inner product |
+| IVF + PQ | as IVF, smaller constant | $O(Nmb/8)$ bytes | none | $\ell^2$, inner product |
+| HNSW | $O(\log N)$ empirical | $O(NM)$ links $+ O(Nd)$ | none | $\ell^2$, cosine, inner product |
+
+## Problems
+
+<ProblemRef id="ann-tree-pruning" />
+<ProblemRef id="ann-simhash-probability" />
+<ProblemRef id="ann-lsh-exponent" />
+<ProblemRef id="ann-pq-budget" />
+<ProblemRef id="ann-recall-pipeline" />
+<ProblemRef id="ann-implement-lsh" />

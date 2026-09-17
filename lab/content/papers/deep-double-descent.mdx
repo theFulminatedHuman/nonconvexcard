@@ -1,0 +1,74 @@
+---
+title: 'Deep Double Descent: Where Bigger Models and More Data Hurt'
+authors: Preetum Nakkiran, Gal Kaplun, Yamini Bansal, Tristan Yang, Boaz Barak, Ilya Sutskever
+year: 2020
+venue: ICLR
+url: https://arxiv.org/abs/1912.02292
+arxiv: '1912.02292'
+field: learning-theory
+also: [deep-learning-theory]
+tags: [double descent, interpolation, overparameterisation, effective model complexity]
+problem: The classical U-shaped risk curve predicts that risk rises monotonically once a model can interpolate, which contradicts the observed behaviour of large neural networks.
+contribution: Systematic demonstration of a second descent in test error past the interpolation threshold, across model size, dataset size and training time, unified by an effective-model-complexity variable.
+prerequisites:
+  - learning-theory/bias-variance-and-double-descent
+  - deep-learning-theory/what-is-proven
+  - machine-learning/linear-and-ridge-regression
+descendants: []
+related: [belkin-double-descent, neural-tangent-kernel, lottery-ticket]
+---
+
+## What problem does this paper solve?
+
+It establishes, at scale and across three axes, that test error is not U-shaped in capacity for deep
+networks — resolving a persistent mismatch between classical theory and practice into a reproducible
+phenomenon with a described shape.
+
+## What mathematical objects are introduced?
+
+**Effective model complexity** (EMC): the largest sample size on which the training procedure
+achieves approximately zero training error. The paper's organising claim is that the peak in test
+error occurs when EMC $\approx n$, whichever parameter is varied to get there.
+
+## What assumptions are made?
+
+That the interpolation threshold is the relevant control variable, and that the same mechanism
+explains model-wise, sample-wise and epoch-wise double descent. The last is the boldest claim and the
+least directly supported.
+
+## What equations matter?
+
+None derived. The paper is experimental. The relevant analysis is the linear model treated on the
+<TopicRef id="learning-theory/bias-variance-and-double-descent">double-descent page</TopicRef>, where
+the variance term is $\sigma^2\tr((X^\top X)^{-1}\Sigma)$ and diverges as
+$\lambda_{\min}(X^\top X)\to0$ at $p=n$.
+
+## What theorem or result is important?
+
+No theorem. The empirical results: (i) test error peaks at the interpolation threshold and then falls;
+(ii) *more data can hurt* at fixed model size, when the extra data moves the model towards the peak;
+(iii) the peak grows with label noise and shrinks with explicit regularisation.
+
+## What proof techniques are used?
+
+None; controlled experiments with careful isolation of the varied quantity.
+
+## What prior mathematics is required?
+
+The bias–variance identity, the conditioning of random design matrices
+(<TopicRef id="random-matrix-theory/marchenko-pastur">Marchenko–Pastur</TopicRef>), and the
+minimum-norm interpolator.
+
+## Limitations
+
+The mechanism is not established for deep networks — EMC is a descriptive variable, not an
+explanation. The results are sensitive to label noise, and adding optimal regularisation removes the
+peak, which suggests the phenomenon is partly an artefact of insufficiently regularised training
+rather than a fundamental feature. And the paper describes a risk curve; it does not explain why the
+interpolating solution generalises.
+
+## Why it mattered
+
+It made "bigger is sometimes worse, and then better again" a fact to be explained rather than an
+anomaly to be dismissed, and it provided the experimental grounding that the linear-model theory of
+Hastie et al. and Bartlett et al. then matched.

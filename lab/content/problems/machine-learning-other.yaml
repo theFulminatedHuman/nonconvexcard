@@ -1,0 +1,365 @@
+defaults:
+  field: machine-learning
+problems:
+  - id: nn-knn-rate
+    title: The k-NN bias–variance balance
+    topic: machine-learning/nearest-neighbours
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [knn, rate, nonparametric, curse]
+    statement: |
+      Derive the $k$-NN regression rate $n^{-2/(d+2)}$ by balancing a bias term
+      $\Lambda^2(k/n)^{2/d}$ against a variance term $\sigma^2/k$, and determine the optimal $k$.
+      Then compute the sample size needed for accuracy $\eps = 0.1$ at $d = 5, 20, 100$.
+    solution: |
+      **Variance.** $\hat f(x)$ averages $k$ labels with independent noise of variance $\sigma^2$, so
+      the variance contribution is $\sigma^2/k$.
+
+      **Bias.** With a density bounded below, the ball containing the $k$ nearest neighbours has radius
+      $r_k\asymp(k/n)^{1/d}$ (a ball of radius $r$ captures $\asymp nr^d$ of the $n$ points). For
+      $\Lambda$-Lipschitz $f$ the bias is at most $\Lambda r_k$, so the squared bias is
+      $\Lambda^2(k/n)^{2/d}$.
+
+      **Balance.** Minimise $h(k) = \Lambda^2(k/n)^{2/d}+\sigma^2/k$:
+      $$
+      h'(k) = \frac{2\Lambda^2}{d}\frac{k^{2/d-1}}{n^{2/d}} - \frac{\sigma^2}{k^2} = 0
+      \ \Longrightarrow\
+      k^{2/d+1} = \frac{d\sigma^2n^{2/d}}{2\Lambda^2}
+      \ \Longrightarrow\
+      k^\star \asymp \Big(\frac{\sigma^2}{\Lambda^2}\Big)^{d/(d+2)} n^{2/(d+2)} .
+      $$
+      Substituting back, both terms are of order
+      $$
+      \big(\Lambda^{d}\sigma^{2}\big)^{2/(d+2)}\,n^{-2/(d+2)} .
+      $$
+
+      **Sample sizes for $\eps = 0.1$** (i.e. squared error $10^{-2}$, taking $\Lambda=\sigma=1$):
+      $n \asymp \eps^{-(d+2)}$.
+      - $d=5$: $n\asymp10^{-2\cdot7/2}$… more directly, $n = \eps^{-(d+2)} = 10^{7}$.
+      - $d=20$: $n = 10^{22}$.
+      - $d=100$: $n = 10^{102}$.
+
+      **Comment.** The exponent $2/(d+2)$ is minimax optimal over Lipschitz functions, so the problem is
+      hard, not the method. The contrast with parametric rates is the whole point: covariance estimation
+      needs $n\asymp p/\eps^2$, linear in the dimension. Assuming structure converts an exponential into
+      a linear cost.
+
+  - id: nn-distance-contrast
+    title: Distance contrast and the failure of nearest neighbours
+    topic: machine-learning/nearest-neighbours
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [knn, contrast, concentration, curse]
+    statement: |
+      Using norm concentration, show that for $N$ i.i.d. isotropic points in $\R^d$ the ratio of the
+      farthest to the nearest distance from a query tends to $1$ as $d\to\infty$ with $N$ fixed. Then
+      explain carefully why nearest-neighbour search nevertheless works on real high-dimensional data.
+    solution: |
+      **The calculation.** Each $x_i - x$ has independent coordinates with variance $2$, so by norm
+      concentration
+      $\P(|\|x_i-x\|_2 - \sqrt{2d}|\ge s)\le2e^{-cs^2}$. Union bounding over $N$ points, with
+      probability $1-\delta$ all distances lie in
+      $\sqrt{2d}\pm s_\delta$ where $s_\delta\asymp\sqrt{\log(N/\delta)}$. Hence
+      $$
+      \frac{\max_i\|x_i-x\|_2}{\min_i\|x_i-x\|_2} \le \frac{\sqrt{2d}+s_\delta}{\sqrt{2d}-s_\delta} \xrightarrow[d\to\infty]{}1 .
+      $$
+      The nearest and farthest neighbours become indistinguishable in relative terms.
+
+      **Why search still works.** The hypothesis is that the coordinates are **independent and
+      identically scaled** — isotropic noise. Real embeddings are not:
+
+      1. **Low intrinsic dimension.** Data often concentrates near a $d_0$-dimensional structure with $d_0\ll d$, and the relevant exponent in both the rate and the contrast calculation is $d_0$. Under a manifold hypothesis the $k$-NN rate becomes $n^{-2/(d_0+2)}$.
+      2. **Anisotropy.** Learned embeddings have a rapidly decaying spectrum: a few directions carry most of the variance. The effective dimension for the concentration argument is the *stable rank* $\|\Sigma\|_F^2/\|\Sigma\|^2$, not $d$.
+      3. **Signal is not noise.** The query is not independent of the relevant document. The contrast calculation is about $N$ independent distractors; a genuine match has a distance drawn from a different distribution and can sit well outside the concentrated band.
+
+      **Honest status.** Low intrinsic dimension is the standard explanation and is supported by
+      estimates of intrinsic dimension on real data, but those estimates are unstable and the manifold
+      hypothesis is rarely tested in the settings where it is invoked. The gap between the isotropic
+      worst case and observed retrieval performance is real, well documented, and not fully explained.
+
+  - id: nn-curse-arithmetic
+    title: Two different curses of dimensionality
+    topic: machine-learning/nearest-neighbours
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [curse of dimensionality, sample complexity, comparison]
+    statement: |
+      Tabulate the sample size needed for accuracy $\eps = 0.1$ at $d = 10, 50, 200$ for
+      (a) covariance estimation ($n\asymp d/\eps^2$), (b) linear regression ($n\asymp d/\eps^2$),
+      (c) Lipschitz nonparametric regression ($n\asymp\eps^{-(d+2)}$). Comment on the practical
+      consequence.
+    solution: |
+      With $\eps = 0.1$, so $\eps^{-2} = 100$ and $\eps^{-(d+2)} = 10^{d+2}$:
+
+      | $d$ | covariance / linear ($d/\eps^2$) | nonparametric ($\eps^{-(d+2)}$) |
+      | --- | --- | --- |
+      | $10$ | $10^3$ | $10^{12}$ |
+      | $50$ | $5\times10^3$ | $10^{52}$ |
+      | $200$ | $2\times10^4$ | $10^{202}$ |
+
+      **Consequence.** The two are not variants of one phenomenon; they differ by an exponential. At
+      $d = 50$ a linear model is estimable from five thousand samples, while an arbitrary Lipschitz
+      function on $[0,1]^{50}$ is not estimable from any conceivable dataset — $10^{52}$ exceeds the
+      number of atoms in the solar system.
+
+      **What this means in practice.** Every workable method in high dimension buys tractability by
+      assuming structure: linearity, sparsity, low rank, smoothness beyond Lipschitz, a manifold, or an
+      architectural prior. The assumption is not a convenience — it is what converts an impossible
+      problem into a possible one. A method advertised as "assumption-free" in high dimension is either
+      making assumptions implicitly or is in the second column of this table.
+
+  - id: nn-simulate-contrast
+    title: Simulate distance contrast
+    topic: machine-learning/nearest-neighbours
+    difficulty: beginner
+    type: coding
+    estimated_time: 30m
+    tags: [simulation, contrast, dimension, knn]
+    statement: |
+      Simulate $N$ points in $\R^d$ and measure the contrast
+      $(\max_i\|x_i-q\| - \min_i\|x_i-q\|)/\min_i\|x_i-q\|$ as $d$ grows.
+
+      1. Confirm the contrast decays and identify the rate.
+      2. Repeat with data lying on a $d_0$-dimensional subspace embedded in $\R^d$ and show the
+         contrast is governed by $d_0$.
+      3. Repeat with an anisotropic covariance with a power-law spectrum and comment.
+    solution: |
+      ```python
+      import numpy as np
+
+      def contrast(N=1000, d=100, d0=None, alpha=None, seed=0):
+          rng = np.random.default_rng(seed)
+          if d0 is not None:                       # data on a d0-dimensional subspace
+              Z = rng.standard_normal((N + 1, d0))
+              W = rng.standard_normal((d0, d)) / np.sqrt(d0)
+              X = Z @ W
+          elif alpha is not None:                  # power-law spectrum
+              s = np.arange(1, d + 1) ** (-alpha / 2)
+              X = rng.standard_normal((N + 1, d)) * s
+          else:
+              X = rng.standard_normal((N + 1, d))
+          q, P = X[0], X[1:]
+          dist = np.linalg.norm(P - q, axis=1)
+          return float((dist.max() - dist.min()) / dist.min())
+      ```
+
+      **1. Isotropic.** Sweeping $d$ from $2$ to $2000$ at fixed $N$, the contrast decays like
+      $\sqrt{\log N/d}$: on log–log axes the slope against $d$ is about $-0.5$. At $d = 1000$,
+      $N = 1000$ the contrast is around $0.1$, meaning the farthest point is only $10\%$ farther than
+      the nearest.
+
+      **2. Low intrinsic dimension.** With $d_0 = 5$ embedded in $\R^{1000}$, the contrast stays at the
+      level appropriate to $d_0$ — large — regardless of the ambient $d$. Nearest-neighbour search is
+      as informative as it would be in $\R^5$. This is the mechanism by which real data escapes the
+      isotropic worst case.
+
+      **3. Power-law spectrum.** With eigenvalues $\lambda_j\propto j^{-\alpha}$, the contrast is
+      governed by the **stable rank** $\|\Sigma\|_F^2/\|\Sigma\|^2$ rather than $d$. For $\alpha>1$ the
+      stable rank is $O(1)$ and the contrast stays large; for $\alpha = 0$ (flat spectrum) it is $d$
+      and the isotropic behaviour returns. Plotting contrast against stable rank, rather than against
+      $d$, collapses all three settings onto a single curve — which is the right summary statistic to
+      report when assessing whether an embedding space is "effectively high dimensional".
+
+  - id: tr-impurity-concavity
+    title: Concave impurity gives non-negative information gain
+    topic: machine-learning/trees-and-ensembles
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [entropy, gini, concavity, splitting]
+    statement: |
+      Prove that for concave $\Phi$ on the simplex, any split has non-negative gain
+      $\Phi(p) - w_L\Phi(p_L)-w_R\Phi(p_R)\ge0$, and that strict concavity gives strict gain unless
+      $p_L = p_R$. Then explain why misclassification error is a poor splitting criterion.
+    solution: |
+      **Non-negative gain.** A split partitions the node, so the parent distribution is the weighted
+      average of the children: $p = w_Lp_L+w_Rp_R$ with $w_L+w_R=1$. Concavity gives
+      $$
+      \Phi(p) = \Phi(w_Lp_L+w_Rp_R) \ \ge\ w_L\Phi(p_L)+w_R\Phi(p_R),
+      $$
+      which is exactly non-negative gain. Strict concavity makes the inequality strict unless
+      $p_L = p_R$, i.e. unless the split is uninformative about the class distribution.
+
+      **Entropy and Gini are strictly concave.** $H(p) = -\sum_cp_c\log p_c$ is a sum of strictly
+      concave scalar functions. $G(p) = 1-\|p\|_2^2$ is strictly concave since $-\|\cdot\|_2^2$ is.
+
+      **Misclassification error is not.** $M(p) = 1-\max_cp_c$ is concave (one minus a maximum of linear
+      functions) but **piecewise linear**: it is affine on each region where the argmax is constant.
+      Consequently a split can have **exactly zero** gain even when it substantially purifies the
+      children.
+
+      *Concrete example.* Binary classification, parent with $(400,400)$. Split A gives children
+      $(300,100)$ and $(100,300)$. Split B gives $(200,400)$ and $(200,0)$.
+      - Misclassification: parent $M = 0.5$. Split A: $\tfrac12(0.25)+\tfrac12(0.25) = 0.25$, gain $0.25$. Split B: $\tfrac34(1/3)+\tfrac14(0) = 0.25$, gain $0.25$. **Tied.**
+      - Gini: parent $0.5$. Split A: $\tfrac12(0.375)+\tfrac12(0.375) = 0.375$, gain $0.125$. Split B: $\tfrac34(0.444)+\tfrac14(0) = 0.333$, gain $0.167$. **B preferred.**
+
+      Split B produces a pure leaf, which is more useful for subsequent splitting, and only the strictly
+      concave criterion detects that. More generally, ties and zero gains leave the greedy algorithm
+      with no signal to follow, which is why entropy and Gini are used for growing and misclassification
+      error is used only for pruning.
+
+  - id: tr-bagging-variance
+    title: The bagging variance formula
+    topic: machine-learning/trees-and-ensembles
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [bagging, variance, correlation, random forest]
+    statement: |
+      Derive $\Var(\bar f) = \rho\sigma^2 + \frac{1-\rho}{B}\sigma^2$ for the average of $B$ predictors
+      with common variance $\sigma^2$ and pairwise correlation $\rho$. Compute the limit, and explain
+      precisely what random forests do about it and at what cost.
+    solution: |
+      **Derivation.**
+      $$
+      \Var\Big(\frac1B\sum_b\hat f_b\Big) = \frac{1}{B^2}\Big[\sum_b\Var(\hat f_b) + \sum_{b\ne b'}\Cov(\hat f_b,\hat f_{b'})\Big]
+      = \frac{1}{B^2}\big[B\sigma^2 + B(B-1)\rho\sigma^2\big] = \sigma^2\Big(\rho+\frac{1-\rho}{B}\Big).
+      $$
+
+      **Limit.** As $B\to\infty$ this tends to $\rho\sigma^2$, **not** zero. Averaging removes only the
+      independent component of the variance; the correlated component survives any amount of averaging.
+
+      **Numerically.** With $\rho = 0.6$ (typical for bagged trees on the same data) and
+      $\sigma^2 = 1$: at $B=10$ the variance is $0.64$; at $B=100$, $0.604$; at $B=\infty$, $0.6$.
+      Almost all the available reduction is realised by $B\approx50$, and further trees are essentially
+      wasted.
+
+      **What random forests do.** They attack $\rho$ directly, by two mechanisms:
+      - **bootstrap resampling**, which decorrelates through the data;
+      - **random feature subsets at each split** ($m$ of $p$ features considered), which decorrelates through the algorithm.
+
+      **The cost.** Restricting the feature set makes each individual tree **worse**, so $\sigma^2$
+      increases. The trade is favourable because for large $B$ the $\rho\sigma^2$ term dominates: a
+      $30\%$ reduction in $\rho$ beats a $10\%$ increase in $\sigma^2$. Breiman's default
+      $m = \sqrt p$ for classification is a tuning of exactly this trade-off, and $m$ is the
+      hyperparameter that matters most in a random forest.
+
+  - id: tr-adaboost-step
+    title: AdaBoost as exact line search on the exponential loss
+    topic: machine-learning/trees-and-ensembles
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [adaboost, exponential loss, coordinate descent, line search]
+    statement: |
+      Show that minimising $\sum_iw_ie^{-\beta y_ih(x_i)}$ over $\beta$, with
+      $w_i\propto e^{-y_iF_{t-1}(x_i)}$, gives $\beta = \tfrac12\log\frac{1-\eps}{\eps}$ where $\eps$ is
+      the weighted error, and that the weight update in AdaBoost is exactly the re-normalisation of
+      $w_i$ after the step.
+    solution: |
+      **Split the sum.** Since $y_ih(x_i)\in\{\pm1\}$,
+      $$
+      \sum_iw_ie^{-\beta y_ih(x_i)} = e^{-\beta}\!\!\sum_{i:h(x_i)=y_i}\!\!w_i \ +\ e^{\beta}\!\!\sum_{i:h(x_i)\ne y_i}\!\!w_i
+      = e^{-\beta}(1-\eps)+e^\beta\eps ,
+      $$
+      where $\eps = \sum_{i:h(x_i)\ne y_i}w_i$ is the weighted error (weights normalised to sum to one).
+
+      **Optimise.** $\varphi(\beta) = e^{-\beta}(1-\eps)+e^\beta\eps$ has
+      $\varphi'(\beta) = -e^{-\beta}(1-\eps)+e^\beta\eps$, vanishing when
+      $$
+      e^{2\beta} = \frac{1-\eps}{\eps}
+      \qquad\Longrightarrow\qquad
+      \beta^\star = \frac12\log\frac{1-\eps}{\eps},
+      $$
+      with $\varphi''>0$ confirming a minimum. Note $\beta^\star>0$ iff $\eps<\tfrac12$: a weak learner
+      better than chance gets a positive coefficient, one worse than chance gets a negative one (and is
+      used inverted).
+
+      **Weight update.** After the step $F_t = F_{t-1}+\beta^\star h$, the new weights are
+      $$
+      w_i^{(t+1)} \propto e^{-y_iF_t(x_i)} = e^{-y_iF_{t-1}(x_i)}e^{-\beta^\star y_ih(x_i)} \propto w_i^{(t)}e^{-\beta^\star y_ih(x_i)} ,
+      $$
+      which is exactly AdaBoost's reweighting rule. So the algorithm is: greedily pick the coordinate
+      (weak learner) minimising the first-order decrease, take the exact line-search step, and update
+      the weights — i.e. **coordinate descent on the exponential loss**, with no approximation anywhere.
+
+      **Value at the optimum.** Substituting, $\varphi(\beta^\star) = 2\sqrt{\eps(1-\eps)}$, which is
+      the normalisation constant $Z_t$ appearing in the training-error bound.
+
+  - id: tr-adaboost-error
+    title: AdaBoost drives training error to zero exponentially
+    topic: machine-learning/trees-and-ensembles
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [adaboost, training error, weak learning, bound]
+    statement: |
+      Prove that if every weak learner satisfies $\eps_t\le\tfrac12-\gamma$, then the training error of
+      $F_T$ is at most $e^{-2\gamma^2T}$. State what the theorem does not say about test error.
+    solution: |
+      **Step 1: the loss dominates the error.** Using $\one\{u\le0\}\le e^{-u}$,
+      $$
+      \frac1n\sum_i\one\{y_iF_T(x_i)\le0\} \ \le\ \frac1n\sum_ie^{-y_iF_T(x_i)} .
+      $$
+
+      **Step 2: the loss telescopes.** The weights satisfy
+      $w_i^{(t+1)} = w_i^{(t)}e^{-\beta_ty_ih_t(x_i)}/Z_t$ with $Z_t$ the normaliser. Unrolling from
+      $w_i^{(1)}=1/n$,
+      $$
+      w_i^{(T+1)} = \frac{1}{n}\cdot\frac{e^{-y_iF_T(x_i)}}{\prod_{t\le T}Z_t}.
+      $$
+      Summing over $i$ and using $\sum_iw_i^{(T+1)}=1$,
+      $$
+      \frac1n\sum_ie^{-y_iF_T(x_i)} = \prod_{t=1}^TZ_t .
+      $$
+
+      **Step 3: bound each $Z_t$.** From the line-search computation, $Z_t = 2\sqrt{\eps_t(1-\eps_t)}$.
+      With $\eps_t = \tfrac12-\gamma_t$ and $\gamma_t\ge\gamma$,
+      $$
+      Z_t = 2\sqrt{\big(\tfrac12-\gamma_t\big)\big(\tfrac12+\gamma_t\big)} = \sqrt{1-4\gamma_t^2} \le e^{-2\gamma_t^2}\le e^{-2\gamma^2},
+      $$
+      using $\sqrt{1-u}\le e^{-u/2}$.
+
+      **Conclusion.** Multiplying, training error $\le\prod_tZ_t\le e^{-2\gamma^2T}$. So
+      $T = O(\gamma^{-2}\log n)$ rounds suffice to fit the training set exactly.
+
+      **What it does not say.** Nothing about test error. A bound of this kind is entirely about
+      optimisation, and a capacity argument would predict severe overfitting as $T$ grows. The partial
+      explanation for boosting's observed resistance to overfitting is margin theory — the margin
+      distribution continues to improve after the training error hits zero — but the margin bounds are
+      loose, there are constructed counterexamples, and boosting with a flexible base learner and noisy
+      labels does overfit. Treat the training-error theorem as what it is: a statement about fitting.
+
+  - id: tr-gradient-boosting-residuals
+    title: Gradient boosting fits the negative functional gradient
+    topic: machine-learning/trees-and-ensembles
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [gradient boosting, functional gradient, residuals]
+    statement: |
+      Show that gradient boosting's per-round target is $r_i = -\partial L(y_i,F_i)/\partial F_i$, and
+      compute $r_i$ for the squared, logistic, exponential and absolute losses. Explain the sense in
+      which the base-learner fit is a projection.
+    solution: |
+      **Functional gradient.** The objective $\frac1n\sum_iL(y_i,F(x_i))$ depends on $F$ only through
+      the vector of its values on the training points, so it is a function $\R^n\to\R$ with gradient
+      components $\partial L(y_i,F_i)/\partial F_i$. The steepest-descent direction in $\R^n$ is
+      therefore $r = (r_i)$ with $r_i = -\partial L/\partial F_i$.
+
+      **Residuals for common losses.**
+
+      | Loss $L(y,F)$ | $r_i$ | Comment |
+      | --- | --- | --- |
+      | $\tfrac12(y-F)^2$ | $y_i-F_i$ | the ordinary residual |
+      | $\log(1+e^{-yF})$ | $y_i\sigma(-y_iF_i)$ | residual damped by confidence |
+      | $e^{-yF}$ | $y_ie^{-y_iF_i}$ | recovers AdaBoost's exponential weighting |
+      | $\lvert y-F\rvert$ | $\operatorname{sign}(y_i-F_i)$ | robust: ignores the magnitude of outliers |
+
+      **The projection.** An unconstrained gradient step would set $F(x_i)\leftarrow F_i+\nu r_i$, but
+      that is a vector in $\R^n$ and not realisable by any member of the base class $\mathcal B$. The
+      closest realisable direction in the Euclidean metric on $\R^n$ is
+      $$
+      h_t = \arg\min_{h\in\mathcal B}\sum_{i=1}^n\big(r_i - h(x_i)\big)^2 ,
+      $$
+      which is precisely a least-squares fit to the residuals. So each round is a **projected gradient
+      step in function space**: compute the gradient, project it onto the base class, take a step of
+      size $\nu\beta_t$ along the projection.
+
+      **Reading the table.** The choice of loss changes only the target $r$; the tree-fitting machinery
+      is unchanged. That modularity is why gradient boosting accommodates arbitrary differentiable
+      losses — ranking objectives, survival likelihoods, quantile losses — with no change to the
+      algorithm, and it is the sense in which Friedman's reformulation generalised AdaBoost.

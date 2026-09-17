@@ -1,0 +1,75 @@
+---
+title: Mastering the game of Go with deep neural networks and tree search
+authors: David Silver, Aja Huang, Chris J. Maddison, Arthur Guez, Laurent Sifre, George van den Driessche, Julian Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanctot and others
+year: 2016
+venue: Nature
+url: https://www.nature.com/articles/nature16961
+field: deep-learning
+tags: [alphago, mcts, policy network, value network, tree search]
+problem: Go has a branching factor around 250 and a game length around 150, making exhaustive search impossible and defeating the evaluation-function approach that worked for chess.
+contribution: Combining learned policy and value networks with Monte Carlo tree search, so that the networks prune the search and the search improves on the networks.
+prerequisites:
+  - deep-learning/convolution-recurrence-normalisation
+  - probability/expectation-and-conditioning
+  - high-dimensional-probability/concentration-inequalities
+descendants: [alphazero]
+related: [dqn, alphazero]
+---
+
+## What problem does this paper solve?
+
+Search in a game tree too large to enumerate, where no good hand-designed evaluation function exists.
+
+## What mathematical objects are introduced?
+
+A policy network $p_\sigma(a\mid s)$ (trained by supervised learning on human games, then improved by
+self-play policy gradient), a value network $v_\theta(s)$ estimating the outcome, and their use inside
+MCTS via the selection rule
+$$
+a_t = \argmax_a\left(Q(s_t,a) + u(s_t,a)\right),
+\qquad
+u(s,a) \propto \frac{p_\sigma(a\mid s)}{1+N(s,a)},
+$$
+where $N$ is the visit count.
+
+## What assumptions are made?
+
+Perfect information, deterministic dynamics and a known simulator. All three are essential and none
+holds in most real problems, which is the main limit on how far the recipe transfers.
+
+## What equations matter?
+
+The selection rule above is a variant of UCB applied to trees. The exploration term
+$u(s,a)$ decays as $1/(1+N)$, so the search concentrates on promising moves — and the
+<TopicRef id="high-dimensional-probability/concentration-inequalities">concentration</TopicRef> theory
+behind UCB is what justifies balancing an empirical mean against a count-based confidence width, even
+though the tree setting breaks the i.i.d. assumptions the bandit analysis needs.
+
+## What theorem or result is important?
+
+No theorem about AlphaGo itself. UCT (UCB applied to trees) has asymptotic convergence results under
+assumptions that the neural-network-guided version does not satisfy. The result is the match outcome:
+$5$–$0$ against the European champion and $4$–$1$ against Lee Sedol.
+
+## What proof techniques are used?
+
+None in the paper.
+
+## What prior mathematics is required?
+
+Bandit algorithms and UCB; policy gradients; Monte Carlo estimation and its variance.
+
+## Limitations
+
+Requires a simulator and perfect information. Bootstrapped from human games, so it inherited human
+biases — the limitation <TopicRef id="deep-learning/approximation-and-backpropagation">AlphaZero</TopicRef>
+removed. Enormous compute. And the combination of learning and search is not analysed: why search
+improves on the policy network, and by how much, is understood only heuristically as a policy
+improvement operator.
+
+## Why it mattered
+
+It settled a long-standing benchmark a decade earlier than expected, and it established the
+learning-plus-search pattern — a learned prior narrowing a search, the search generating better
+targets for the prior — that recurs in program synthesis, theorem proving and current
+inference-time-compute methods for language models.

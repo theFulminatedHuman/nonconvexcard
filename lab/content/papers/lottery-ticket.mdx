@@ -1,0 +1,72 @@
+---
+title: 'The Lottery Ticket Hypothesis: Finding Sparse, Trainable Neural Networks'
+authors: Jonathan Frankle, Michael Carbin
+year: 2019
+venue: ICLR
+url: https://arxiv.org/abs/1803.03635
+arxiv: '1803.03635'
+field: deep-learning-theory
+tags: [pruning, sparsity, lottery ticket, initialisation]
+problem: Networks can be pruned to a small fraction of their weights after training with no loss of accuracy, but the pruned architecture trained from scratch performs much worse — so why was the overparameterisation needed?
+contribution: The hypothesis that a dense network contains a sparse subnetwork which, trained from the original initialisation, matches the full network's accuracy, together with an iterative-magnitude-pruning procedure that finds such subnetworks.
+prerequisites:
+  - deep-learning-theory/what-is-proven
+  - deep-learning/approximation-and-backpropagation
+descendants: []
+related: [neural-tangent-kernel, deep-double-descent]
+---
+
+## What problem does this paper solve?
+
+It sharpens the question of why overparameterisation is needed. Prior work had shown post-hoc pruning
+works; this paper asks what the extra parameters were *for*, and answers that they supply a search
+over initialisations.
+
+## What mathematical objects are introduced?
+
+A **winning ticket**: a mask $m\in\{0,1\}^{|\theta|}$ and the original initialisation $\theta_0$ such
+that training $m\odot\theta$ from $m\odot\theta_0$ reaches the dense network's accuracy in at most as
+many steps.
+
+## What assumptions are made?
+
+That the mask and the initialisation must be paired. The paper's control experiments — reinitialising
+the same mask randomly, or reshuffling the mask — both fail, which is the evidence for the pairing.
+
+## What equations matter?
+
+None. The procedure is: train, prune the smallest $p\%$ of weights by magnitude, rewind the survivors
+to $\theta_0$, repeat. Iterated to $\sim1$–$20\%$ density.
+
+## What theorem or result is important?
+
+No theorem in the original paper. Subsequent work established related existence results: Malach et al.
+proved that a sufficiently overparameterised random network contains a subnetwork approximating any
+target network *without any training* (the strong lottery ticket hypothesis), which is a genuine
+theorem — though with polynomial overparameterisation requirements and for a different statement than
+Frankle and Carbin's.
+
+## What proof techniques are used?
+
+None originally. The strong-hypothesis proofs use a subset-sum argument: with enough random weights,
+some subset sums close to any desired value.
+
+## What prior mathematics to know?
+
+Concentration for sums of random variables (for the subset-sum arguments), and the general picture of
+the loss landscape.
+
+## Limitations
+
+The original procedure requires training the dense network first, so it does not reduce training cost
+— only inference cost. The results are sensitive to learning-rate warmup and did not initially
+transfer to large-scale settings without "rewinding to iteration $k$" rather than to $0$. And the
+hypothesis is about existence, not about a mechanism.
+
+## Why it mattered
+
+It reframed overparameterisation as *lottery tickets* — a search over subnetworks and their
+initialisations — which is a genuinely different intuition from "more capacity" or "smoother
+landscape", and it launched a large literature on sparse training. The gap between the empirical
+hypothesis and the provable strong version is a good illustration of how such gaps get closed:
+by weakening the claim until it is provable and then asking what the difference means.

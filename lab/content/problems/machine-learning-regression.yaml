@@ -1,0 +1,365 @@
+defaults:
+  field: machine-learning
+problems:
+  - id: lr-normal-equations
+    title: Least squares as orthogonal projection
+    topic: machine-learning/linear-and-ridge-regression
+    difficulty: foundation
+    type: proof
+    estimated_time: 15m
+    tags: [least squares, normal equations, projection]
+    statement: |
+      Derive the normal equations from the first-order condition, and show that the hat matrix
+      $H = X(X^\top X)^{-1}X^\top$ is the orthogonal projector onto $\operatorname{col}(X)$. Verify that
+      $\operatorname{tr}(H) = p$ and interpret.
+    solution: |
+      **Normal equations.** $L(\beta) = \tfrac12\|y-X\beta\|_2^2$ has
+      $\nabla L(\beta) = X^\top(X\beta-y)$; setting it to zero gives $X^\top X\hat\beta = X^\top y$.
+      The objective is convex ($\nabla^2L = X^\top X\succeq0$) so this stationary point is a global
+      minimiser, and it is unique when $\operatorname{rank}X = p$.
+
+      **Projector.** $H^\top = H$ by inspection, and
+      $H^2 = X(X^\top X)^{-1}(X^\top X)(X^\top X)^{-1}X^\top = H$. A symmetric idempotent matrix is an
+      orthogonal projector, and $\operatorname{range}(H) = \operatorname{col}(X)$. The normal equations
+      say $X^\top(y-\hat y)=0$: the residual is orthogonal to every column of $X$, which is exactly the
+      projection characterisation.
+
+      **Trace.** Eigenvalues of a projector are $0$ or $1$, so $\operatorname{tr}(H)$ counts the
+      dimension of the range, which is $\operatorname{rank}(X)=p$.
+
+      **Interpretation.** $\operatorname{tr}(H)$ is the **effective number of parameters**: it measures
+      how many degrees of freedom the fit consumes. For ridge regression the corresponding quantity is
+      $\operatorname{tr}\big(X(X^\top X+\lambda I)^{-1}X^\top\big) = \sum_j\frac{\sigma_j^2}{\sigma_j^2+\lambda}$,
+      which decreases continuously from $p$ to $0$ as $\lambda$ grows — the precise sense in which
+      regularisation reduces model complexity.
+
+  - id: lr-gauss-markov
+    title: Prove the Gauss–Markov theorem
+    topic: machine-learning/linear-and-ridge-regression
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [gauss markov, blue, unbiased]
+    statement: |
+      Prove that among linear unbiased estimators $\tilde\beta = Ay$, least squares has the smallest
+      covariance in the Loewner order. Then state carefully what the theorem does **not** claim.
+    solution: |
+      **Setup.** $y = X\beta^\star+\varepsilon$ with $\E\varepsilon=0$, $\Cov(\varepsilon)=\sigma^2I$.
+      Unbiasedness of $\tilde\beta = Ay$ for **every** $\beta^\star$ requires $\E Ay = AX\beta^\star = \beta^\star$
+      for all $\beta^\star$, i.e. $AX = I_p$.
+
+      **Decomposition.** Write $A = (X^\top X)^{-1}X^\top + D$. Then $AX = I$ forces $DX = 0$.
+      Computing the covariance,
+      $$
+      \Cov(\tilde\beta) = \sigma^2AA^\top
+      = \sigma^2\Big[(X^\top X)^{-1} + (X^\top X)^{-1}X^\top D^\top + DX(X^\top X)^{-1} + DD^\top\Big].
+      $$
+      The middle two terms vanish because $DX = 0$ and its transpose $X^\top D^\top = 0$. Hence
+      $$
+      \Cov(\tilde\beta) = \underbrace{\sigma^2(X^\top X)^{-1}}_{=\ \Cov(\hat\beta)} + \sigma^2DD^\top \ \succeq\ \Cov(\hat\beta),
+      $$
+      since $DD^\top\succeq0$. Equality holds iff $D=0$, i.e. $\tilde\beta = \hat\beta$.
+
+      **What the theorem does not claim.**
+      - It does **not** say least squares has smallest mean squared error. It compares only *unbiased* estimators; ridge is biased and has strictly smaller MSE for some $\lambda>0$, always.
+      - It does **not** cover nonlinear estimators.
+      - It assumes homoskedastic uncorrelated noise; with $\Cov(\varepsilon)=\Sigma\ne\sigma^2I$ the optimal linear unbiased estimator is generalised least squares.
+      - It says nothing about prediction on new data, only about estimating $\beta^\star$.
+
+      Citing Gauss–Markov as a reason not to regularise is a misreading of all four points.
+
+  - id: lr-ridge-svd
+    title: Ridge regression in the SVD basis
+    topic: machine-learning/linear-and-ridge-regression
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [ridge, svd, shrinkage, effective dof]
+    statement: |
+      Express $\hat\beta_\lambda = (X^\top X+\lambda I)^{-1}X^\top y$ in terms of the SVD
+      $X = U\Sigma V^\top$, and show that the fitted values shrink the $j$-th singular direction by
+      $\sigma_j^2/(\sigma_j^2+\lambda)$. Compute the effective degrees of freedom and its limits.
+    solution: |
+      Substituting $X = U\Sigma V^\top$ and using $V^\top V = I$,
+      $$
+      X^\top X+\lambda I = V\big(\Sigma^\top\Sigma+\lambda I\big)V^\top,
+      \qquad
+      (X^\top X+\lambda I)^{-1}X^\top = V\big(\Sigma^\top\Sigma+\lambda I\big)^{-1}\Sigma^\top U^\top .
+      $$
+      Reading off components,
+      $$
+      \hat\beta_\lambda = \sum_j\frac{\sigma_j}{\sigma_j^2+\lambda}\langle u_j,y\rangle\,v_j,
+      \qquad
+      \hat y_\lambda = X\hat\beta_\lambda = \sum_j\frac{\sigma_j^2}{\sigma_j^2+\lambda}\langle u_j,y\rangle\,u_j .
+      $$
+      So each singular direction of the fit is multiplied by $s_j(\lambda) = \sigma_j^2/(\sigma_j^2+\lambda)\in(0,1)$.
+
+      **Reading the shrinkage.** $s_j\approx1$ when $\sigma_j^2\gg\lambda$ (well-determined directions
+      are left alone) and $s_j\approx0$ when $\sigma_j^2\ll\lambda$ (poorly-determined directions are
+      suppressed). Since the small-$\sigma_j$ directions are exactly where the sample covariance is
+      least trustworthy — by Marchenko–Pastur, the lower bulk edge is where the estimate is most
+      distorted — ridge attenuates precisely the directions that carry the least reliable information.
+
+      **Effective degrees of freedom.**
+      $$
+      \mathrm{df}(\lambda) = \operatorname{tr}\big(X(X^\top X+\lambda I)^{-1}X^\top\big) = \sum_j\frac{\sigma_j^2}{\sigma_j^2+\lambda},
+      $$
+      which is $p$ at $\lambda=0$, decreases continuously and strictly, and tends to $0$ as
+      $\lambda\to\infty$. Model complexity is therefore a **continuous** dial, not a discrete count —
+      which is why ridge can be tuned finely by cross-validation while subset selection cannot.
+
+  - id: lr-ridge-beats-ols
+    title: There is always a ridge parameter beating least squares
+    topic: machine-learning/linear-and-ridge-regression
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [ridge, admissibility, bias-variance, james-stein]
+    statement: |
+      Prove that $m(\lambda) = \E\|\hat\beta_\lambda-\beta^\star\|_2^2$ satisfies
+      $m'(0) = -2\sigma^2\operatorname{tr}\big((X^\top X)^{-2}\big) < 0$, so least squares is
+      inadmissible. Identify the orders in $\lambda$ of the bias and variance contributions and explain
+      why that asymmetry is the whole content of the result.
+    solution: |
+      **Work in the SVD basis.** With $X = U\Sigma V^\top$, set $z = U^\top y$ and
+      $\theta = V^\top\beta^\star$, so $z_j = \sigma_j\theta_j+\tilde\varepsilon_j$ with
+      $\tilde\varepsilon = U^\top\varepsilon$ having mean $0$ and covariance $\sigma^2I$. The ridge
+      estimator's components are $\hat\theta_j = \frac{\sigma_j}{\sigma_j^2+\lambda}z_j$, with
+      $$
+      \E\hat\theta_j = \frac{\sigma_j^2}{\sigma_j^2+\lambda}\theta_j,
+      \qquad
+      \Var(\hat\theta_j) = \frac{\sigma_j^2\sigma^2}{(\sigma_j^2+\lambda)^2}.
+      $$
+      Since $\|\cdot\|_2$ is invariant under the orthogonal $V$,
+      $$
+      m(\lambda) = \sum_j\Big[\underbrace{\frac{\lambda^2\theta_j^2}{(\sigma_j^2+\lambda)^2}}_{\text{bias}^2}
+      + \underbrace{\frac{\sigma^2\sigma_j^2}{(\sigma_j^2+\lambda)^2}}_{\text{variance}}\Big].
+      $$
+
+      **Differentiate at $\lambda = 0$.** The bias term is $O(\lambda^2)$, so its derivative vanishes at
+      $0$. The variance term has
+      $$
+      \frac{d}{d\lambda}\frac{\sigma^2\sigma_j^2}{(\sigma_j^2+\lambda)^2}\Big|_{\lambda=0}
+      = -\frac{2\sigma^2\sigma_j^2}{\sigma_j^6} = -\frac{2\sigma^2}{\sigma_j^4}.
+      $$
+      Summing,
+      $$
+      m'(0) = -2\sigma^2\sum_j\frac{1}{\sigma_j^4} = -2\sigma^2\operatorname{tr}\big((X^\top X)^{-2}\big) < 0 .
+      $$
+      Hence $m(\lambda)<m(0)$ for all sufficiently small $\lambda>0$: least squares is inadmissible for
+      squared-error loss.
+
+      **The asymmetry is the point.** Bias enters at **second** order in $\lambda$ and variance at
+      **first**. So at $\lambda=0$ there is a first-order gain and only a second-order cost — a free
+      lunch at the margin, available for *every* design and *every* $\beta^\star$. The effect is largest
+      when some $\sigma_j$ is small, since the derivative scales as $\sigma_j^{-4}$; that is exactly the
+      ill-conditioned regime identified by Marchenko–Pastur as the one where $p/n$ is not small.
+
+      **Context.** This is the regression form of the James–Stein phenomenon, and the same asymmetry
+      drives the covariance-shrinkage result. The general lesson: unbiasedness is a constraint, not a
+      virtue, and in high dimension it is an expensive one.
+
+  - id: lr-implement-ridge
+    title: Implement ridge and find the optimal lambda
+    topic: machine-learning/linear-and-ridge-regression
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [ridge, cross-validation, implementation, conditioning]
+    statement: |
+      Implement ridge regression via the SVD and empirically verify the ridge-beats-OLS theorem.
+
+      1. Plot test MSE against $\lambda$ on a log axis and confirm the minimum is at $\lambda>0$.
+      2. Confirm the optimal $\lambda$ grows with the noise level and with $p/n$.
+      3. Implement leave-one-out cross-validation in closed form using the hat matrix, and check it
+         against brute-force LOOCV.
+    solution: |
+      ```python
+      import numpy as np
+
+      def ridge_path(X, y, lams):
+          U, s, Vt = np.linalg.svd(X, full_matrices=False)
+          Uy = U.T @ y
+          return {lam: Vt.T @ (s / (s**2 + lam) * Uy) for lam in lams}
+      ```
+      Computing the SVD once and reusing it gives the entire regularisation path at negligible extra
+      cost — a far better approach than solving a linear system per $\lambda$.
+
+      **1. The curve.** Test MSE against $\log\lambda$ is U-shaped with the minimum strictly inside;
+      $\lambda = 0$ is never optimal when $\sigma>0$, confirming the theorem. The curve is flat near
+      the minimum, which is why cross-validated $\lambda$ estimates are noisy but the resulting risk is
+      not.
+
+      **2. Dependence.** Sweeping $\sigma$: the optimal $\lambda$ grows roughly like $\sigma^2$, as the
+      exact optimum $\lambda^\star = p\sigma^2/\|\beta^\star\|_2^2$ (for orthogonal design) predicts.
+      Sweeping $p/n$ towards $1$: the optimal $\lambda$ grows sharply, because the small singular values
+      that ridge suppresses are exactly the ones Marchenko–Pastur pushes towards zero.
+
+      **3. Closed-form LOOCV.** For linear smoothers $\hat y = H_\lambda y$,
+      $$
+      \mathrm{LOOCV}(\lambda) = \frac1n\sum_{i=1}^n\left(\frac{y_i-\hat y_i}{1-H_{\lambda,ii}}\right)^2 ,
+      $$
+      where $H_\lambda = X(X^\top X+\lambda I)^{-1}X^\top = U\operatorname{diag}\!\big(\tfrac{s_j^2}{s_j^2+\lambda}\big)U^\top$.
+      This computes all $n$ held-out errors from a **single** fit. Verify it against a brute-force loop
+      refitting $n$ times; they should agree to machine precision. Generalised cross-validation replaces
+      $H_{ii}$ by its average $\operatorname{tr}(H)/n$, which is more stable when some leverages are
+      near one.
+
+  - id: lg-convexity
+    title: Convexity of the logistic loss
+    topic: machine-learning/logistic-regression
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [logistic, convexity, hessian]
+    statement: |
+      Show the logistic negative log-likelihood has gradient $X^\top(p-y)$ and Hessian $X^\top SX$ with
+      $S = \operatorname{diag}(p_i(1-p_i))$, hence is convex. Determine exactly when it is strictly
+      convex.
+    solution: |
+      **Derivatives.** With $\mathcal L(w) = \sum_i\big[\log(1+e^{\langle w,x_i\rangle}) - y_i\langle w,x_i\rangle\big]$
+      and $\sigma'(t) = \sigma(t)(1-\sigma(t))$:
+      $$
+      \nabla\mathcal L(w) = \sum_i\big(\sigma(\langle w,x_i\rangle)-y_i\big)x_i = X^\top(p-y),
+      $$
+      $$
+      \nabla^2\mathcal L(w) = \sum_ip_i(1-p_i)\,x_ix_i^\top = X^\top SX .
+      $$
+
+      **Convexity.** For any $v$,
+      $$
+      v^\top\nabla^2\mathcal L\,v = \sum_ip_i(1-p_i)\langle v,x_i\rangle^2 \ \ge\ 0,
+      $$
+      since $p_i\in(0,1)$ makes every weight positive. So $\nabla^2\mathcal L\succeq0$ and $\mathcal L$
+      is convex.
+
+      **Strict convexity.** The quadratic form vanishes iff $\langle v,x_i\rangle = 0$ for every $i$
+      with $p_i(1-p_i)>0$ — that is, for every $i$, since $p_i\in(0,1)$ always for finite $w$. So the
+      form is positive definite iff the only $v$ orthogonal to all $x_i$ is $v = 0$, i.e. iff
+      $\operatorname{rank}(X) = p$ (full column rank).
+
+      **Caveat.** Strict convexity does **not** imply a minimiser exists: on separable data the
+      infimum is approached only as $\|w\|\to\infty$, as the next problem shows. Strict convexity gives
+      uniqueness *if* a minimiser exists.
+
+  - id: lg-separable-divergence
+    title: Logistic regression diverges on separable data
+    topic: machine-learning/logistic-regression
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [separability, divergence, implicit bias, max margin]
+    statement: |
+      Show that if the data is linearly separable the logistic likelihood has no maximiser and
+      $\|w_t\|\to\infty$. Then state (without proving) what is known about the *direction* of
+      divergence, and explain why that is a rigorous instance of implicit bias.
+    solution: |
+      **Divergence.** Let $w_0$ separate the data, so $s_i := (2y_i-1)\langle w_0,x_i\rangle > 0$ for
+      every $i$. Using $\log(1+e^z)-yz = \log(1+e^{-(2y-1)z})$ for $y\in\{0,1\}$,
+      $$
+      \mathcal L(cw_0) = \sum_i\log\big(1+e^{-cs_i}\big),
+      $$
+      which is strictly decreasing in $c>0$ and tends to $0$. So $\inf_w\mathcal L = 0$. It is not
+      attained: for any finite $w$, every summand $\log(1+e^{-\cdot})$ is strictly positive, so
+      $\mathcal L(w)>0$. Hence any minimising sequence has $\|w\|\to\infty$.
+
+      **Direction of divergence.** Soudry, Hoffer, Nacson, Gunasekar and Srebro proved that gradient
+      descent on the logistic loss over separable data satisfies
+      $$
+      \frac{w_t}{\|w_t\|_2} \ \longrightarrow\ \frac{w_{\mathrm{MM}}}{\|w_{\mathrm{MM}}\|_2},
+      $$
+      where $w_{\mathrm{MM}}$ is the **maximum-margin** (hard-margin SVM) solution, at the slow rate
+      $O(1/\log t)$.
+
+      **Why this is implicit bias.** The objective has no minimiser, so the algorithm's limit is not
+      determined by the loss — it is determined by the *dynamics*. Gradient descent selects a
+      particular direction among all separating hyperplanes, and that direction is the maximum-margin
+      one, for which there is a generalisation bound. Nothing in the loss asked for a large margin;
+      the optimiser supplied it.
+
+      This is the cleanest fully-rigorous instance of implicit bias in the literature, and it is worth
+      contrasting with the deep-network case, where the analogous statement is conjectural. It also
+      explains why unregularised logistic regression with early stopping often generalises well: the
+      iterates are approaching a margin-maximising direction all along.
+
+  - id: lg-irls-step
+    title: IRLS is a weighted least-squares solve
+    topic: machine-learning/logistic-regression
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [irls, newton, weighted least squares]
+    statement: |
+      Show that the Newton step for logistic regression can be written as the solution of a weighted
+      least-squares problem, and identify the working response. Explain why this gives fast convergence
+      and when it fails.
+    solution: |
+      **Newton step.** With $g = X^\top(p-y)$ and $H = X^\top SX$, $S = \operatorname{diag}(p_i(1-p_i))$,
+      the Newton update solves
+      $$
+      (X^\top SX)\delta = X^\top(y-p), \qquad w^+ = w+\delta .
+      $$
+
+      **As weighted least squares.** Substitute $w^+ = w+\delta$ and rearrange:
+      $$
+      X^\top SX\,w^+ = X^\top SX\,w + X^\top(y-p) = X^\top S\Big(Xw + S^{-1}(y-p)\Big).
+      $$
+      Defining the **working response**
+      $$
+      z = Xw + S^{-1}(y-p), \qquad z_i = \langle w,x_i\rangle + \frac{y_i-p_i}{p_i(1-p_i)},
+      $$
+      the update is
+      $$
+      w^+ = \arg\min_\beta\ \sum_i s_i\big(z_i - \langle\beta,x_i\rangle\big)^2,
+      \qquad s_i = p_i(1-p_i),
+      $$
+      a weighted least-squares fit — hence *iteratively reweighted least squares*.
+
+      **Why it is fast.** By the local quadratic convergence theorem for Newton's method, once the
+      iterate is in a neighbourhood of the optimum the error squares each step, so five or six
+      iterations suffice. The Hessian is available in closed form and is a weighted Gram matrix, so each
+      step costs one $p\times p$ solve — affordable for moderate $p$.
+
+      **When it fails.** (i) Separable data: no minimiser exists, $p_i\to\{0,1\}$, the weights
+      $s_i = p_i(1-p_i)\to0$, $S^{-1}$ blows up, and the iterates diverge. (ii) Large $p$: the $O(p^3)$
+      solve is prohibitive, so first-order methods or L-BFGS are used instead. (iii) Perfectly
+      collinear features: $X^\top SX$ is singular. Remedies for (i) and (iii) are the same — add a
+      ridge penalty, which makes the Hessian $X^\top SX + \lambda I \succ0$ and restores a unique
+      minimiser.
+
+  - id: lg-calibration
+    title: In-sample calibration of logistic regression
+    topic: machine-learning/logistic-regression
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [calibration, score equations, limits]
+    statement: |
+      Show that at any stationary point $X^\top p = X^\top y$, and deduce that with an intercept the
+      predicted and observed positive counts agree exactly. Then explain precisely why this is a weak
+      form of calibration.
+    solution: |
+      **Score equations.** Setting $\nabla\mathcal L = X^\top(p-y) = 0$ gives $X^\top p = X^\top y$: for
+      every feature direction $j$, $\sum_ix_{ij}p_i = \sum_ix_{ij}y_i$.
+
+      **Intercept.** If a column of $X$ is all ones, the corresponding equation reads
+      $\sum_ip_i = \sum_iy_i$: the model's expected number of positives equals the observed number,
+      exactly, in-sample.
+
+      **More generally.** For a binary feature $x_{ij}\in\{0,1\}$, the equation says the predicted and
+      observed positive rates agree **within the subgroup** $\{i : x_{ij}=1\}$. So logistic regression
+      is automatically calibrated on any subgroup expressible as a feature.
+
+      **Why this is weak.**
+      1. **In-sample only.** The identity holds on the training data. On new data the predictions may be
+         systematically miscalibrated, and are, whenever the model is misspecified or overfit.
+      2. **Only along feature directions.** Calibration holds on the $p$ directions in the column space.
+         A subgroup not expressible as a linear combination of features — an interaction, a threshold
+         effect, an unmeasured attribute — receives no guarantee.
+      3. **Regularisation breaks it.** With a ridge penalty the score equation becomes
+         $X^\top(p-y)+\lambda w = 0$, so $X^\top p \ne X^\top y$ and even in-sample calibration is lost.
+
+      This is why post-hoc calibration (Platt scaling, isotonic regression, temperature scaling) exists
+      and is applied on a held-out set even to models that are "automatically calibrated" in the
+      in-sample sense above.

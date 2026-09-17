@@ -1,0 +1,263 @@
+---
+title: RLHF, Bradley–Terry and DPO
+summary: The preference model, the KL-regularised RL objective, its closed-form optimum, and the algebra that turns it into a supervised loss.
+field: llm
+level: 4
+order: 20
+prerequisites: [llm/language-modelling-and-cross-entropy]
+tags: [rlhf, bradley-terry, ppo, dpo, kl regularisation, reward model, preference]
+estimated_time: 1d
+papers: [instructgpt, dpo]
+claims:
+  - id: bradley-terry
+    kind: definition
+    title: Bradley–Terry preference model
+    summary: The probability that one response is preferred is the logistic function of the reward difference.
+    proved: false
+    tags: [bradley-terry, preference]
+  - id: reward-identifiability
+    kind: proposition
+    title: The reward is identifiable only up to a prompt-dependent shift
+    summary: Bradley-Terry depends on reward differences, so any function of the prompt alone can be added without changing the likelihood.
+    proved: true
+    tags: [identifiability, invariance]
+  - id: kl-rl-optimum
+    kind: theorem
+    title: Closed form of the KL-regularised RL optimum
+    summary: The optimal policy is the reference policy reweighted by the exponentiated reward.
+    proved: true
+    tags: [kl regularisation, gibbs, closed form]
+  - id: dpo-derivation
+    kind: theorem
+    title: The DPO objective
+    summary: Inverting the closed-form optimum expresses the reward in terms of the policy, turning RLHF into a supervised classification loss.
+    proved: true
+    tags: [dpo, derivation, reparameterisation]
+  - id: dpo-vs-rlhf
+    kind: empirical
+    title: What DPO does and does not replace
+    summary: DPO removes the reward model and the RL loop but inherits the Bradley-Terry assumption and behaves differently off the preference distribution.
+    proved: false
+    tags: [caveat, comparison]
+  - id: reward-hacking
+    kind: heuristic
+    title: Reward hacking and the role of the KL term
+    summary: The KL penalty is what keeps the optimised policy inside the region where the learned reward is trustworthy.
+    proved: false
+    tags: [reward hacking, goodhart, regularisation]
+references:
+  - key: bradley-terry-1952
+    title: Rank Analysis of Incomplete Block Designs
+    authors: Ralph A. Bradley and Milton E. Terry
+    year: 1952
+    kind: paper
+  - key: christiano-et-al
+    title: Deep Reinforcement Learning from Human Preferences
+    authors: Paul F. Christiano, Jan Leike, Tom B. Brown, Miljan Martic, Shane Legg and Dario Amodei
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1706.03741
+  - key: ouyang-et-al
+    title: Training language models to follow instructions with human feedback
+    authors: Long Ouyang and collaborators
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2203.02155
+  - key: rafailov-et-al
+    title: 'Direct Preference Optimization: Your Language Model is Secretly a Reward Model'
+    authors: Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D. Manning, Stefano Ermon and Chelsea Finn
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2305.18290
+  - key: schulman-ppo
+    title: Proximal Policy Optimization Algorithms
+    authors: John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford and Oleg Klimov
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1707.06347
+---
+
+## Preferences to rewards
+
+<Definition id="bradley-terry" title="Bradley–Terry preference model">
+Given a prompt $x$ and two responses $y_1,y_2$, assume there is a latent reward $r^\star(x,y)$ with
+$$
+\P\big(y_1\succ y_2\mid x\big) = \frac{\exp r^\star(x,y_1)}{\exp r^\star(x,y_1)+\exp r^\star(x,y_2)}
+= \sigma\big(r^\star(x,y_1)-r^\star(x,y_2)\big) .
+$$
+Given preference data $\Dcal = \{(x,y_w,y_l)\}$ (winner, loser), the reward model $r_\phi$ is fit by
+maximum likelihood:
+$$
+\mathcal{L}_R(\phi) = -\E_{(x,y_w,y_l)\sim\Dcal}\Big[\log\sigma\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big)\Big].
+$$
+</Definition>
+
+<Proposition id="reward-identifiability" title="The reward is identifiable only up to a prompt-dependent shift">
+For any $c:\Xcal\to\R$, the rewards $r$ and $r' = r + c(x)$ induce identical preference
+probabilities, hence identical likelihood. Consequently the reward learned from preference data alone
+is determined only up to such a shift.
+</Proposition>
+
+<Proof>
+$\sigma\big((r(x,y_1)+c(x)) - (r(x,y_2)+c(x))\big) = \sigma\big(r(x,y_1)-r(x,y_2)\big)$: the shift
+cancels because it does not depend on $y$.
+</Proof>
+
+<Note title="Why this matters in practice">
+An unidentifiable additive constant per prompt means the *absolute* value of a reward model's score is
+meaningless — only differences between responses to the same prompt are. Comparing reward scores
+across prompts, thresholding them, or averaging them across a dataset are all operations without a
+well-defined referent. The next theorem shows the invariance is harmless for the optimal policy,
+since the shift cancels in the normalisation.
+</Note>
+
+## The RLHF objective and its optimum
+
+<Theorem id="kl-rl-optimum" title="Closed form of the KL-regularised RL optimum">
+Consider
+$$
+\max_{\pi}\ \E_{x\sim\Dcal,\ y\sim\pi(\cdot\mid x)}\big[r(x,y)\big]
+- \beta\,\mathrm{KL}\big(\pi(\cdot\mid x)\,\|\,\pi_{\mathrm{ref}}(\cdot\mid x)\big) .
+$$
+The maximiser is
+$$
+\pi^\star(y\mid x) = \frac{1}{Z(x)}\,\pi_{\mathrm{ref}}(y\mid x)\,\exp\!\left(\frac{r(x,y)}{\beta}\right),
+\qquad
+Z(x) = \sum_{y}\pi_{\mathrm{ref}}(y\mid x)\exp\!\left(\frac{r(x,y)}{\beta}\right).
+$$
+</Theorem>
+
+<Proof>
+Fix $x$ and write $\pi = \pi(\cdot\mid x)$, $\mu = \pi_{\mathrm{ref}}(\cdot\mid x)$. The objective is
+$$
+J(\pi) = \sum_y\pi(y)r(y) - \beta\sum_y\pi(y)\log\frac{\pi(y)}{\mu(y)} .
+$$
+Define $\tilde\pi(y) = \mu(y)e^{r(y)/\beta}/Z$ with $Z$ the stated normaliser. Then
+$\log\tilde\pi(y) = \log\mu(y) + r(y)/\beta - \log Z$, so
+$$
+r(y) = \beta\Big(\log\frac{\tilde\pi(y)}{\mu(y)} + \log Z\Big).
+$$
+Substituting,
+$$
+J(\pi) = \beta\sum_y\pi(y)\log\frac{\tilde\pi(y)}{\mu(y)} + \beta\log Z - \beta\sum_y\pi(y)\log\frac{\pi(y)}{\mu(y)}
+= -\beta\,\mathrm{KL}(\pi\|\tilde\pi) + \beta\log Z .
+$$
+Since $\log Z$ does not depend on $\pi$ and $\mathrm{KL}(\pi\|\tilde\pi)\ge0$ with equality iff
+$\pi=\tilde\pi$, the objective is maximised exactly at $\pi = \tilde\pi$.
+</Proof>
+
+<KeyIdea>
+Two observations from the proof. First, the KL-regularised RL problem has a **closed-form solution** —
+a Gibbs/Boltzmann reweighting of the reference policy. The reason RLHF is implemented with PPO rather
+than by writing down this formula is purely computational: $Z(x)$ is a sum over all sequences and is
+intractable. Second, the prompt-dependent shift $c(x)$ from the identifiability proposition changes
+$r$ and $Z$ by matching factors, so $\pi^\star$ is unchanged — the unidentifiability is harmless
+here.
+</KeyIdea>
+
+## DPO
+
+<Theorem id="dpo-derivation" title="The DPO objective">
+Under the Bradley–Terry model and the KL-regularised objective, the reward is recoverable from the
+optimal policy:
+$$
+r(x,y) = \beta\log\frac{\pi^\star(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)} + \beta\log Z(x),
+$$
+and substituting into the Bradley–Terry likelihood cancels $Z(x)$, giving the objective
+$$
+\mathcal{L}_{\mathrm{DPO}}(\theta) = -\E_{(x,y_w,y_l)}\left[\log\sigma\!\left(
+\beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\mathrm{ref}}(y_w\mid x)}
+-\beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\mathrm{ref}}(y_l\mid x)}\right)\right],
+$$
+which involves no reward model and no sampling from $\pi_\theta$.
+</Theorem>
+
+<Proof>
+Solve the closed form of the previous theorem for $r$: taking logarithms of
+$\pi^\star(y\mid x) = \mu(y\mid x)e^{r(x,y)/\beta}/Z(x)$ gives
+$$
+\log\pi^\star(y\mid x) = \log\mu(y\mid x) + \frac{r(x,y)}{\beta} - \log Z(x),
+$$
+and rearranging gives the displayed expression for $r$.
+
+Now substitute into the Bradley–Terry likelihood, which depends only on the reward **difference**:
+$$
+r(x,y_w)-r(x,y_l)
+= \beta\log\frac{\pi^\star(y_w\mid x)}{\mu(y_w\mid x)} - \beta\log\frac{\pi^\star(y_l\mid x)}{\mu(y_l\mid x)}
++ \underbrace{\beta\log Z(x) - \beta\log Z(x)}_{=0} .
+$$
+The intractable $Z(x)$ cancels because it is a function of $x$ alone — exactly the invariance
+established in the identifiability proposition. Replacing $\pi^\star$ by the parameterised
+$\pi_\theta$ and writing the negative log-likelihood of the observed preferences gives
+$\mathcal{L}_{\mathrm{DPO}}$.
+</Proof>
+
+<KeyIdea>
+The whole of DPO is: *the reward is a reparameterisation of the policy, and Bradley–Terry only ever
+uses reward differences, so the intractable normaliser drops out.* No new optimisation theory, no new
+statistical assumption beyond those already in RLHF — a change of variables. It is a good example of
+how far algebra can go before any analysis is needed.
+</KeyIdea>
+
+<Derivation title="The DPO gradient, and what it does">
+<Step why="Differentiate the logistic loss. Write the implicit reward margin as Δ.">
+$$
+\Delta = \beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\mathrm{ref}}(y_w\mid x)} - \beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\mathrm{ref}}(y_l\mid x)} .
+$$
+</Step>
+<Step why="The derivative of −log σ(Δ) is −σ(−Δ) times the derivative of Δ.">
+$$
+\nabla_\theta\mathcal{L}_{\mathrm{DPO}}
+= -\beta\,\E\Big[\sigma(-\Delta)\Big(\nabla_\theta\log\pi_\theta(y_w\mid x) - \nabla_\theta\log\pi_\theta(y_l\mid x)\Big)\Big].
+$$
+</Step>
+<Step why="Read the two factors. The bracket raises the log-probability of the winner and lowers that of the loser — an ordinary supervised signal.">
+The update is a contrastive step on the two responses.
+</Step>
+<Step why="The weight σ(−Δ) is large exactly when the current model ranks the pair wrongly, so mis-ranked pairs dominate the gradient and already-correct pairs contribute little.">
+This is an automatic hard-example weighting, with no scheduling.
+</Step>
+</Derivation>
+
+<Claim kind="empirical" id="dpo-vs-rlhf" title="What DPO does and does not replace">
+DPO removes the separately-trained reward model and the on-policy RL loop, and is markedly simpler
+and cheaper. It is not equivalent to RLHF in practice.
+</Claim>
+
+<NotSaid>
+The derivation is exact, but it establishes the equivalence at the **optimum**, for the **exact**
+Bradley–Terry model, with **unlimited** preference data. Several things differ in practice:
+
+- **Off-distribution behaviour.** RLHF's reward model is queried on samples from the current policy, so it supplies a signal on responses that the preference dataset never contained. DPO only ever sees the fixed pairs, so the implicit reward is unconstrained off the preference distribution, and the optimised policy can drift into regions where nothing pins it down.
+- **The Bradley–Terry assumption is inherited, not removed.** Both methods assume preferences are generated by a single latent scalar reward with a logistic link. Non-transitive or heterogeneous human preferences violate this, and no amount of data fixes it.
+- **The KL constraint is enforced differently.** In RLHF it is an explicit penalty on samples; in DPO it is implicit in the $\log\pi_\theta/\pi_{\mathrm{ref}}$ parameterisation, and the effective constraint is weaker on unseen responses.
+- **Empirically** the two give different behaviour, with DPO sometimes reducing output diversity more sharply and being more sensitive to the quality of $\pi_{\mathrm{ref}}$. Which is better depends on the setting, and the literature has not converged.
+</NotSaid>
+
+<Claim kind="heuristic" id="reward-hacking" title="Reward hacking and the role of the KL term">
+As $\beta\to0$ the optimal policy concentrates on $\argmax_y r(x,y)$ — the maximiser of the *learned*
+reward, which is a finite-sample estimate. That maximiser is typically an adversarial input to the
+reward model rather than a good response.
+</Claim>
+
+<NotSaid>
+This is Goodhart's law with a mathematical form. The learned $r_\phi$ approximates $r^\star$ well on
+the preference *distribution*, and the optimiser's job is to find points where they differ most —
+precisely the points where the approximation is untested. The KL term is a
+<TopicRef id="optimization/convex-sets-and-functions">proximity constraint</TopicRef> keeping the
+policy inside the region where $r_\phi$ was fit.
+
+What is *not* available: a theorem bounding the true reward of the optimised policy in terms of the
+reward model's error and $\beta$. Such a bound would need a uniform error guarantee for $r_\phi$ over
+the region reachable at a given KL budget, and the available
+<TopicRef id="learning-theory/erm-and-uniform-convergence">uniform convergence</TopicRef> tools are
+vacuous at this scale. Choosing $\beta$ is therefore empirical, and reward hacking is diagnosed after
+the fact rather than prevented by design.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="po-kl-optimum" />
+<ProblemRef id="po-dpo-derivation" />
+<ProblemRef id="po-reward-invariance" />
+<ProblemRef id="po-dpo-gradient" />

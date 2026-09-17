@@ -1,0 +1,369 @@
+defaults:
+  field: random-matrix-theory
+problems:
+  - id: rm-operator-norm-net
+    title: The net argument for the spectral norm
+    topic: random-matrix-theory/spectral-norm-of-random-matrices
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [operator norm, net, sub-gaussian, union bound, flagship]
+    statement: |
+      Let $A\in\R^{n\times p}$ have independent, mean-zero entries with $\|A_{ij}\|_{\psi_2}\le K$.
+      Prove that there is an absolute constant $C$ with
+      $$
+      \P\Big(\|A\| \ge CK\big(\sqrt n+\sqrt p+t\big)\Big) \le 2e^{-t^2}
+      $$
+      for all $t\ge0$. Your proof must construct the nets, bound their sizes, control a single bilinear
+      form, and perform the exponent count explicitly.
+    hints:
+      - Reduce $\|A\|$ to a maximum of $\langle Au, v\rangle$ over $\eps$-nets of two spheres.
+      - For fixed unit $u,v$, the quantity $\langle Au,v\rangle$ is a weighted sum of independent sub-Gaussian entries — compute its parameter.
+      - Count exponents - the net has $e^{(n+p)\log 12}$ points, so you need the concentration exponent to dominate $(n+p)$.
+    solution: |
+      **Step 1: nets.** Fix $\eps = 1/4$ and take $\tfrac14$-nets $\Ncal\subseteq S^{p-1}$,
+      $\mathcal M\subseteq S^{n-1}$. By the volumetric bound, $|\Ncal|\le12^p$ and $|\mathcal M|\le12^n$.
+      By the bilinear net lemma,
+      $$
+      \|A\| \le \frac{1}{1-2\eps}\max_{u\in\Ncal}\max_{v\in\mathcal M}\langle Au,v\rangle = 2\max_{u,v}\langle Au,v\rangle .
+      $$
+
+      **Step 2: one pair.** For fixed unit $u,v$,
+      $$
+      \langle Au,v\rangle = \sum_{i=1}^n\sum_{j=1}^p A_{ij}u_jv_i ,
+      $$
+      a linear combination of the independent, centred, sub-Gaussian entries with coefficients
+      $u_jv_i$. By the sum rule, it is sub-Gaussian with
+      $$
+      \|\langle Au,v\rangle\|_{\psi_2}^2 \le C_0K^2\sum_{i,j}u_j^2v_i^2 = C_0K^2\|u\|_2^2\|v\|_2^2 = C_0K^2 .
+      $$
+      Hence $\P(\langle Au,v\rangle \ge s)\le2\exp(-c_0s^2/K^2)$ for every $s\ge0$.
+
+      **Step 3: union bound and exponent count.** Set $s = CK(\sqrt n+\sqrt p+t)$. Then
+      $$
+      \P\Big(\max_{u\in\Ncal,v\in\mathcal M}\langle Au,v\rangle \ge s\Big)
+      \le 12^{n+p}\cdot2\exp\left(-\frac{c_0s^2}{K^2}\right)
+      = 2\exp\left((n+p)\log12 - \frac{c_0s^2}{K^2}\right).
+      $$
+      Now use $(a+b+c)^2 \ge \tfrac12(a+b)^2 + c^2 \ge \tfrac12(a^2+b^2)+c^2$ for $a,b,c\ge0$:
+      $$
+      \frac{s^2}{K^2} = C^2(\sqrt n+\sqrt p+t)^2 \ge C^2\Big(\frac{n+p}{2}+t^2\Big).
+      $$
+      Choose $C$ with $\tfrac{c_0C^2}{2}\ge\log12 + 1$ and $c_0C^2\ge1$. Then the exponent is at most
+      $$
+      (n+p)\log12 - (\log12+1)(n+p) - t^2 = -(n+p) - t^2 \le -t^2 ,
+      $$
+      so the probability is at most $2e^{-t^2}$.
+
+      **Step 4: remove the net.** On the complement, Step 1 gives $\|A\|\le2s$, which is the claim
+      after renaming $C$.
+
+      **Where each hypothesis went.** Independence of the entries was used only in Step 2, to get the
+      sub-Gaussian parameter of the linear combination. The mean-zero assumption is needed there too.
+      Nothing required identical distribution, and nothing required $n$ or $p$ to be large.
+
+  - id: rm-frobenius-vs-operator
+    title: Frobenius versus operator norm for random matrices
+    topic: random-matrix-theory/spectral-norm-of-random-matrices
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [operator norm, frobenius, conditioning]
+    statement: |
+      Let $A\in\R^{n\times p}$ have i.i.d. standard Gaussian entries.
+
+      1. Compute $\E\|A\|_F^2$ exactly.
+      2. State the order of $\E\|A\|$ from the spectral-norm theorem.
+      3. For $n=p=1000$, compare the two numerically and compute the ratio.
+      4. What would $\|A\|$ be if all the "mass" were in a single singular value? Compare.
+    solution: |
+      **1.** $\E\|A\|_F^2 = \sum_{i,j}\E A_{ij}^2 = np$. So $\|A\|_F \approx\sqrt{np}$.
+
+      **2.** $\E\|A\| \asymp \sqrt n+\sqrt p$, and by Bai–Yin the constant is exactly $1$:
+      $\|A\|\approx\sqrt n+\sqrt p$.
+
+      **3.** At $n=p=1000$: $\|A\|_F\approx1000$ and $\|A\|\approx2\sqrt{1000}\approx63.2$. The ratio is
+      $\|A\|_F/\|A\|\approx15.8$.
+
+      **4.** If a single singular value carried all the Frobenius mass we would have
+      $\|A\| = \|A\|_F = 1000$. The observed value is sixteen times smaller, which means the singular
+      values are spread out rather than concentrated: indeed by Marchenko–Pastur they fill
+      $[\,0, 2\sqrt n\,]$ with the quarter-circle shape, and
+      $\|A\|_F^2 = \sum_i\sigma_i^2$ is dominated by the bulk, not by the top.
+
+      **Interpretation.** In general $\|A\|\le\|A\|_F\le\sqrt{\operatorname{rank}}\,\|A\|$, so a
+      full-rank $1000\times1000$ matrix could have a ratio as large as $\sqrt{1000}\approx31.6$. The
+      observed $15.8$ shows the spectrum is spread but not flat. The practical consequence is that
+      random matrices are far better conditioned than the Frobenius norm alone would allow, which is
+      why random initialisation and random projections behave well.
+
+  - id: rm-semicircle-moments
+    title: Catalan numbers are the moments of the semicircle law
+    topic: random-matrix-theory/spectral-norm-of-random-matrices
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [semicircle, moments, catalan, wigner]
+    statement: |
+      Let $\rho_{sc}(x) = \frac{1}{2\pi}\sqrt{4-x^2}$ on $[-2,2]$.
+
+      1. Verify $\int_{-2}^2\rho_{sc} = 1$.
+      2. Show the odd moments vanish and that the $2k$-th moment is the Catalan number
+         $C_k = \frac{1}{k+1}\binom{2k}{k}$.
+      3. Verify $C_1 = 1$, $C_2 = 2$, $C_3 = 5$ and interpret the second moment.
+    hints:
+      - Substitute $x = 2\sin\theta$ or $x = 2\cos\theta$ to turn the integrals into Wallis integrals.
+      - $\int_{-\pi/2}^{\pi/2}\sin^{2k}\theta\cos^2\theta\,d\theta$ has a closed form in terms of binomial coefficients.
+    solution: |
+      Substitute $x = 2\sin\theta$, $dx = 2\cos\theta\,d\theta$, $\sqrt{4-x^2}=2\cos\theta$ for
+      $\theta\in[-\pi/2,\pi/2]$. Then
+      $$
+      \int_{-2}^2 x^m\rho_{sc}(x)dx = \frac{1}{2\pi}\int_{-\pi/2}^{\pi/2}(2\sin\theta)^m\cdot2\cos\theta\cdot2\cos\theta\,d\theta
+      = \frac{2^{m+1}}{\pi}\int_{-\pi/2}^{\pi/2}\sin^m\theta\cos^2\theta\,d\theta .
+      $$
+
+      **1.** $m=0$: $\frac{2}{\pi}\int_{-\pi/2}^{\pi/2}\cos^2\theta\,d\theta = \frac{2}{\pi}\cdot\frac\pi2 = 1$.
+
+      **2.** For odd $m$ the integrand is odd, so the integral vanishes. For $m = 2k$, use the Wallis
+      identity
+      $$
+      \int_{-\pi/2}^{\pi/2}\sin^{2k}\theta\cos^2\theta\,d\theta = \frac{\pi}{2^{2k+2}}\cdot\frac{1}{k+1}\binom{2k}{k}\cdot 2 ,
+      $$
+      which follows from $\cos^2 = 1-\sin^2$ and the standard formula
+      $\int_{-\pi/2}^{\pi/2}\sin^{2k}\theta\,d\theta = \pi\binom{2k}{k}2^{-2k}$. Substituting,
+      $$
+      \int x^{2k}\rho_{sc} = \frac{2^{2k+1}}{\pi}\cdot\frac{\pi}{2^{2k+1}}\cdot\frac{1}{k+1}\binom{2k}{k} = \frac{1}{k+1}\binom{2k}{k} = C_k .
+      $$
+
+      **3.** $C_1 = \tfrac12\binom21 = 1$, $C_2 = \tfrac13\binom42 = 2$, $C_3 = \tfrac14\binom63 = 5$.
+
+      The second moment being $1$ says the semicircle law has variance $1$, matching the normalisation
+      $W/\sqrt d$ with unit-variance entries — and the moment method proof of the semicircle law works
+      by showing $\frac1d\E\tr\big((W/\sqrt d)^{2k}\big)\to C_k$, where the Catalan numbers count the
+      non-crossing pairings of $2k$ points that survive in the limit.
+
+  - id: rm-simulate-spectrum
+    title: Simulate Wigner and Wishart spectra
+    topic: random-matrix-theory/spectral-norm-of-random-matrices
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [simulation, wigner, semicircle, universality]
+    statement: |
+      1. Generate symmetric $d\times d$ matrices with i.i.d. $\Ncal(0,1)$ entries above the diagonal
+         and plot the histogram of the eigenvalues of $W/\sqrt d$ against the semicircle density.
+      2. Repeat with Rademacher entries, and with heavy-tailed but unit-variance entries. Comment on
+         universality of the bulk.
+      3. Track $\lambda_{\max}$ across $d$ and compare with the prediction $2$.
+    solution: |
+      ```python
+      import numpy as np
+
+      def wigner_spectrum(d=800, kind="gaussian", seed=0):
+          rng = np.random.default_rng(seed)
+          if kind == "gaussian":
+              M = rng.standard_normal((d, d))
+          elif kind == "rademacher":
+              M = rng.choice([-1.0, 1.0], size=(d, d))
+          else:                                    # heavy-tailed, unit variance
+              M = rng.standard_t(df=5, size=(d, d)) / np.sqrt(5 / 3)
+          W = np.triu(M) + np.triu(M, 1).T         # symmetrise
+          return np.linalg.eigvalsh(W / np.sqrt(d))
+      ```
+
+      **1.** The histogram matches $\rho_{sc}(x) = \frac{1}{2\pi}\sqrt{4-x^2}$ closely already at
+      $d = 200$, and the agreement improves with $d$. The edges at $\pm2$ are sharp.
+
+      **2. Universality.** The bulk is visually identical for Gaussian, Rademacher and $t_5$ entries
+      once the variance is normalised to $1$. This is the universality phenomenon: the limiting
+      spectral distribution depends only on the entry variance. Note what is *not* universal — the
+      fluctuation of $\lambda_{\max}$ around $2$ is Tracy–Widom only under a fourth-moment condition,
+      and heavy-tailed entries produce visible outliers above the edge for small $d$.
+
+      **3. The edge.** Plotting $\lambda_{\max}$ against $d$ shows convergence to $2$ from above, with
+      the deviation shrinking like $d^{-2/3}$ — the Tracy–Widom scaling. A useful diagnostic: plot
+      $d^{2/3}(\lambda_{\max}-2)$ and check that it stabilises rather than drifting.
+
+      **A common bug.** Symmetrising by `(M + M.T)/2` rather than `triu(M) + triu(M,1).T` halves the
+      variance of the off-diagonal entries and produces a semicircle of radius $\sqrt2$ instead of $2$.
+      Always check the empirical variance of the off-diagonal entries before blaming the theory.
+
+  - id: mp-edges-arithmetic
+    title: Marchenko–Pastur edges and conditioning
+    topic: random-matrix-theory/marchenko-pastur
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [marchenko-pastur, condition number, aspect ratio]
+    statement: |
+      For a sample covariance matrix with true covariance $I_p$ and aspect ratio $\lambda = p/n$:
+
+      1. Give the bulk edges and the limiting condition number as functions of $\lambda$.
+      2. Tabulate them for $\lambda = 0.01, 0.1, 0.5, 0.9, 0.99$.
+      3. How large must $n$ be, relative to $p$, for the condition number to be below $2$?
+    solution: |
+      **1.** Edges $(1\mp\sqrt\lambda)^2$, condition number
+      $\kappa(\lambda) = \left(\dfrac{1+\sqrt\lambda}{1-\sqrt\lambda}\right)^2$.
+
+      **2.**
+
+      | $\lambda$ | $\lambda_{\min}$ | $\lambda_{\max}$ | $\kappa$ |
+      | --- | --- | --- | --- |
+      | $0.01$ | $0.810$ | $1.210$ | $1.49$ |
+      | $0.1$ | $0.469$ | $1.729$ | $3.69$ |
+      | $0.5$ | $0.086$ | $2.914$ | $34.0$ |
+      | $0.9$ | $0.0025$ | $3.897$ | $1550$ |
+      | $0.99$ | $2.5\times10^{-5}$ | $3.980$ | $1.6\times10^5$ |
+
+      **3.** Solve $\left(\frac{1+\sqrt\lambda}{1-\sqrt\lambda}\right)^2 = 2$: $\frac{1+\sqrt\lambda}{1-\sqrt\lambda}=\sqrt2$,
+      so $\sqrt\lambda = \frac{\sqrt2-1}{\sqrt2+1} \approx 0.1716$ and $\lambda\approx0.0294$. Hence
+      $n \gtrsim 34p$.
+
+      **Comment.** "Thirty-four samples per feature" is a concrete answer to a question usually met
+      with folklore rules of thumb, and it makes clear how expensive a well-conditioned covariance
+      estimate is in high dimension. Note also that every entry in the table refers to an estimate of
+      the *identity*: none of the spread is signal.
+
+  - id: mp-density-integral
+    title: The Marchenko–Pastur density integrates to one
+    topic: random-matrix-theory/marchenko-pastur
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [marchenko-pastur, integral, substitution]
+    statement: |
+      For $\lambda\in(0,1]$ and $\sigma=1$, verify that
+      $$
+      \int_a^b \frac{\sqrt{(b-x)(x-a)}}{2\pi\lambda x}\,dx = 1,
+      \qquad a = (1-\sqrt\lambda)^2,\ b = (1+\sqrt\lambda)^2 .
+      $$
+    hints:
+      - Substitute $x = 1+\lambda-2\sqrt\lambda\cos\theta$ for $\theta\in[0,\pi]$.
+      - Verify that $(b-x)(x-a) = 4\lambda\sin^2\theta$ under this substitution.
+      - You will need $\int_0^\pi\frac{\sin^2\theta}{1-2r\cos\theta+r^2}d\theta = \frac\pi2$ for $|r|<1$.
+    solution: |
+      With $x = 1+\lambda-2\sqrt\lambda\cos\theta$ we have $dx = 2\sqrt\lambda\sin\theta\,d\theta$, and
+      $x$ runs from $a$ (at $\theta=0$) to $b$ (at $\theta=\pi$). Compute
+      $$
+      b - x = (1+\sqrt\lambda)^2 - (1+\lambda) + 2\sqrt\lambda\cos\theta = 2\sqrt\lambda(1+\cos\theta),
+      $$
+      $$
+      x - a = (1+\lambda) - 2\sqrt\lambda\cos\theta - (1-\sqrt\lambda)^2 = 2\sqrt\lambda(1-\cos\theta),
+      $$
+      so $(b-x)(x-a) = 4\lambda(1-\cos^2\theta) = 4\lambda\sin^2\theta$ and
+      $\sqrt{(b-x)(x-a)} = 2\sqrt\lambda\sin\theta$ for $\theta\in[0,\pi]$.
+
+      Substituting,
+      $$
+      \int_a^b\frac{\sqrt{(b-x)(x-a)}}{2\pi\lambda x}dx
+      = \int_0^\pi\frac{2\sqrt\lambda\sin\theta}{2\pi\lambda\,x}\cdot2\sqrt\lambda\sin\theta\,d\theta
+      = \frac{2}{\pi}\int_0^\pi\frac{\sin^2\theta}{1+\lambda-2\sqrt\lambda\cos\theta}\,d\theta .
+      $$
+      The denominator is $1 - 2r\cos\theta + r^2$ with $r = \sqrt\lambda \in(0,1]$. Using the standard
+      integral $\int_0^\pi\frac{\sin^2\theta}{1-2r\cos\theta+r^2}d\theta = \frac\pi2$ for $|r|<1$,
+      $$
+      \frac2\pi\cdot\frac\pi2 = 1 .
+      $$
+
+      For $\lambda = 1$ (so $r=1$, $a=0$) the integral is improper at $x=0$, but
+      $\sqrt{(b-x)x}/x \sim \sqrt{b/x}$ is integrable there, and the value is still $1$ by continuity in
+      $\lambda$.
+
+      **The standard integral.** It follows from the Poisson-kernel expansion
+      $\frac{1-r^2}{1-2r\cos\theta+r^2} = 1+2\sum_{m\ge1}r^m\cos m\theta$ together with
+      $\sin^2\theta = \tfrac12(1-\cos2\theta)$ and orthogonality of the cosines on $[0,\pi]$.
+
+  - id: mp-simulate-law
+    title: Simulate the Marchenko–Pastur law
+    topic: random-matrix-theory/marchenko-pastur
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [simulation, marchenko-pastur, universality, covariance]
+    statement: |
+      Generate $X\in\R^{n\times p}$ with i.i.d. unit-variance entries, form $\hat\Sigma = \frac1nX^\top X$,
+      and compare the eigenvalue histogram with the Marchenko–Pastur density.
+
+      1. Sweep $\lambda = p/n$ and check the edges.
+      2. Replace Gaussian entries with Rademacher and with a heavy-tailed unit-variance law; comment on
+         the bulk and on the extreme eigenvalues.
+      3. Add a rank-one spike $\Sigma = I + h\,vv^\top$ and find empirically the value of $h$ at which
+         the top eigenvalue separates from the bulk. Compare with $\sqrt\lambda$.
+    solution: |
+      ```python
+      import numpy as np
+
+      def mp_spectrum(p=200, lam=0.4, kind="gaussian", spike=0.0, seed=0):
+          n = int(round(p / lam))
+          rng = np.random.default_rng(seed)
+          if kind == "gaussian":
+              X = rng.standard_normal((n, p))
+          elif kind == "rademacher":
+              X = rng.choice([-1.0, 1.0], size=(n, p))
+          else:
+              X = rng.standard_t(df=5, size=(n, p)) / np.sqrt(5 / 3)
+          if spike > 0:
+              v = np.zeros(p); v[0] = 1.0
+              X = X + spike**0.5 * (rng.standard_normal((n, 1)) @ v[None, :])
+          S = X.T @ X / n
+          return np.linalg.eigvalsh(S)
+      ```
+
+      **1. Edges.** The empirical minimum and maximum track $(1\mp\sqrt\lambda)^2$ closely for
+      $p \gtrsim 100$. As $\lambda\to1$ the lower edge approaches $0$ and the smallest eigenvalue
+      becomes numerically indistinguishable from zero — the matrix is effectively singular.
+
+      **2. Universality.** The bulk is the same for all three entry distributions. The extremes are
+      not: with $t_5$ entries (infinite fourth moment is approached) one sees occasional eigenvalues
+      well above the predicted edge, because Bai–Yin requires a finite fourth moment. This is a
+      concrete illustration that universality of the bulk and universality of the edge are different
+      statements with different hypotheses.
+
+      **3. The BBP transition.** Sweeping $h$ shows the top eigenvalue buried in the bulk for small $h$
+      and emerging as a visible outlier once $h$ exceeds roughly $\sqrt\lambda$. At $\lambda=0.4$ the
+      prediction is $h^\star\approx0.63$, which matches the simulation to the resolution the
+      finite-size fluctuations allow. Below the threshold, the empirical top eigenvector also has
+      vanishing overlap with $v$ — the signal is not merely hard to see, it is absent from the sample
+      spectrum.
+
+  - id: mp-condition-number
+    title: Why ordinary least squares degrades as p approaches n
+    topic: random-matrix-theory/marchenko-pastur
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [least squares, conditioning, variance, marchenko-pastur]
+    statement: |
+      Let $y = X\beta^\star+\varepsilon$ with $\varepsilon\sim\Ncal(0,\sigma^2I_n)$ and $X$ having i.i.d.
+      $\Ncal(0,1)$ entries, $p<n$. Show that the expected squared estimation error of ordinary least
+      squares is
+      $$
+      \E\|\hat\beta-\beta^\star\|_2^2 = \sigma^2\,\E\big[\operatorname{tr}\big((X^\top X)^{-1}\big)\big],
+      $$
+      and use the Marchenko–Pastur law to argue that this behaves like $\frac{\sigma^2 p}{n-p}$ for
+      large $n,p$. Evaluate at $p/n = 0.5$ and $p/n = 0.95$.
+    solution: |
+      **Error formula.** $\hat\beta - \beta^\star = (X^\top X)^{-1}X^\top\varepsilon$, so conditionally
+      on $X$,
+      $$
+      \E\big[\|\hat\beta-\beta^\star\|_2^2\mid X\big] = \sigma^2\operatorname{tr}\big((X^\top X)^{-1}X^\top X(X^\top X)^{-1}\big)
+      = \sigma^2\operatorname{tr}\big((X^\top X)^{-1}\big).
+      $$
+      Taking expectations over $X$ gives the claim.
+
+      **Asymptotics.** Write $X^\top X = n\hat\Sigma$, so
+      $\operatorname{tr}((X^\top X)^{-1}) = \frac1n\operatorname{tr}(\hat\Sigma^{-1}) = \frac pn\cdot\frac1p\sum_{i}\frac{1}{\mu_i}$,
+      where $\mu_i$ are the eigenvalues of $\hat\Sigma$. By Marchenko–Pastur, the empirical average of
+      $1/\mu$ converges to $\int x^{-1}d\mu_{MP}(x) = \frac{1}{1-\lambda}$ for $\lambda = p/n<1$ (a
+      standard computation with the same substitution used to normalise the density). Hence
+      $$
+      \E\|\hat\beta-\beta^\star\|_2^2 \approx \sigma^2\cdot\frac pn\cdot\frac{1}{1-p/n} = \frac{\sigma^2p}{n-p}.
+      $$
+      (For Gaussian design this is in fact exact: $\E\operatorname{tr}((X^\top X)^{-1}) = p/(n-p-1)$
+      from the inverse-Wishart distribution.)
+
+      **Evaluation.** At $p/n=0.5$: error $\approx\sigma^2\cdot\frac{0.5n}{0.5n} = \sigma^2$. At
+      $p/n = 0.95$: error $\approx\sigma^2\cdot\frac{0.95n}{0.05n} = 19\sigma^2$ — nineteen times worse
+      at the same $n$, purely from conditioning. As $p\to n$ the error diverges, which is the
+      interpolation-threshold peak of double descent seen from the estimation side.

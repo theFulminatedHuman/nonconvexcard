@@ -1,0 +1,308 @@
+---
+title: Projected, Proximal and Constrained First-Order Methods
+summary: Projection, the proximal operator, mirror descent and Frank–Wolfe, and the single inequality that makes all of their proofs work.
+field: advanced-optimization
+level: 3
+order: 20
+prerequisites: [advanced-optimization/duality-and-kkt, optimization/gradient-descent-convergence]
+tags: [projected gradient, proximal, mirror descent, frank-wolfe, coordinate descent, admm]
+estimated_time: 1d
+claims:
+  - id: projection-nonexpansive
+    kind: lemma
+    title: Projection onto a convex set is non-expansive
+    summary: Euclidean projection onto a closed convex set is 1-Lipschitz, and satisfies the obtuse-angle inequality.
+    proved: true
+    tags: [projection, non-expansive]
+  - id: projected-gd-rate
+    kind: theorem
+    title: Convergence of projected gradient descent
+    summary: Projected gradient descent attains the same rates as gradient descent on constrained convex problems.
+    proved: true
+    tags: [projected gradient, rate]
+  - id: prox-def
+    kind: definition
+    title: Proximal operator
+    summary: The proximal operator trades a step towards minimising a function against staying near the current point.
+    proved: false
+    tags: [proximal, moreau]
+  - id: prox-soft-threshold
+    kind: proposition
+    title: The proximal operator of the l1 norm is soft thresholding
+    summary: An explicit closed form that makes proximal gradient practical for the lasso.
+    proved: true
+    tags: [soft threshold, lasso, l1]
+  - id: ista-rate
+    kind: theorem
+    title: Convergence of proximal gradient descent
+    summary: Proximal gradient descent on a smooth-plus-convex composite objective attains the O(1/t) rate.
+    proved: false
+    tags: [ista, composite, rate]
+  - id: frank-wolfe-rate
+    kind: theorem
+    title: Frank–Wolfe convergence
+    summary: The conditional gradient method attains O(1/t) using only linear minimisations over the constraint set.
+    proved: true
+    tags: [frank-wolfe, conditional gradient, projection-free]
+  - id: mirror-descent-note
+    kind: proposition
+    title: Mirror descent and the geometry of the gradient
+    summary: Replacing the Euclidean proximity term by a Bregman divergence changes which norm the rate is measured in.
+    proved: false
+    tags: [mirror descent, bregman, simplex]
+references:
+  - key: parikh-boyd
+    title: Proximal Algorithms
+    authors: Neal Parikh and Stephen Boyd
+    year: 2014
+    kind: survey
+    url: https://web.stanford.edu/~boyd/papers/prox_algs.html
+  - key: beck-teboulle
+    title: A fast iterative shrinkage-thresholding algorithm for linear inverse problems
+    authors: Amir Beck and Marc Teboulle
+    year: 2009
+    kind: paper
+    note: FISTA, the accelerated proximal gradient method.
+  - key: jaggi-fw
+    title: 'Revisiting Frank–Wolfe: Projection-Free Sparse Convex Optimization'
+    authors: Martin Jaggi
+    year: 2013
+    kind: paper
+  - key: bubeck-survey-3
+    title: 'Convex Optimization: Algorithms and Complexity'
+    authors: Sébastien Bubeck
+    year: 2015
+    kind: survey
+    url: https://arxiv.org/abs/1405.4980
+---
+
+Unconstrained gradient descent needs one modification to handle constraints and non-smooth
+regularisers, and the modification is the same in every case: replace "take a gradient step" by
+"take a gradient step, then *do something* that respects the structure". This page collects the four
+standard choices of "something".
+
+## Projection
+
+<Definition id="projection-def" title="Euclidean projection">
+For a closed convex $\mathcal{C}\subseteq\R^d$,
+$\Pi_{\mathcal{C}}(x) = \argmin_{z\in\mathcal{C}}\norm{x-z}_2$. The minimiser exists and is unique
+by strong convexity of the objective on the closed convex feasible set.
+</Definition>
+
+<Lemma id="projection-nonexpansive" title="Projection is non-expansive">
+For all $x,y\in\R^d$ and all $z\in\mathcal{C}$,
+$$
+\text{(i)}\quad \ip{x - \Pi_\mathcal{C}(x)}{z - \Pi_\mathcal{C}(x)} \le 0,
+\qquad
+\text{(ii)}\quad \norm{\Pi_\mathcal{C}(x)-\Pi_\mathcal{C}(y)}_2 \le \norm{x-y}_2 .
+$$
+</Lemma>
+
+<Proof>
+(i) Let $p = \Pi_\mathcal{C}(x)$ and $z\in\mathcal{C}$. For $\theta\in(0,1]$ the point
+$p + \theta(z-p)$ is in $\mathcal{C}$ by convexity, so by optimality of $p$,
+$$
+\norm{x - p}_2^2 \le \norm{x - p - \theta(z-p)}_2^2
+= \norm{x-p}_2^2 - 2\theta\ip{x-p}{z-p} + \theta^2\norm{z-p}_2^2 .
+$$
+Cancelling and dividing by $\theta>0$ gives $2\ip{x-p}{z-p}\le\theta\norm{z-p}_2^2$; letting
+$\theta\downarrow0$ gives (i).
+
+(ii) Write $p = \Pi_\mathcal{C}(x)$, $q = \Pi_\mathcal{C}(y)$. Apply (i) at $x$ with $z = q$ and at
+$y$ with $z = p$:
+$$
+\ip{x-p}{q-p}\le0, \qquad \ip{y-q}{p-q}\le0 .
+$$
+Adding the two (after negating the second) gives $\ip{(x-y)-(p-q)}{p-q}\ge0$, i.e.
+$\norm{p-q}_2^2 \le \ip{x-y}{p-q} \le \norm{x-y}_2\norm{p-q}_2$ by Cauchy–Schwarz. Dividing by
+$\norm{p-q}_2$ (or noting the claim is trivial when it vanishes) completes the proof.
+</Proof>
+
+<Theorem id="projected-gd-rate" title="Convergence of projected gradient descent">
+Let $f$ be convex and $L$-smooth on a closed convex $\mathcal{C}$, with minimiser $x^\star$ over
+$\mathcal{C}$. The iteration
+$$
+x_{t+1} = \Pi_\mathcal{C}\big(x_t - \tfrac1L\nabla f(x_t)\big)
+$$
+satisfies $f(x_t) - f(x^\star) \le \dfrac{L\norm{x_0-x^\star}_2^2}{2t}$, the same rate as in the
+unconstrained case.
+</Theorem>
+
+<Proof>
+Let $y_{t+1} = x_t - \tfrac1L\nabla f(x_t)$ be the unprojected point, so $x_{t+1} = \Pi_\mathcal{C}(y_{t+1})$.
+Since $x^\star\in\mathcal{C}$, part (ii) of the lemma with the fact that $\Pi_\mathcal{C}(x^\star) = x^\star$
+gives
+$$
+\norm{x_{t+1}-x^\star}_2 = \norm{\Pi_\mathcal{C}(y_{t+1}) - \Pi_\mathcal{C}(x^\star)}_2 \le \norm{y_{t+1}-x^\star}_2 .
+$$
+So the projection can only help: every step of the unconstrained analysis that bounded
+$\norm{x_{t+1}-x^\star}_2^2$ from above by an expression in $\norm{x_t-x^\star}_2^2$ now bounds
+$\norm{y_{t+1}-x^\star}_2^2$ by the same expression, and the projected iterate is no further away.
+Running the <TopicRef id="optimization/gradient-descent-convergence">unconstrained proof</TopicRef>
+with this substitution, the telescoping argument goes through unchanged, with one adjustment: the
+convexity step needs $\ip{\nabla f(x_t)}{x_t-x^\star}\ge f(x_t)-f(x^\star)$, which holds because
+both points are in $\mathcal{C}$ and $f$ is convex there, and the descent step needs the descent
+lemma applied at $y_{t+1}$ followed by the non-expansiveness above.
+</Proof>
+
+<Note title="When projection is cheap">
+Projected gradient descent is only useful when $\Pi_\mathcal{C}$ is cheap. It is, for: a box
+($\Pi(x)_i = \operatorname{clip}(x_i)$), a Euclidean ball ($x\mapsto x\min(1,r/\norm x_2)$), the
+probability simplex ($O(d\log d)$ by sorting), a subspace (a linear solve), the PSD cone (eigenvalue
+clipping). It is not cheap for a general polytope, which is the motivation for Frank–Wolfe below.
+</Note>
+
+## The proximal operator
+
+<Definition id="prox-def" title="Proximal operator">
+For a convex, closed, proper $h:\R^d\to\R\cup\{+\infty\}$ and $\eta>0$,
+$$
+\prox_{\eta h}(v) = \argmin_{z}\left\{h(z) + \frac{1}{2\eta}\norm{z-v}_2^2\right\}.
+$$
+The minimiser is unique because the objective is strongly convex.
+</Definition>
+
+Taking $h = \iota_\mathcal{C}$, the indicator function of a convex set ($0$ on $\mathcal{C}$,
+$+\infty$ off it), recovers $\prox_{\eta\iota_\mathcal{C}} = \Pi_\mathcal{C}$. So projection is a
+special case of the proximal operator, and the theory below subsumes the theory above.
+
+<Proposition id="prox-soft-threshold" title="Prox of the l1 norm is soft thresholding">
+For $h(z) = \norm{z}_1$,
+$$
+\big[\prox_{\eta h}(v)\big]_i = \sign(v_i)\max\big(|v_i| - \eta,\ 0\big) =: S_\eta(v_i).
+$$
+</Proposition>
+
+<Proof>
+The objective $\sum_i\big(|z_i| + \tfrac{1}{2\eta}(z_i-v_i)^2\big)$ separates across coordinates, so
+solve the scalar problem $\min_z |z| + \tfrac{1}{2\eta}(z-v)^2$.
+
+For $z>0$ the derivative is $1 + (z-v)/\eta$, vanishing at $z = v - \eta$, which is positive exactly
+when $v>\eta$. For $z<0$ the derivative is $-1+(z-v)/\eta$, vanishing at $z = v+\eta$, negative
+exactly when $v<-\eta$. For $|v|\le\eta$ neither stationary point is admissible, and $0$ is optimal:
+the subdifferential of $|z|$ at $0$ is $[-1,1]$, and the optimality condition
+$0 \in \partial|z| + (z-v)/\eta$ at $z=0$ reads $v/\eta \in[-1,1]$, i.e. $|v|\le\eta$. Collecting the
+three cases gives $S_\eta$.
+</Proof>
+
+<KeyIdea>
+Soft thresholding is why the <TopicRef id="high-dimensional-statistics/sparse-recovery-and-the-lasso">lasso</TopicRef>
+produces exactly-zero coefficients rather than merely small ones. A gradient step followed by soft
+thresholding sets to zero every coordinate whose gradient signal is below $\eta$ — the sparsity is
+created by the prox operator, in closed form, at no computational cost. Ridge regression, whose prox
+is the shrinkage $v/(1+2\eta)$, never produces an exact zero.
+</KeyIdea>
+
+<Theorem id="ista-rate" title="Convergence of proximal gradient descent">
+Let $F = f + h$ with $f$ convex and $L$-smooth and $h$ convex closed proper. The iteration
+$$
+x_{t+1} = \prox_{h/L}\big(x_t - \tfrac1L\nabla f(x_t)\big)
+$$
+satisfies $F(x_t)-F^\star \le \dfrac{L\norm{x_0-x^\star}_2^2}{2t}$. The accelerated variant (FISTA)
+attains $O(1/t^2)$.
+</Theorem>
+
+Quoted from Beck–Teboulle. The structure of the proof is the projected-gradient proof with the
+non-expansiveness of $\Pi_\mathcal{C}$ replaced by the firm non-expansiveness of $\prox$; the
+references give it in full.
+
+<Algorithm title="ISTA — proximal gradient for the lasso">
+<ol>
+<li><strong>Input.</strong> Design $X\in\R^{n\times p}$, response $y$, regularisation $\lambda$, step $\eta = 1/L$ with $L = \norm{X^\top X}/n$.</li>
+<li><strong>Repeat</strong> for $t = 0,1,2,\dots$:</li>
+<li>  gradient step $v_t = \beta_t - \dfrac{\eta}{n} X^\top(X\beta_t - y)$;</li>
+<li>  soft threshold $\beta_{t+1} = S_{\eta\lambda}(v_t)$, coordinatewise;</li>
+<li><strong>Until</strong> $\norm{\beta_{t+1}-\beta_t}_2 \le \text{tol}$.</li>
+</ol>
+</Algorithm>
+
+## Frank–Wolfe
+
+When projection is expensive but **linear** minimisation over $\mathcal{C}$ is cheap — as for the
+$\ell^1$ ball, the nuclear-norm ball, or a combinatorial polytope — the conditional gradient method
+applies.
+
+<Theorem id="frank-wolfe-rate" title="Frank–Wolfe convergence">
+Let $f$ be convex and $L$-smooth on a compact convex $\mathcal{C}$ of diameter $D$. The iteration
+$$
+s_t = \argmin_{s\in\mathcal{C}}\ip{\nabla f(x_t)}{s},
+\qquad
+x_{t+1} = (1-\gamma_t)x_t + \gamma_ts_t, \quad \gamma_t = \frac{2}{t+2},
+$$
+satisfies $f(x_t) - f^\star \le \dfrac{2LD^2}{t+2}$.
+</Theorem>
+
+<Proof>
+Let $\Delta_t = f(x_t)-f^\star$ and note $x_{t+1}-x_t = \gamma_t(s_t-x_t)$, of norm at most
+$\gamma_tD$. By the descent lemma,
+$$
+f(x_{t+1}) \le f(x_t) + \gamma_t\ip{\nabla f(x_t)}{s_t-x_t} + \frac{L\gamma_t^2D^2}{2}.
+$$
+By the choice of $s_t$ and then convexity,
+$$
+\ip{\nabla f(x_t)}{s_t-x_t} \le \ip{\nabla f(x_t)}{x^\star - x_t} \le f^\star - f(x_t) = -\Delta_t .
+$$
+Hence $\Delta_{t+1}\le(1-\gamma_t)\Delta_t + \tfrac{L\gamma_t^2D^2}{2}$.
+
+Now induct on the claim $\Delta_t \le \frac{2LD^2}{t+2}$. It holds at $t=0$ because
+$\Delta_0 \le \ip{\nabla f(x_0)}{x_0 - x^\star} \le LD^2$ (by smoothness and the diameter bound), and
+$LD^2 \le 2LD^2/2$. Assuming it at $t$, with $\gamma_t = 2/(t+2)$,
+$$
+\Delta_{t+1}\le\left(1-\frac{2}{t+2}\right)\frac{2LD^2}{t+2} + \frac{L D^2}{2}\cdot\frac{4}{(t+2)^2}
+= \frac{2LD^2}{t+2}\cdot\frac{t}{t+2} + \frac{2LD^2}{(t+2)^2}
+= \frac{2LD^2(t+1)}{(t+2)^2}.
+$$
+Finally $\frac{t+1}{(t+2)^2} \le \frac{1}{t+3}$, since $(t+1)(t+3) = t^2+4t+3 \le (t+2)^2 = t^2+4t+4$.
+So $\Delta_{t+1}\le\frac{2LD^2}{t+3}$, completing the induction.
+</Proof>
+
+<Note title="Why Frank–Wolfe is used in practice">
+Two properties. The iterate is a convex combination of at most $t+1$ vertices of $\mathcal{C}$, so it
+is automatically **sparse** when the vertices are (e.g. low-rank for the nuclear-norm ball). And the
+quantity $\ip{\nabla f(x_t)}{x_t - s_t}$ computed at each step is a valid **duality gap certificate**,
+upper bounding $\Delta_t$ — a stopping criterion for free. The price is the $O(1/t)$ rate, which
+cannot be improved to $O(1/t^2)$ in general for projection-free methods on arbitrary compact sets.
+</Note>
+
+## Mirror descent
+
+<Proposition id="mirror-descent-note" title="Mirror descent and geometry">
+Let $\Phi$ be $1$-strongly convex with respect to a norm $\norm{\cdot}$ on $\mathcal{C}$, and define
+the Bregman divergence $D_\Phi(x,y) = \Phi(x)-\Phi(y)-\ip{\nabla\Phi(y)}{x-y}$. The iteration
+$$
+x_{t+1} = \argmin_{x\in\mathcal{C}}\left\{\eta\ip{\nabla f(x_t)}{x} + D_\Phi(x,x_t)\right\}
+$$
+satisfies, for convex $f$ with $\norm{\nabla f}_* \le G$ in the dual norm,
+$$
+f(\bar x_T) - f^\star \le \frac{D_\Phi(x^\star,x_0)}{\eta T} + \frac{\eta G^2}{2},
+$$
+so with optimal $\eta$ the rate is $G\sqrt{2D_\Phi(x^\star,x_0)/T}$.
+</Proposition>
+
+The proof is the subgradient-method proof with $\tfrac12\norm{\cdot}_2^2$ replaced by $D_\Phi$
+throughout; it is in Bubeck's survey. The content is the choice of $\Phi$:
+
+| $\mathcal{C}$ | $\Phi$ | Norm | Rate constant |
+| --- | --- | --- | --- |
+| $\R^d$ | $\tfrac12\norm{x}_2^2$ | $\ell^2$ | $\norm{x^\star}_2\norm{\nabla f}_2$ |
+| simplex $\Delta_d$ | $\sum_ix_i\log x_i$ | $\ell^1$ | $\sqrt{\log d}\,\norm{\nabla f}_\infty$ |
+
+On the simplex the entropic choice gives a $\sqrt{\log d}$ dependence on dimension where the
+Euclidean choice would give $\sqrt d$. That is a genuinely large gain for large $d$, and it is
+obtained by measuring the gradient in $\ell^\infty$ rather than $\ell^2$ — the geometry of the problem,
+not the algorithm, is what changed.
+
+<KeyIdea>
+Gradient descent is not "the" first-order method; it is the first-order method for the Euclidean
+geometry. The <TopicRef id="foundations/matrix-calculus">gradient</TopicRef> is a representation of
+the derivative that depends on an inner product, and mirror descent makes that dependence a design
+choice. Adaptive methods such as Adam can be read the same way, as descent in a metric that changes
+with the iterates.
+</KeyIdea>
+
+## Problems
+
+<ProblemRef id="px-projection-simplex" />
+<ProblemRef id="px-prox-l1" />
+<ProblemRef id="px-frank-wolfe-gap" />
+<ProblemRef id="px-mirror-simplex" />

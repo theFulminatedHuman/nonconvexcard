@@ -1,0 +1,78 @@
+---
+title: Distributed Representations of Words and Phrases and their Compositionality
+authors: Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg Corrado, Jeffrey Dean
+year: 2013
+venue: NeurIPS
+url: https://arxiv.org/abs/1310.4546
+arxiv: '1310.4546'
+field: rag
+also: [llm]
+tags: [word2vec, embeddings, negative sampling, pmi, skip-gram]
+problem: Representing words as one-hot vectors gives no notion of similarity, and earlier distributed representations were expensive to train at scale.
+contribution: The skip-gram model with negative sampling, which learns dense word vectors from co-occurrence at a cost linear in the corpus, and the observation that the resulting geometry encodes analogies.
+prerequisites:
+  - rag/embedding-geometry-and-similarity
+  - machine-learning/logistic-regression
+descendants: [dpr]
+related: [dpr, bert]
+---
+
+## What problem does this paper solve?
+
+Scalable learning of dense word representations, and the removal of the expensive softmax over a
+large vocabulary.
+
+## What mathematical objects are introduced?
+
+Skip-gram with **negative sampling**: for a centre word $w$ and context $c$,
+$$
+\mathcal{L} = -\log\sigma\big(\ip{v_w}{u_c}\big) - \sum_{j=1}^k\E_{c_j\sim P_n}\log\sigma\big(-\ip{v_w}{u_{c_j}}\big),
+$$
+with $P_n$ the unigram distribution raised to the power $3/4$.
+
+## What assumptions are made?
+
+That the $3/4$-power noise distribution is a good sampler, and that $k\approx5$–$20$ negatives suffice
+to approximate the full softmax. Both are empirical choices that worked and were never derived.
+
+## What equations matter?
+
+Levy and Goldberg's subsequent analysis is the mathematically satisfying part: at the optimum, for
+sufficiently high dimension, skip-gram with negative sampling implicitly factorises the **shifted
+pointwise mutual information** matrix,
+$$
+\ip{v_w}{u_c} = \mathrm{PMI}(w,c) - \log k,
+\qquad
+\mathrm{PMI}(w,c) = \log\frac{p(w,c)}{p(w)p(c)} .
+$$
+So the method is matrix factorisation of a co-occurrence statistic, with the noise ratio $k$ acting as
+a threshold.
+
+## What theorem or result is important?
+
+The PMI identification above (Levy–Goldberg, 2014), not in the original paper. It converts an
+algorithm into an objective with a closed-form optimum, which is exactly the kind of result worth
+looking for whenever a method is defined procedurally.
+
+## What proof techniques are used?
+
+In the original, none. The PMI result comes from setting the derivative of the objective with respect
+to each inner product to zero and solving.
+
+## What prior mathematics is required?
+
+The logistic loss and its gradient; pointwise mutual information; low-rank matrix factorisation.
+
+## Limitations
+
+One vector per word type, so polysemy is unresolvable — the fix required contextual embeddings.
+The famous analogy arithmetic ($\textit{king}-\textit{man}+\textit{woman}\approx\textit{queen}$) is
+weaker than commonly reported, and depends on excluding the query words from the nearest-neighbour
+search. Trained on co-occurrence alone, the embeddings encode social biases present in the corpus.
+
+## Why it mattered
+
+It made dense embeddings standard and is the direct ancestor of every
+<TopicRef id="rag/embedding-geometry-and-similarity">retrieval embedding</TopicRef> in use. The
+negative-sampling contrastive objective is also the ancestor of the in-batch-negatives training used
+by <TopicRef id="rag/vector-search-and-ann">DPR</TopicRef> and by modern sentence encoders.

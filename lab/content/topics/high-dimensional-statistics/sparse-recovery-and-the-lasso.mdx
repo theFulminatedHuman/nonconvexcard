@@ -1,0 +1,288 @@
+---
+title: Sparse Recovery, Compressed Sensing and the Lasso
+summary: Restricted isometry, restricted eigenvalues, the lasso error bound, and why sparsity turns an impossible problem into a tractable one.
+field: high-dimensional-statistics
+level: 4
+order: 20
+prerequisites: [high-dimensional-statistics/covariance-estimation, optimization/convex-sets-and-functions]
+tags: [lasso, sparsity, compressed sensing, rip, restricted eigenvalue, minimax]
+estimated_time: 1d
+claims:
+  - id: rip-def
+    kind: definition
+    title: Restricted isometry property
+    summary: A matrix acts as a near-isometry on all sparse vectors.
+    proved: false
+    tags: [rip, sparsity]
+  - id: rip-random
+    kind: theorem
+    title: Random matrices satisfy the RIP
+    summary: A Gaussian matrix with order s log(p/s) rows satisfies the restricted isometry property with high probability.
+    proved: true
+    tags: [rip, random matrix, net]
+  - id: l1-recovery
+    kind: theorem
+    title: Exact recovery by basis pursuit under RIP
+    summary: Under a restricted isometry condition, minimising the l1 norm subject to the measurements recovers every sparse signal exactly.
+    proved: false
+    tags: [basis pursuit, exact recovery, compressed sensing]
+  - id: lasso-bound
+    kind: theorem
+    title: Lasso prediction and estimation error
+    summary: Under a restricted eigenvalue condition the lasso attains squared error of order s log(p) / n.
+    proved: true
+    tags: [lasso, oracle inequality, restricted eigenvalue]
+  - id: minimax-sparse
+    kind: theorem
+    title: Minimax rate for sparse regression
+    summary: No estimator can beat s log(p/s) / n uniformly over s-sparse signals, so the lasso is optimal up to constants.
+    proved: false
+    tags: [minimax, lower bound]
+  - id: rip-verification
+    kind: open-problem
+    title: Certifying the RIP for a given matrix
+    summary: Deciding whether a specific matrix satisfies the restricted isometry property is computationally hard in general.
+    proved: false
+    tags: [complexity, certification]
+references:
+  - key: candes-tao
+    title: Decoding by linear programming
+    authors: Emmanuel J. Candès and Terence Tao
+    year: 2005
+    kind: paper
+    url: https://arxiv.org/abs/math/0502327
+  - key: donoho-cs
+    title: Compressed sensing
+    authors: David L. Donoho
+    year: 2006
+    kind: paper
+  - key: bickel-ritov-tsybakov
+    title: Simultaneous analysis of Lasso and Dantzig selector
+    authors: Peter J. Bickel, Ya'acov Ritov and Alexandre B. Tsybakov
+    year: 2009
+    kind: paper
+    url: https://arxiv.org/abs/0801.1095
+    note: The source of the restricted-eigenvalue analysis whose structure the proof below follows.
+  - key: wainwright-hds-4
+    title: 'High-Dimensional Statistics: A Non-Asymptotic Viewpoint'
+    authors: Martin J. Wainwright
+    year: 2019
+    kind: book
+    note: Chapters 7 and 11 treat sparse linear models and minimax lower bounds.
+  - key: foucart-rauhut
+    title: A Mathematical Introduction to Compressive Sensing
+    authors: Simon Foucart and Holger Rauhut
+    year: 2013
+    kind: book
+---
+
+<Intuition>
+Solve $y = X\beta$ for $\beta \in \R^p$ from $n < p$ measurements. Linear algebra says this is
+hopeless: the solution set is an affine subspace of dimension at least $p - n$. Sparsity changes the
+question. If $\beta$ has at most $s$ non-zeros, the candidate set is a union of
+$\binom ps$ subspaces of dimension $s$ — still enormous, but *low-dimensional*, and
+$n \asymp s\log(p/s)$ measurements suffice to pin it down. The mathematics of how, and at what
+computational cost, is this page.
+</Intuition>
+
+## The restricted isometry property
+
+<Definition id="rip-def" title="Restricted isometry property">
+$X \in \R^{n\times p}$ satisfies the **$(s,\delta)$-restricted isometry property** (RIP) if
+$$
+(1-\delta)\norm{\beta}_2^2 \;\le\; \frac{1}{n}\norm{X\beta}_2^2 \;\le\; (1+\delta)\norm{\beta}_2^2
+$$
+for every $\beta$ with $\norm{\beta}_0 \le s$, where $\norm{\beta}_0$ counts non-zeros.
+</Definition>
+
+Compare the form of this condition with the conclusion of the
+<TopicRef id="high-dimensional-probability/johnson-lindenstrauss">Johnson–Lindenstrauss lemma</TopicRef>:
+it is the same $1\pm\delta$ two-sided norm preservation, but required uniformly over an *infinite*
+set (all $s$-sparse vectors) rather than a finite one. That is exactly the situation
+<TopicRef id="high-dimensional-probability/nets-covering-and-packing">nets</TopicRef> were built for.
+
+<Theorem id="rip-random" title="Random matrices satisfy the RIP">
+Let $X\in\R^{n\times p}$ have i.i.d. $\Ncal(0,1)$ entries and fix $\delta\in(0,1)$. There is an
+absolute constant $C$ such that if
+$$
+n \ge \frac{C}{\delta^2}\, s\log\frac{p}{s},
+$$
+then $X$ satisfies the $(s,\delta)$-RIP with probability at least $1 - 2e^{-c\delta^2 n}$.
+</Theorem>
+
+<Proof>
+Fix a support set $S\subseteq\{1,\dots,p\}$ with $|S|=s$. On the subspace $\R^S$ the condition is a
+statement about the $n\times s$ submatrix $X_S$, namely that all its singular values lie in
+$[\sqrt{n(1-\delta)}, \sqrt{n(1+\delta)}]$. Equivalently
+$\norm{\frac1nX_S^\top X_S - I_s}\le\delta$, which is the
+<TopicRef id="high-dimensional-statistics/covariance-estimation">covariance estimation</TopicRef>
+bound with dimension $s$: it holds with probability at least $1 - 2e^{-u}$ once
+$n \ge C\delta^{-2}(s + u)$.
+
+Take $u = 2s\log(p/s) + \delta^2 n/(2C)$. Then the per-support failure probability is at most
+$2e^{-2s\log(p/s)}e^{-c\delta^2n} = 2(s/p)^{2s}e^{-c\delta^2n}$. Union bounding over the
+$\binom ps \le (ep/s)^s$ supports,
+$$
+\P(\text{RIP fails}) \le \left(\frac{ep}{s}\right)^{s}\cdot 2\left(\frac sp\right)^{2s}e^{-c\delta^2n}
+= 2e^{s}\left(\frac sp\right)^{s}e^{-c\delta^2n} \le 2e^{-c\delta^2 n}
+$$
+whenever $s \le p/e^2$, which holds in the regime of interest. Substituting the required $n$ gives the
+statement.
+</Proof>
+
+<KeyIdea>
+The exponent bookkeeping again. There are $(ep/s)^s = e^{s\log(ep/s)}$ support sets; each fails with
+probability $e^{-c\delta^2 n}$ once $n \gtrsim s/\delta^2$; so we need
+$\delta^2 n \gtrsim s\log(p/s)$. The $\log(p/s)$ is the union bound over supports and the $s/\delta^2$
+is the per-support covariance estimate. Both factors are necessary, and together they are the
+information-theoretic optimum up to constants.
+</KeyIdea>
+
+<Theorem id="l1-recovery" title="Exact recovery by basis pursuit">
+Suppose $X$ satisfies the $(2s,\delta)$-RIP with $\delta < \sqrt2 - 1$, and let $y = X\beta^\star$ for
+some $\beta^\star$ with $\norm{\beta^\star}_0\le s$. Then the solution of the convex program
+$$
+\hat\beta = \argmin_{\beta}\ \norm{\beta}_1 \quad\text{subject to}\quad X\beta = y
+$$
+satisfies $\hat\beta = \beta^\star$.
+</Theorem>
+
+Quoted from Candès–Tao and the Foucart–Rauhut text. The mechanism worth understanding even without
+the proof: $\norm{\cdot}_1$ is the convex function whose sublevel sets — the $\ell^1$ balls — have
+vertices exactly at the sparse vectors. Minimising a linear functional over a polytope lands at a
+vertex; minimising $\norm{\cdot}_1$ over an affine subspace therefore lands at a sparse point, when it
+lands anywhere distinguished at all. Replacing $\norm{\cdot}_0$ (non-convex, NP-hard to minimise) by
+$\norm{\cdot}_1$ is not an approximation that happens to work; it is the **convex envelope** of the
+sparsity constraint on the unit ball, and the RIP is the condition under which the relaxation is
+tight.
+
+## The lasso
+
+With noise, exact recovery is impossible and the goal becomes estimation. Consider
+$$
+y = X\beta^\star + w, \qquad w \sim \Ncal(0,\sigma^2I_n),
+$$
+and the **lasso** estimator
+$$
+\hat\beta \in \argmin_{\beta\in\R^p}\ \left\{\frac{1}{2n}\norm{y - X\beta}_2^2 + \lambda\norm{\beta}_1\right\}.
+$$
+
+<Definition id="re-def" title="Restricted eigenvalue condition">
+$X$ satisfies the **restricted eigenvalue** condition with constant $\gamma>0$ over a cone
+$\mathcal{C}$ if
+$$
+\frac{1}{n}\norm{X v}_2^2 \ge \gamma\norm{v}_2^2 \qquad\text{for all } v \in \mathcal{C}.
+$$
+The relevant cone for the lasso is
+$\mathcal{C}(S) = \{v : \norm{v_{S^c}}_1 \le 3\norm{v_S}_1\}$, where $S = \operatorname{supp}(\beta^\star)$.
+</Definition>
+
+<Theorem id="lasso-bound" title="Lasso error bound">
+Let $S = \operatorname{supp}(\beta^\star)$ with $|S| = s$, suppose the columns of $X$ are normalised
+so that $\norm{X_j}_2 \le\sqrt n$, and suppose the restricted eigenvalue condition holds with
+constant $\gamma$ over $\mathcal{C}(S)$. If
+$$
+\lambda \ge 2\sigma\sqrt{\frac{2\log(2p/\delta)}{n}},
+$$
+then with probability at least $1-\delta$,
+$$
+\norm{\hat\beta - \beta^\star}_2 \le \frac{3\sqrt s\,\lambda}{\gamma},
+\qquad
+\frac{1}{n}\norm{X(\hat\beta - \beta^\star)}_2^2 \le \frac{9s\lambda^2}{\gamma} .
+$$
+With $\lambda \asymp \sigma\sqrt{\log p / n}$ this is
+$\norm{\hat\beta-\beta^\star}_2^2 \lesssim \sigma^2 s\log p/(\gamma^2 n)$.
+</Theorem>
+
+<Proof>
+Write $v = \hat\beta - \beta^\star$ and $F(\beta) = \frac{1}{2n}\norm{y - X\beta}_2^2 + \lambda\norm\beta_1$.
+
+**Step 1: the basic inequality.** $F(\hat\beta)\le F(\beta^\star)$ by optimality. Expanding the
+quadratic with $y = X\beta^\star + w$,
+$$
+\frac{1}{2n}\norm{Xv}_2^2 \le \frac1n\ip{X^\top w}{v} + \lambda\big(\norm{\beta^\star}_1 - \norm{\hat\beta}_1\big).
+$$
+
+**Step 2: control the noise term.** Each coordinate $\frac1n(X^\top w)_j$ is Gaussian with variance
+$\sigma^2\norm{X_j}_2^2/n^2 \le \sigma^2/n$. By the Gaussian tail bound and a union bound over the
+$2p$ signed coordinates, with probability at least $1-\delta$,
+$$
+\frac1n\norm{X^\top w}_\infty \le \sigma\sqrt{\frac{2\log(2p/\delta)}{n}} \le \frac\lambda2 .
+$$
+Hölder then gives $\frac1n\ip{X^\top w}{v}\le \frac\lambda2\norm{v}_1$.
+
+**Step 3: the cone condition.** Decompose $\norm{v}_1 = \norm{v_S}_1 + \norm{v_{S^c}}_1$ and use
+$\norm{\beta^\star}_1 - \norm{\hat\beta}_1 \le \norm{v_S}_1 - \norm{v_{S^c}}_1$, which holds because
+$\beta^\star$ vanishes off $S$ and the triangle inequality applies coordinatewise. Substituting into
+Step 1,
+$$
+\frac{1}{2n}\norm{Xv}_2^2
+\le \frac{\lambda}{2}\big(\norm{v_S}_1+\norm{v_{S^c}}_1\big) + \lambda\big(\norm{v_S}_1 - \norm{v_{S^c}}_1\big)
+= \frac{3\lambda}{2}\norm{v_S}_1 - \frac{\lambda}{2}\norm{v_{S^c}}_1 .
+$$
+The left side is non-negative, so $\norm{v_{S^c}}_1\le3\norm{v_S}_1$: the error vector lies in the
+cone $\mathcal{C}(S)$. This is the step that makes the restricted eigenvalue condition applicable,
+and it is the reason the cone is defined with the constant $3$.
+
+**Step 4: combine.** Apply the restricted eigenvalue condition to $v \in \mathcal{C}(S)$ and use
+$\norm{v_S}_1\le\sqrt s\norm{v_S}_2 \le \sqrt s\norm{v}_2$ (Cauchy–Schwarz on the $s$ non-zero
+coordinates):
+$$
+\frac{\gamma}{2}\norm{v}_2^2 \le \frac{1}{2n}\norm{Xv}_2^2 \le \frac{3\lambda}{2}\sqrt s\,\norm{v}_2 .
+$$
+Dividing by $\norm{v}_2$ (the case $v = 0$ is trivial) gives
+$\norm{v}_2 \le 3\sqrt s\lambda/\gamma$. Substituting back into the display above gives the prediction
+bound.
+</Proof>
+
+<Assumptions>
+Independent Gaussian noise with known scale, column normalisation, a restricted eigenvalue condition
+with a known constant $\gamma$, and a regularisation parameter $\lambda$ chosen at least as large as
+the stated threshold — which depends on $\sigma$. In practice $\sigma$ is unknown and $\lambda$ is
+chosen by cross-validation, which the theorem does not cover.
+</Assumptions>
+
+<KeyIdea>
+Read the rate: $\sigma^2 s\log p/n$ instead of $\sigma^2 p/n$. Sparsity replaces the ambient
+dimension $p$ by the sparsity level $s$, at the cost of a $\log p$ factor. The $\log p$ is the price
+of *not knowing which* $s$ coordinates matter — it is the union bound over the $p$ coordinates in
+Step 2, and if the support were known the rate would be exactly $\sigma^2 s/n$.
+</KeyIdea>
+
+<Theorem id="minimax-sparse" title="Minimax rate for sparse regression">
+Over the class $\{\beta : \norm\beta_0\le s\}$ with a suitable design, every estimator $\tilde\beta$
+satisfies
+$$
+\sup_{\norm{\beta^\star}_0\le s}\E\norm{\tilde\beta - \beta^\star}_2^2 \;\gtrsim\; \frac{\sigma^2 s\log(p/s)}{n}.
+$$
+</Theorem>
+
+Quoted from Wainwright's text; the proof is a Fano-type argument over a well-separated packing of
+sparse vectors. Combined with the lasso bound, the conclusion is that **the lasso is minimax optimal
+up to constants** — a genuinely strong statement, and one of the reasons the estimator is as
+important as it is.
+
+<Claim kind="open-problem" id="rip-verification" title="Certifying the RIP for a given matrix">
+The theorem above says a *random* Gaussian matrix satisfies the RIP with high probability. Given a
+*specific* matrix, deciding whether it satisfies the $(s,\delta)$-RIP is a different question, and no
+polynomial-time algorithm is known for it; the natural formulations are NP-hard. So compressed
+sensing guarantees in practice rest on randomised constructions rather than on verification.
+</Claim>
+
+<NotSaid>
+The lasso bound is about estimation and prediction, not about **support recovery**. Getting
+$\operatorname{supp}(\hat\beta) = \operatorname{supp}(\beta^\star)$ requires stronger conditions —
+an irrepresentable or incoherence condition on the design, plus a minimum signal strength
+$\min_{j\in S}|\beta^\star_j| \gtrsim \lambda$. Without a beta-min condition, a coefficient too small
+to distinguish from noise will be missed, and no method can do better. Reporting the selected support
+as though it were a discovery, with no such condition checked, is one of the more common
+over-claims in applied high-dimensional statistics.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="sp-lasso-cone" />
+<ProblemRef id="sp-rip-union" />
+<ProblemRef id="sp-l1-geometry" />
+<ProblemRef id="sp-soft-threshold" />
+<ProblemRef id="sp-implement-lasso" />

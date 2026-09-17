@@ -1,0 +1,200 @@
+---
+title: Bias–Variance, Interpolation and Double Descent
+summary: The exact decomposition, the classical U-curve, the second descent past the interpolation threshold, and what is proved about each.
+field: learning-theory
+level: 3
+order: 30
+prerequisites: [learning-theory/vc-dimension-and-rademacher, machine-learning/linear-and-ridge-regression]
+tags: [bias-variance, double descent, interpolation, overparameterisation, minimum norm]
+estimated_time: 3h
+experiments: [bias-variance]
+papers: [deep-double-descent, belkin-double-descent]
+claims:
+  - id: bv-exact
+    kind: proposition
+    title: The bias–variance decomposition is an identity
+    summary: For squared loss the risk splits exactly into noise, squared bias and variance.
+    proved: true
+    tags: [bias-variance, identity]
+  - id: bv-tradeoff-heuristic
+    kind: heuristic
+    title: The bias–variance trade-off
+    summary: The claim that increasing capacity must increase variance is a description of certain model families, not a theorem.
+    proved: false
+    tags: [trade-off, folklore]
+  - id: double-descent-linear
+    kind: theorem
+    title: Double descent for minimum-norm linear regression
+    summary: In an asymptotic random-design model the risk of the minimum-norm interpolator diverges at the interpolation threshold and decreases beyond it.
+    proved: false
+    tags: [double descent, minimum norm, random matrix]
+  - id: interpolation-threshold
+    kind: proposition
+    title: Why the risk blows up at the threshold
+    summary: The variance of the minimum-norm solution is controlled by the inverse smallest eigenvalue of the sample covariance, which vanishes exactly when p equals n.
+    proved: true
+    tags: [conditioning, marchenko-pastur, variance]
+  - id: dd-empirical
+    kind: empirical
+    title: Double descent in deep networks
+    summary: Test error curves with a second descent have been reported for networks across width, data size and training time; the mechanism is not established.
+    proved: false
+    tags: [deep learning, empirical, epoch-wise]
+references:
+  - key: belkin-hsu-ma-mandal
+    title: 'Reconciling modern machine learning practice and the bias-variance trade-off'
+    authors: Mikhail Belkin, Daniel Hsu, Siyuan Ma and Soumik Mandal
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1812.11118
+  - key: hastie-montanari-rosset-tibshirani
+    title: Surprises in High-Dimensional Ridgeless Least Squares Interpolation
+    authors: Trevor Hastie, Andrea Montanari, Saharon Rosset and Ryan J. Tibshirani
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/1903.08560
+    note: The precise asymptotic analysis of the linear case quoted here.
+  - key: nakkiran-et-al
+    title: 'Deep Double Descent: Where Bigger Models and More Data Hurt'
+    authors: Preetum Nakkiran, Gal Kaplun, Yamini Bansal, Tristan Yang, Boaz Barak and Ilya Sutskever
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/1912.02292
+  - key: bartlett-long-lugosi-tsigler
+    title: Benign overfitting in linear regression
+    authors: Peter L. Bartlett, Philip M. Long, Gábor Lugosi and Alexander Tsigler
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/1906.11300
+---
+
+## The identity
+
+<Proposition id="bv-exact" title="The bias–variance decomposition is an identity">
+Let $y = f^\star(x)+\varepsilon$ with $\E[\varepsilon\mid x]=0$ and $\Var(\varepsilon\mid x)=\sigma^2$,
+and let $\hat f_S$ be an estimator trained on a random sample $S$. Then for each fixed $x$,
+$$
+\E_{S,\varepsilon}\Big[\big(y - \hat f_S(x)\big)^2\Big]
+= \underbrace{\sigma^2}_{\text{noise}}
++ \underbrace{\big(\E_S\hat f_S(x) - f^\star(x)\big)^2}_{\text{bias}^2}
++ \underbrace{\Var_S\big(\hat f_S(x)\big)}_{\text{variance}} .
+$$
+</Proposition>
+
+<Proof>
+Write $\bar f(x) = \E_S\hat f_S(x)$ and expand around it:
+$$
+y - \hat f_S(x) = \varepsilon + \big(f^\star(x)-\bar f(x)\big) + \big(\bar f(x)-\hat f_S(x)\big).
+$$
+Square and take expectations over $S$ and $\varepsilon$, which are independent. The three cross terms
+each vanish: $\E\varepsilon = 0$ kills the two involving $\varepsilon$, and
+$\E_S[\bar f(x)-\hat f_S(x)] = 0$ kills the third. The three squares are the three named terms.
+</Proof>
+
+<Note title="Two things this identity is not">
+It is not a trade-off, and it is not specific to any model. It is algebra, valid for every estimator
+and every distribution with the stated moments. The noise term $\sigma^2$ is irreducible — no
+estimator can beat it — so the *excess* risk is bias$^2$ + variance.
+</Note>
+
+<ExperimentRef id="bias-variance" />
+
+<Claim kind="heuristic" id="bv-tradeoff-heuristic" title="The bias–variance trade-off">
+The *trade-off* — that increasing model capacity necessarily decreases bias and increases variance,
+so that risk is U-shaped in capacity — is an empirical regularity of classical model families, not a
+consequence of the identity.
+</Claim>
+
+<NotSaid>
+The identity says risk $=$ noise $+$ bias$^2$ $+$ variance. It says nothing about how either term
+moves with capacity. For polynomial regression with $p \le n$, as in the experiment on this page, the
+U-curve is real and reproducible. For $p > n$ it is not, and the reason is specific: once the model
+interpolates, the fit is no longer determined by the loss alone and depends on which of the infinitely
+many zero-loss solutions the algorithm selects. The variance of *that* object is a different quantity
+with different behaviour.
+</NotSaid>
+
+## Past the interpolation threshold
+
+Consider least squares with $p$ features and $n$ samples. For $p<n$ the solution is the usual
+$\hat\beta = (X^\top X)^{-1}X^\top y$. For $p>n$ the system is underdetermined and the natural choice
+is the **minimum-norm interpolator**
+$$
+\hat\beta = \argmin\{\norm\beta_2 : X\beta = y\} = X^\dagger y = X^\top(XX^\top)^{-1}y ,
+$$
+which is what gradient descent from $\beta_0 = 0$ converges to — see the implicit-bias discussion on
+the <TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page.
+
+<Proposition id="interpolation-threshold" title="Why the risk blows up at the threshold">
+For the least-squares estimator with $p<n$ and fixed design $X$, the variance term of the risk is
+$$
+\Var = \sigma^2\,\tr\big((X^\top X)^{-1}\Sigma\big) \ \ge\ \frac{\sigma^2\lambda_{\min}(\Sigma)}{\lambda_{\min}(X^\top X)} ,
+$$
+which diverges as $\lambda_{\min}(X^\top X)\to0$. For i.i.d. Gaussian design,
+$\lambda_{\min}(X^\top X)/n \to (1-\sqrt{p/n})^2$, which vanishes exactly at $p = n$.
+</Proposition>
+
+<Proof>
+With $\hat\beta = (X^\top X)^{-1}X^\top y$ and $y = X\beta^\star+\varepsilon$,
+$\hat\beta - \beta^\star = (X^\top X)^{-1}X^\top\varepsilon$, so
+$$
+\E\big[(\hat\beta-\beta^\star)(\hat\beta-\beta^\star)^\top\big] = \sigma^2(X^\top X)^{-1}
+$$
+using $\E[\varepsilon\varepsilon^\top]=\sigma^2I$. The prediction variance at a test point $x$ with
+second moment $\Sigma = \E[xx^\top]$ is
+$\E_x\big[x^\top(\hat\beta-\beta^\star)\big]^2 = \sigma^2\tr\big((X^\top X)^{-1}\Sigma\big)$, and
+$\tr(AB) \ge \lambda_{\min}(B)\tr(A)\ge\lambda_{\min}(B)\lambda_{\max}(A)$ for PSD $A,B$ gives the
+lower bound. The eigenvalue limit is the
+<TopicRef id="random-matrix-theory/marchenko-pastur">Marchenko–Pastur</TopicRef> lower bulk edge with
+$\lambda = p/n$.
+</Proof>
+
+<KeyIdea>
+The divergence at $p=n$ is not mysterious and not specific to machine learning: it is the
+conditioning of a square random matrix. At $p=n$ the design is square and nearly singular, so the
+fit must use enormous coefficients to interpolate, and those coefficients amplify the noise. For
+$p>n$ the matrix $XX^\top$ is $n\times n$ with aspect ratio $n/p<1$, hence **better** conditioned
+again — and the minimum-norm constraint keeps the coefficients small. That is the mechanism behind
+the second descent, at least in the linear case.
+</KeyIdea>
+
+<Theorem id="double-descent-linear" title="Double descent for minimum-norm linear regression">
+In the proportional asymptotic regime $p/n\to\gamma$ with isotropic Gaussian features and a
+well-specified linear model, the risk of the minimum-norm interpolator has an explicit limit
+$\mathcal{R}(\gamma)$ which
+
+- increases on $\gamma\in(0,1)$ and diverges as $\gamma\uparrow1$;
+- decreases on $\gamma\in(1,\infty)$, approaching $\sigma^2 + \norm{\beta^\star}_2^2$-dependent limits;
+- can be **lower** at some $\gamma>1$ than at every $\gamma<1$, depending on the signal-to-noise ratio.
+</Theorem>
+
+Quoted from Hastie, Montanari, Rosset and Tibshirani, who compute $\mathcal{R}(\gamma)$ exactly using
+random matrix theory. The companion result of Bartlett, Long, Lugosi and Tsigler characterises
+**benign overfitting**: the minimum-norm interpolator has small risk precisely when the spectrum of
+the feature covariance has a particular shape — a few large eigenvalues carrying the signal and a long
+tail of small ones that absorbs the noise without contributing to prediction. Their effective-rank
+conditions are the sharpest available statement of when interpolation is harmless.
+
+<Claim kind="empirical" id="dd-empirical" title="Double descent in deep networks">
+Nakkiran et al. report test-error curves with a clear second descent in deep networks, as a function
+of model width, of training set size (where more data can transiently hurt), and of training time
+(epoch-wise double descent).
+</Claim>
+
+<NotSaid>
+The empirical phenomenon is robust and has been replicated. What is **not** established:
+
+- that the mechanism is the same as in the linear case. The linear analysis relies on the minimum-$\ell^2$-norm characterisation of the interpolator; for a deep network trained by SGD the implicit bias is not known in closed form, so the analogy is suggestive rather than derived.
+- that "wider is better" in general. The curves depend on the noise level, the parameterisation, and the amount of explicit regularisation; adding optimal ridge regularisation removes the peak entirely in the linear case, and label noise is what makes the peak prominent in the deep case.
+- that double descent explains why deep learning generalises. It describes a shape of the risk curve; it does not identify the inductive bias that makes the interpolating solution good.
+
+A fair summary: the linear theory is rigorous and complete; the deep learning phenomenon is
+well-documented and its explanation is open.
+</NotSaid>
+
+## Problems
+
+<ProblemRef id="dd-bias-variance-identity" />
+<ProblemRef id="dd-minimum-norm" />
+<ProblemRef id="dd-variance-conditioning" />
+<ProblemRef id="dd-simulate-double-descent" />

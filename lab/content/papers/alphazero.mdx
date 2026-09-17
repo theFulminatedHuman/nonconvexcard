@@ -1,0 +1,75 @@
+---
+title: 'Mastering the game of Go without human knowledge'
+authors: David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur Guez, Thomas Hubert, Lucas Baker, Matthew Lai, Adrian Bolton and others
+year: 2017
+venue: Nature
+url: https://www.nature.com/articles/nature24270
+field: deep-learning
+tags: [alphazero, self-play, policy improvement, tabula rasa]
+problem: AlphaGo bootstrapped from human games, so it was unclear how much of its strength came from human knowledge and whether the approach generalised beyond domains with large expert datasets.
+contribution: A single network trained purely by self-play from random initialisation, with search-derived targets, which exceeded the previous system's strength and generalised to chess and shogi unchanged.
+prerequisites:
+  - deep-learning/convolution-recurrence-normalisation
+  - stochastic-optimization/sgd-convergence
+  - probability/expectation-and-conditioning
+descendants: []
+related: [alphago, dqn]
+---
+
+## What problem does this paper solve?
+
+Whether human data is necessary, and whether the learning-plus-search recipe is domain-specific. The
+answers were no and no.
+
+## What mathematical objects are introduced?
+
+A single network $(p_\theta, v_\theta) = f_\theta(s)$ outputting both a policy and a value, trained on
+the loss
+$$
+\mathcal{L}(\theta) = \big(z - v_\theta(s)\big)^2 - \pi^\top\log p_\theta(\cdot\mid s) + \lambda\norm\theta_2^2 ,
+$$
+where $z$ is the game outcome and $\pi$ is the **visit-count distribution** produced by MCTS at that
+position.
+
+## What assumptions are made?
+
+Perfect information, a known simulator, self-play symmetry. Also, implicitly, that the search output
+$\pi$ is a better policy than $p_\theta$ — the policy-improvement assumption on which the whole
+bootstrap rests.
+
+## What equations matter?
+
+The training target $\pi\propto N(s,a)^{1/\tau}$ from the search, against which the raw network policy
+is regressed. This is the crux: MCTS acts as a **policy improvement operator**, and training the
+network to imitate its own search output is an approximate policy iteration. Formally it is the
+generalised-policy-iteration schema: improve by search, evaluate by self-play, project back onto the
+function class.
+
+## What theorem or result is important?
+
+No theorem for the neural version. Classical policy iteration on a finite MDP is guaranteed to
+improve monotonically and converge; the projection onto a neural function class destroys that
+guarantee, and no replacement exists. Empirically: surpassed AlphaGo Lee in three days of training and
+AlphaGo Master in three weeks, from random weights.
+
+## What proof techniques are used?
+
+None.
+
+## What prior mathematics is required?
+
+Policy iteration and its convergence in the tabular case; MCTS; cross-entropy and squared loss.
+
+## Limitations
+
+Perfect information and a simulator remain required. Enormous compute ($5000$ TPUs for self-play).
+No guarantee that the projected policy iteration improves — it is observed to, and could in principle
+oscillate. The generalisation across board games is real but all three games share the perfect-
+information two-player zero-sum structure.
+
+## Why it mattered
+
+It demonstrated that a general algorithm plus compute can exceed systems built on domain knowledge —
+a result frequently cited as evidence for scale over hand-design. The specific technical idea, using
+search output as a training target for the policy that guides the search, is the cleanest example of
+self-improvement by amortising expensive computation into a network.

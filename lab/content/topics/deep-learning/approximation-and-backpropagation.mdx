@@ -1,0 +1,276 @@
+---
+title: Approximation Theory and Backpropagation
+summary: Universal approximation with its exact hypotheses, why it says nothing about learnability, and backpropagation as reverse-mode differentiation on a computational graph.
+field: deep-learning
+level: 2
+order: 10
+prerequisites: [foundations/matrix-calculus, machine-learning/logistic-regression]
+tags: [universal approximation, mlp, backpropagation, autodiff, computational graph, depth]
+estimated_time: 3h
+papers: [alexnet, resnet, dropout, batchnorm]
+claims:
+  - id: perceptron-limits
+    kind: proposition
+    title: A single linear threshold unit cannot represent XOR
+    summary: The classic separability obstruction, and the exact reason a hidden layer is needed.
+    proved: true
+    tags: [perceptron, xor, separability]
+  - id: universal-approximation
+    kind: theorem
+    title: Universal approximation theorem
+    summary: One hidden layer with a non-polynomial activation approximates any continuous function on a compact set uniformly.
+    proved: false
+    tags: [universal approximation, density, cybenko, hornik]
+  - id: ua-says-nothing
+    kind: proposition
+    title: What universal approximation does not give
+    summary: It is a density statement with no bound on width, no learning algorithm and no sample complexity.
+    proved: true
+    tags: [caveat, existence, width]
+  - id: depth-separation
+    kind: theorem
+    title: Depth separation
+    summary: There are functions expressible by a small three-layer network that require exponential width at two layers.
+    proved: false
+    tags: [depth, expressivity, separation]
+  - id: backprop-correct
+    kind: theorem
+    title: Backpropagation computes the exact gradient
+    summary: Reverse accumulation on a computational graph returns the exact derivative, not an approximation, in time proportional to the forward pass.
+    proved: true
+    tags: [backpropagation, autodiff, correctness]
+  - id: chain-rule-vanishing
+    kind: proposition
+    title: Gradient magnitude through a deep chain
+    summary: The gradient is a product of layer Jacobians, so its norm is governed by a product of singular values and is generically exponential in depth.
+    proved: true
+    tags: [vanishing gradient, exploding gradient, jacobian]
+references:
+  - key: cybenko
+    title: Approximation by superpositions of a sigmoidal function
+    authors: George Cybenko
+    year: 1989
+    kind: paper
+  - key: hornik
+    title: Approximation capabilities of multilayer feedforward networks
+    authors: Kurt Hornik
+    year: 1991
+    kind: paper
+  - key: leshno-et-al
+    title: Multilayer feedforward networks with a nonpolynomial activation function can approximate any function
+    authors: Moshe Leshno, Vladimir Ya. Lin, Allan Pinkus and Shimon Schocken
+    year: 1993
+    kind: paper
+  - key: telgarsky-depth
+    title: Benefits of depth in neural networks
+    authors: Matus Telgarsky
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1602.04485
+  - key: eldan-shamir
+    title: The Power of Depth for Feedforward Neural Networks
+    authors: Ronen Eldan and Ohad Shamir
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1512.03965
+  - key: rumelhart-hinton-williams
+    title: Learning representations by back-propagating errors
+    authors: David E. Rumelhart, Geoffrey E. Hinton and Ronald J. Williams
+    year: 1986
+    kind: paper
+  - key: goodfellow-bengio-courville
+    title: Deep Learning
+    authors: Ian Goodfellow, Yoshua Bengio and Aaron Courville
+    year: 2016
+    kind: book
+    url: https://www.deeplearningbook.org/
+---
+
+## From the perceptron to a hidden layer
+
+<Proposition id="perceptron-limits" title="A single threshold unit cannot represent XOR">
+There is no $(w,b)\in\R^2\times\R$ with
+$\sign(\ip w{x}+b)$ equal to $x_1\oplus x_2$ on $\{0,1\}^2$.
+</Proposition>
+
+<Proof>
+Suppose such $(w,b)$ existed. XOR requires
+$$
+\ip w{(0,0)}+b<0,\quad \ip w{(1,0)}+b>0,\quad \ip w{(0,1)}+b>0,\quad \ip w{(1,1)}+b<0,
+$$
+i.e. $b<0$, $w_1+b>0$, $w_2+b>0$, $w_1+w_2+b<0$. Adding the second and third gives
+$w_1+w_2+2b>0$, so $w_1+w_2 > -2b$. The fourth gives $w_1+w_2<-b$. Hence $-2b<-b$, i.e. $b>0$,
+contradicting $b<0$.
+</Proof>
+
+This is the observation that halted the first wave of neural network research, and the fix — compose
+two layers — is what the next theorem generalises.
+
+## Universal approximation
+
+<Theorem id="universal-approximation" title="Universal approximation theorem">
+Let $\rho:\R\to\R$ be continuous and **not a polynomial**. Then for every compact $K\subseteq\R^d$,
+every continuous $f:K\to\R$ and every $\eps>0$, there exist $m\in\N$, $w_j\in\R^d$, $b_j\in\R$ and
+$c_j\in\R$ with
+$$
+\sup_{x\in K}\left|f(x) - \sum_{j=1}^m c_j\,\rho\big(\ip{w_j}{x}+b_j\big)\right| < \eps .
+$$
+</Theorem>
+
+Quoted from Leshno et al., which gives the sharp hypothesis; Cybenko and Hornik proved earlier
+versions for sigmoidal and for bounded non-constant activations. The proof is a functional-analysis
+argument (the set of such sums is a subalgebra-like family whose closure is shown to be all of
+$C(K)$, via Stone–Weierstrass or via a Hahn–Banach separation and a Fourier/Radon-transform
+computation).
+
+<Note title="Why 'not a polynomial' is exactly right">
+If $\rho$ is a polynomial of degree $k$ then every $\rho(\ip wx+b)$ is a polynomial of degree $\le k$,
+so finite sums of them lie in the finite-dimensional space of degree-$\le k$ polynomials — which is
+not dense in $C(K)$. Conversely non-polynomiality is enough. Note that this makes the theorem apply
+to ReLU, sigmoid, tanh, GELU and essentially every activation in use, and it shows the theorem cannot
+be the reason one is better than another.
+</Note>
+
+<Proposition id="ua-says-nothing" title="What universal approximation does not give">
+The theorem is a statement about the **closure** of a set of functions. It provides:
+
+- no bound on $m$ — the width may need to grow exponentially in $d$ or in $1/\eps$;
+- no algorithm for finding the parameters;
+- no statement about generalisation from finite data;
+- no distinction between activations, architectures or depths.
+</Proposition>
+
+<Proof>
+Each is a matter of what the statement quantifies over. The width bound: the theorem asserts
+existence of *some* $m$; and there are lower bounds showing $m = \Omega(\eps^{-d})$ is necessary for
+the class of Lipschitz $f$ on $[0,1]^d$, matching the nonparametric rate on the
+<TopicRef id="machine-learning/nearest-neighbours">nearest neighbours</TopicRef> page. The algorithmic
+gap: training a network with even two hidden units to a given accuracy is NP-hard in general, so
+existence of an approximator does not imply it is findable. The statistical gap: the theorem is about
+approximating a *known* $f$ uniformly, whereas learning has access only to samples, and the
+approximation error is only one of the two terms in the
+<TopicRef id="learning-theory/erm-and-uniform-convergence">excess risk decomposition</TopicRef>.
+</Proof>
+
+<Warning title="A very common over-claim">
+"Neural networks can approximate any function, which is why deep learning works." The first clause is
+a theorem; the second does not follow from it. Polynomials, splines, kernel machines with a universal
+kernel and Fourier series are all universal approximators too, and none of them works as well as deep
+networks on image or language data. Universality is necessary and very far from sufficient; whatever
+explains deep learning's success is a statement about *which* functions are easy to represent and
+*which* are easy to find, not about what is representable in principle.
+</Warning>
+
+<Theorem id="depth-separation" title="Depth separation">
+There is a function $g:\R^d\to\R$, expressible exactly by a network with three layers and
+$O(\mathrm{poly}(d))$ units, such that any two-layer network approximating $g$ to constant accuracy in
+$L^2$ over a natural measure requires $e^{\Omega(d)}$ units.
+</Theorem>
+
+Quoted from Eldan and Shamir; Telgarsky gives a complementary one-dimensional construction separating
+depth $k$ from depth $O(k^{1/3})$ using a sawtooth function whose oscillation count grows
+exponentially with depth. These are the strongest rigorous statements available about the value of
+depth, and it is worth being clear about their scope: they show depth *can* buy exponential
+efficiency on specially constructed functions. They do not show that the functions arising in
+practice have this character.
+
+## Backpropagation
+
+Represent the network as a computational graph: nodes are intermediate values, edges are elementary
+operations. For a feedforward net,
+$$
+a^{(0)} = x, \qquad
+z^{(\ell)} = W^{(\ell)}a^{(\ell-1)}+b^{(\ell)}, \qquad
+a^{(\ell)} = \rho\big(z^{(\ell)}\big),
+\qquad \ell = 1,\dots,L,
+$$
+with scalar loss $\mathcal{J} = \ell\big(a^{(L)},y\big)$.
+
+<Theorem id="backprop-correct" title="Backpropagation computes the exact gradient">
+Define the adjoints $\delta^{(\ell)} = \partial\mathcal{J}/\partial z^{(\ell)}$. Then
+$$
+\delta^{(L)} = \nabla_{a^{(L)}}\ell \odot \rho'\big(z^{(L)}\big),
+\qquad
+\delta^{(\ell)} = \Big(\big(W^{(\ell+1)}\big)^\top\delta^{(\ell+1)}\Big)\odot\rho'\big(z^{(\ell)}\big),
+$$
+and
+$$
+\frac{\partial\mathcal{J}}{\partial W^{(\ell)}} = \delta^{(\ell)}\big(a^{(\ell-1)}\big)^\top,
+\qquad
+\frac{\partial\mathcal{J}}{\partial b^{(\ell)}} = \delta^{(\ell)} .
+$$
+These are exact derivatives (no finite differences), computed in time $O(\text{forward pass})$ and
+memory $O(\sum_\ell\dim a^{(\ell)})$.
+</Theorem>
+
+<Proof>
+Apply the <TopicRef id="foundations/matrix-calculus">chain rule</TopicRef> to the graph. For the last
+layer, $\mathcal{J}$ depends on $z^{(L)}$ through $a^{(L)} = \rho(z^{(L)})$, and $\rho$ acts
+coordinatewise, so its Jacobian is $\diag(\rho'(z^{(L)}))$, giving the Hadamard product.
+
+For a general layer, $z^{(\ell)}$ influences $\mathcal{J}$ only through $a^{(\ell)}$ and then
+$z^{(\ell+1)} = W^{(\ell+1)}a^{(\ell)}+b^{(\ell+1)}$. Hence
+$$
+\delta^{(\ell)} = \left(\frac{\partial a^{(\ell)}}{\partial z^{(\ell)}}\right)^\top
+\left(\frac{\partial z^{(\ell+1)}}{\partial a^{(\ell)}}\right)^\top\delta^{(\ell+1)}
+= \diag\big(\rho'(z^{(\ell)})\big)\big(W^{(\ell+1)}\big)^\top\delta^{(\ell+1)} ,
+$$
+which is the stated recursion. For the parameters, $z^{(\ell)}_p = \sum_q W^{(\ell)}_{pq}a^{(\ell-1)}_q + b^{(\ell)}_p$,
+so $\partial z^{(\ell)}_p/\partial W^{(\ell)}_{pq} = a^{(\ell-1)}_q$ and the chain rule gives the outer
+product.
+
+Exactness is just the chain rule being an identity. The cost statement is the general
+<TopicRef id="foundations/matrix-calculus">reverse-mode</TopicRef> result: each layer's backward step
+is one matrix–vector product with $(W^{(\ell)})^\top$, the same cost as the forward matrix–vector
+product with $W^{(\ell)}$.
+</Proof>
+
+<KeyIdea>
+Backpropagation is not an algorithm specific to neural networks and it is not an approximation. It is
+reverse-mode automatic differentiation applied to a particular graph, and the reason it is cheap is
+the one on the <TopicRef id="foundations/matrix-calculus">matrix calculus</TopicRef> page: many
+inputs, one output, so accumulate the Jacobian product from the left. The "many parameters, one loss"
+shape of deep learning is what makes it affordable, and the memory cost of storing activations is the
+price.
+</KeyIdea>
+
+<Proposition id="chain-rule-vanishing" title="Gradient magnitude through a deep chain">
+With $J^{(\ell)} = \diag(\rho'(z^{(\ell)}))\big(W^{(\ell)}\big)^\top$, the input-layer adjoint is
+$$
+\delta^{(1)} = J^{(1)}J^{(2)}\cdots J^{(L-1)}\,\delta^{(L)},
+$$
+so
+$$
+\norm{\delta^{(1)}}_2 \le \left(\prod_{\ell=1}^{L-1}\norm{J^{(\ell)}}\right)\norm{\delta^{(L)}}_2,
+$$
+and generically $\norm{\delta^{(1)}}_2 \approx c^{L}$ for $c$ the typical singular value. The gradient
+is therefore **exponential in depth**, vanishing for $c<1$ and exploding for $c>1$.
+</Proposition>
+
+<Proof>
+The recursion of the previous theorem composed over layers gives the product form; the norm bound is
+submultiplicativity of the operator norm. For the generic statement: if the $J^{(\ell)}$ are
+independent with typical spectral behaviour, $\log\norm{\prod_\ell J^{(\ell)}}$ is a sum of $L$ roughly
+i.i.d. terms, so by the law of large numbers it grows linearly in $L$ with slope
+$\E\log\norm{J}$ — hence exponential growth or decay unless that slope is exactly zero.
+</Proof>
+
+<Note title="Why this proposition explains four architectural choices">
+Everything in modern deep learning that looks like a trick is an attempt to keep
+$\prod_\ell\norm{J^{(\ell)}}$ near $1$:
+
+- **Careful initialisation** (He, Glorot) sets $\Var(W_{ij}) = 2/n_{\text{in}}$ so that $\E\norm{J^{(\ell)}}\approx1$ at the start of training.
+- **Residual connections** replace $J^{(\ell)}$ with $I + \tilde J^{(\ell)}$, whose product stays near $I$ when the $\tilde J$ are small — this is the mathematical content of ResNet.
+- **Normalisation layers** rescale $z^{(\ell)}$ so that $\rho'$ operates in its non-saturated range, keeping $\diag(\rho'(z))$ away from zero.
+- **Gating** in LSTMs and GRUs creates paths where the effective Jacobian is exactly $I$, which is the subject of the <TopicRef id="deep-learning/convolution-recurrence-normalisation">recurrence</TopicRef> page.
+
+None of these is a heuristic in need of an explanation; each targets this specific product.
+</Note>
+
+## Problems
+
+<ProblemRef id="dl-xor-impossible" />
+<ProblemRef id="dl-backprop-derivation" />
+<ProblemRef id="dl-relu-network-width" />
+<ProblemRef id="dl-jacobian-product" />
+<ProblemRef id="dl-implement-backprop" />

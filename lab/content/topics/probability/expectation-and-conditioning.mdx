@@ -1,0 +1,235 @@
+---
+title: Expectation, Variance and Conditional Expectation
+summary: Expectation as an integral, the variance identities used in every bias–variance computation, and conditional expectation as an orthogonal projection.
+field: probability
+level: 1
+order: 20
+prerequisites: [probability/probability-spaces]
+tags: [expectation, variance, covariance, conditional expectation, tower rule]
+estimated_time: 3h
+claims:
+  - id: tail-formula
+    kind: proposition
+    title: Tail formula for the expectation
+    summary: The mean of a non-negative random variable is the integral of its tail probability.
+    proved: true
+    tags: [expectation, layer cake]
+  - id: variance-decomposition
+    kind: proposition
+    title: Bias–variance and variance decompositions
+    summary: Mean squared error splits into squared bias plus variance; total variance splits into explained and residual parts.
+    proved: true
+    tags: [variance, bias, law of total variance]
+  - id: cond-exp-existence
+    kind: theorem
+    title: Conditional expectation as an L2 projection
+    summary: Conditional expectation is the orthogonal projection of a square-integrable variable onto the sub-sigma-algebra's functions.
+    proved: true
+    tags: [conditional expectation, projection, hilbert space]
+  - id: tower
+    kind: proposition
+    title: Tower property and pulling out what is known
+    summary: The two computational rules that make every conditional-expectation manipulation work.
+    proved: true
+    tags: [tower rule, conditional expectation]
+references:
+  - key: durrett-3
+    title: 'Probability: Theory and Examples'
+    authors: Rick Durrett
+    year: 2019
+    kind: book
+    url: https://services.math.duke.edu/~rtd/PTE/pte.html
+  - key: williams-2
+    title: Probability with Martingales
+    authors: David Williams
+    year: 1991
+    kind: book
+    note: Chapter 9 gives the conditional-expectation construction in the form used here.
+---
+
+## Expectation
+
+<Definition id="expectation" title="Expectation">
+For a random variable $X \ge 0$, $\E X = \int_\Omega X \, d\P \in [0,\infty]$, defined as the supremum
+of the integrals of simple functions below $X$. For general $X$, write $X = X^+ - X^-$ and set
+$\E X = \E X^+ - \E X^-$ whenever at least one term is finite; $X$ is **integrable** when
+$\E|X| < \infty$.
+</Definition>
+
+Expectation is linear, monotone, and satisfies $|\E X| \le \E|X|$. The following identity is the one
+that turns tail bounds into moment bounds and back, and it is used constantly on the
+<TopicRef id="high-dimensional-probability/sub-gaussian-random-variables">sub-Gaussian</TopicRef> page.
+
+<Proposition id="tail-formula" title="Tail formula for the expectation">
+For $X \ge 0$,
+$$
+\E X = \int_0^\infty \P(X > t)\,dt, \qquad\text{and more generally}\qquad
+\E[X^p] = p\int_0^\infty t^{p-1}\,\P(X>t)\,dt \quad (p > 0).
+$$
+</Proposition>
+
+<Proof>
+Write $X = \int_0^\infty \one\{X > t\}\,dt$ pointwise — for each $\omega$ the integrand is $1$ for
+$t < X(\omega)$ and $0$ after, so the integral is $X(\omega)$. Both $X$ and the integrand are
+non-negative and jointly measurable, so Tonelli's theorem allows the order of integration to be
+exchanged:
+$$
+\E X = \E\int_0^\infty \one\{X>t\}\,dt = \int_0^\infty \E\,\one\{X>t\}\,dt = \int_0^\infty \P(X>t)\,dt .
+$$
+For the $p$-th moment, apply the same identity to $X^p$ and substitute $t \mapsto t^p$:
+$\P(X^p > s) = \P(X > s^{1/p})$, and $ds = p t^{p-1}dt$ under $s = t^p$.
+</Proof>
+
+<Note title="The layer-cake picture">
+The identity says: the area under the graph of $X$ can be swept horizontally instead of vertically.
+That is all "layer cake" means, and it is why a bound of the form $\P(X > t) \le Ce^{-t^2/K^2}$
+immediately yields bounds on every moment of $X$ — integrate the Gaussian tail.
+</Note>
+
+## Variance, covariance and the decompositions that matter
+
+<Definition id="variance" title="Variance and covariance">
+For square-integrable $X, Y$,
+$$
+\Var(X) = \E\big[(X - \E X)^2\big] = \E[X^2] - (\E X)^2, \qquad
+\Cov(X,Y) = \E\big[(X-\E X)(Y - \E Y)\big] .
+$$
+For a random vector $X \in \R^d$ the **covariance matrix** is
+$\Sigma = \E[(X - \E X)(X-\E X)^\top] \in \mathbb{S}^d$, and $\Sigma \succeq 0$ because
+$v^\top \Sigma v = \Var(\ip{v}{X}) \ge 0$.
+</Definition>
+
+<Proposition id="variance-decomposition" title="Bias–variance and variance decompositions">
+Let $\hat\theta$ be a square-integrable estimator of a constant $\theta$, and let $\mathcal{G}$ be a
+sub-$\sigma$-algebra. Then
+$$
+\underbrace{\E\big[(\hat\theta - \theta)^2\big]}_{\text{mean squared error}}
+= \underbrace{\big(\E\hat\theta - \theta\big)^2}_{\text{bias}^2} + \underbrace{\Var(\hat\theta)}_{\text{variance}},
+$$
+and
+$$
+\Var(X) = \E\big[\Var(X \mid \mathcal{G})\big] + \Var\big(\E[X\mid\mathcal{G}]\big)
+$$
+(the **law of total variance**).
+</Proposition>
+
+<Proof>
+For the first identity, insert $\E\hat\theta$ and expand:
+$$
+\E(\hat\theta - \theta)^2 = \E\big[(\hat\theta - \E\hat\theta) + (\E\hat\theta - \theta)\big]^2
+= \Var(\hat\theta) + 2(\E\hat\theta - \theta)\E[\hat\theta - \E\hat\theta] + (\E\hat\theta-\theta)^2 ,
+$$
+and the cross term vanishes because $\E[\hat\theta - \E\hat\theta] = 0$. Note where the hypotheses go:
+$\theta$ must be non-random, and $\hat\theta$ square-integrable.
+
+For the second, let $m = \E[X\mid\mathcal{G}]$. Then
+$\Var(X\mid\mathcal{G}) = \E[X^2\mid\mathcal{G}] - m^2$, so taking expectations and using the tower
+property (below),
+$$
+\E\big[\Var(X\mid\mathcal{G})\big] = \E[X^2] - \E[m^2],
+\qquad
+\Var(m) = \E[m^2] - (\E m)^2 = \E[m^2] - (\E X)^2 .
+$$
+Adding gives $\E[X^2] - (\E X)^2 = \Var(X)$.
+</Proof>
+
+<KeyIdea>
+The bias–variance identity is *exact algebra*, not an approximation or a heuristic trade-off. What is
+heuristic is the claim that reducing one must increase the other; that claim is a description of
+certain model families, and the
+<TopicRef id="learning-theory/bias-variance-and-double-descent">double descent</TopicRef> page shows
+regimes where it plainly fails. Keep the identity and the folklore separate.
+</KeyIdea>
+
+The vector version of the variance-of-a-sum computation is used in every mini-batch argument:
+$$
+\Var\left(\frac1n\sum_{i=1}^n X_i\right) = \frac{1}{n^2}\sum_{i,j}\Cov(X_i,X_j)
+\;\overset{\text{i.i.d.}}{=}\; \frac{\sigma^2}{n} .
+$$
+The middle expression is the honest one. The $\sigma^2/n$ rate is a *consequence of independence*,
+and correlated samples — adjacent tokens in a text corpus, say — do not enjoy it.
+
+## Conditional expectation
+
+<Definition id="cond-exp-def" title="Conditional expectation">
+Let $X$ be integrable and $\mathcal{G} \subseteq \mathcal{A}$ a sub-$\sigma$-algebra. A random
+variable $Z$ is **a conditional expectation of $X$ given $\mathcal{G}$**, written
+$Z = \E[X\mid\mathcal{G}]$, if
+
+1. $Z$ is $\mathcal{G}$-measurable, and
+2. $\E[Z\one_G] = \E[X\one_G]$ for every $G \in \mathcal{G}$.
+
+Such a $Z$ exists and is unique up to almost-sure equality.
+</Definition>
+
+<Theorem id="cond-exp-existence" title="Conditional expectation as an L2 projection">
+If $\E[X^2] < \infty$, then $\E[X\mid\mathcal{G}]$ is the orthogonal projection of $X$ onto the
+closed subspace $L^2(\mathcal{G}) \subseteq L^2(\mathcal{A})$ of square-integrable
+$\mathcal{G}$-measurable variables. Consequently
+$$
+\E[X \mid \mathcal{G}] = \argmin_{Z \in L^2(\mathcal{G})} \E\big[(X - Z)^2\big] .
+$$
+</Theorem>
+
+<Proof>
+$L^2(\mathcal{A})$ with $\ip{U}{V} = \E[UV]$ is a Hilbert space and $L^2(\mathcal{G})$ is a closed
+subspace, so the projection $Z = \Pi_{L^2(\mathcal{G})}X$ exists and is characterised by
+$X - Z \perp L^2(\mathcal{G})$, i.e. $\E[(X-Z)W] = 0$ for all $W \in L^2(\mathcal{G})$.
+
+Taking $W = \one_G$ for $G \in \mathcal{G}$ recovers property (2) of the definition, and $Z$ is
+$\mathcal{G}$-measurable by construction, so $Z$ is a conditional expectation. The minimisation
+statement is the "nearest point" part of the
+<TopicRef id="foundations/linear-algebra">projection theorem</TopicRef>.
+
+Uniqueness: if $Z, Z'$ both satisfy (1) and (2) then $\E[(Z-Z')\one_G] = 0$ for all
+$G \in \mathcal{G}$; taking $G = \{Z - Z' > 0\}$ and $G = \{Z-Z'<0\}$, both of which are in
+$\mathcal{G}$, forces $\P(Z \neq Z') = 0$.
+</Proof>
+
+<Intuition>
+"Conditional expectation is the best guess at $X$ given the information in $\mathcal{G}$" is exactly
+right, and the theorem says in what sense: best in mean square, among all guesses that only use that
+information. Every regression objective in this laboratory is an attempt to approximate this
+projection from a finite sample, which is why the Bayes-optimal predictor for squared loss is
+$\E[Y \mid X]$ and nothing else.
+</Intuition>
+
+<Proposition id="tower" title="Tower property and pulling out what is known">
+Let $X, Y$ be integrable and $\mathcal{H} \subseteq \mathcal{G}$ sub-$\sigma$-algebras.
+
+1. **Tower / smoothing.** $\E\big[\E[X\mid\mathcal{G}]\ \big|\ \mathcal{H}\big] = \E[X\mid\mathcal{H}]$; in particular $\E\big[\E[X\mid\mathcal{G}]\big] = \E X$.
+2. **Taking out what is known.** If $Y$ is $\mathcal{G}$-measurable and $XY$ is integrable, then $\E[XY\mid\mathcal{G}] = Y\,\E[X\mid\mathcal{G}]$.
+3. **Independence.** If $X$ is independent of $\mathcal{G}$ then $\E[X\mid\mathcal{G}] = \E X$.
+</Proposition>
+
+<Proof>
+(1) Write $Z = \E[X\mid\mathcal{G}]$ and $W = \E[Z\mid\mathcal{H}]$. For $H \in \mathcal{H}$ we have
+$H \in \mathcal{G}$ too, so $\E[W\one_H] = \E[Z\one_H] = \E[X\one_H]$, and $W$ is
+$\mathcal{H}$-measurable; that is the defining property of $\E[X\mid\mathcal{H}]$. Uniqueness finishes
+the argument. Taking $\mathcal{H}$ trivial gives the second claim.
+
+(2) First take $Y = \one_{G_0}$ for $G_0 \in \mathcal{G}$. For any $G \in \mathcal{G}$,
+$$
+\E\big[\one_{G_0}\E[X\mid\mathcal{G}]\one_G\big] = \E\big[\E[X\mid\mathcal{G}]\one_{G\cap G_0}\big]
+= \E[X\one_{G\cap G_0}] = \E[(X\one_{G_0})\one_G] ,
+$$
+which identifies $\one_{G_0}\E[X\mid\mathcal{G}]$ as $\E[X\one_{G_0}\mid\mathcal{G}]$. Extend to
+simple $Y$ by linearity and to general integrable $Y$ by monotone convergence.
+
+(3) $\E X$ is (trivially) $\mathcal{G}$-measurable, and for $G \in \mathcal{G}$ independence gives
+$\E[X\one_G] = \E X\,\P(G) = \E[\E X \cdot \one_G]$.
+</Proof>
+
+<Warning title="Common mistake">
+$\E[X \mid \mathcal{G}]$ is a **random variable**, not a number, and the conditional variance
+$\Var(X\mid\mathcal{G})$ likewise. Writing $\E[X \mid Y = y]$ for a number is fine once $y$ is fixed,
+but the tower property is a statement about the random object, and treating it as a constant is how
+the law of total variance gets mangled.
+</Warning>
+
+## Problems
+
+<ProblemRef id="ex-tail-formula-moments" />
+<ProblemRef id="ex-total-variance" />
+<ProblemRef id="ex-conditional-projection" />
+<ProblemRef id="ex-correlated-average" />

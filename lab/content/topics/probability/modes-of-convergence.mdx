@@ -1,0 +1,217 @@
+---
+title: Modes of Convergence, LLN and CLT
+summary: The four notions of convergence for random variables, which implications hold between them, and the two limit theorems everything downstream depends on.
+field: probability
+level: 1
+order: 30
+prerequisites: [probability/expectation-and-conditioning]
+tags: [convergence, almost sure, in probability, in distribution, lln, clt]
+estimated_time: 3h
+claims:
+  - id: implications
+    kind: theorem
+    title: Implications between modes of convergence
+    summary: Almost sure and Lp convergence both imply convergence in probability, which implies convergence in distribution; no other implication holds in general.
+    proved: true
+    tags: [convergence, counterexamples]
+  - id: wlln
+    kind: theorem
+    title: Weak law of large numbers
+    summary: For i.i.d. variables with finite variance the sample mean converges to the mean in probability.
+    proved: true
+    tags: [lln, chebyshev]
+  - id: slln
+    kind: theorem
+    title: Strong law of large numbers
+    summary: For i.i.d. integrable variables the sample mean converges almost surely.
+    proved: false
+    tags: [lln, almost sure]
+  - id: clt
+    kind: theorem
+    title: Central limit theorem
+    summary: The standardised sample mean of i.i.d. variables with finite variance converges in distribution to a standard normal.
+    proved: false
+    tags: [clt, normal]
+  - id: berry-esseen
+    kind: theorem
+    title: Berry–Esseen bound
+    summary: A quantitative CLT with an explicit n^{-1/2} rate in Kolmogorov distance.
+    proved: false
+    tags: [clt, rate, quantitative]
+  - id: clt-not-tail
+    kind: empirical
+    title: The CLT does not license Gaussian tail estimates
+    summary: Pointwise convergence of the CDF says nothing about the far tail at finite n, which is why concentration inequalities are needed.
+    proved: false
+    tags: [clt, tails, caveat]
+references:
+  - key: durrett-4
+    title: 'Probability: Theory and Examples'
+    authors: Rick Durrett
+    year: 2019
+    kind: book
+    url: https://services.math.duke.edu/~rtd/PTE/pte.html
+  - key: vershynin-hdp-1
+    title: 'High-Dimensional Probability: An Introduction with Applications in Data Science'
+    authors: Roman Vershynin
+    year: 2018
+    kind: book
+    url: https://www.math.uci.edu/~rvershyn/papers/HDP-book/HDP-book.html
+    note: Section 2.1 makes the case, at length, for why the CLT is the wrong tool for tail estimates.
+---
+
+## Four notions of convergence
+
+<Definition id="modes" title="The four modes">
+Let $X_1, X_2, \dots$ and $X$ be random variables on a common probability space.
+
+- $X_n \to X$ **almost surely** ($X_n \xrightarrow{a.s.} X$) if $\P\big(\lim_n X_n = X\big) = 1$.
+- $X_n \to X$ **in probability** ($X_n \xrightarrow{\P} X$) if $\P(|X_n - X| > \eps) \to 0$ for every $\eps>0$.
+- $X_n \to X$ **in $L^p$** ($X_n \xrightarrow{L^p} X$) if $\E|X_n - X|^p \to 0$.
+- $X_n \to X$ **in distribution** ($X_n \rightsquigarrow X$) if $F_{X_n}(t) \to F_X(t)$ at every $t$ where $F_X$ is continuous.
+</Definition>
+
+Only the last is a statement about laws alone; the other three compare the random variables
+themselves and require them to live on the same space.
+
+<Theorem id="implications" title="Implications between modes">
+$$
+X_n \xrightarrow{a.s.} X \;\Longrightarrow\; X_n \xrightarrow{\P} X, \qquad
+X_n \xrightarrow{L^p} X \;\Longrightarrow\; X_n \xrightarrow{\P} X, \qquad
+X_n \xrightarrow{\P} X \;\Longrightarrow\; X_n \rightsquigarrow X .
+$$
+None of the reverse implications holds in general, and almost-sure and $L^p$ convergence do not imply
+each other.
+</Theorem>
+
+<Proof>
+**Almost sure $\Rightarrow$ in probability.** Fix $\eps>0$ and set $A_n = \{|X_n - X| > \eps\}$. On the
+event $\{X_n \to X\}$, which has probability one, only finitely many $A_n$ occur, so
+$\one_{A_n} \to 0$ almost surely. Since $\one_{A_n} \le 1$, dominated convergence gives
+$\P(A_n) = \E \one_{A_n} \to 0$.
+
+**$L^p$ $\Rightarrow$ in probability.** Markov's inequality applied to $|X_n - X|^p$:
+$$
+\P(|X_n - X| > \eps) = \P\big(|X_n-X|^p > \eps^p\big) \le \frac{\E|X_n-X|^p}{\eps^p} \to 0 .
+$$
+
+**In probability $\Rightarrow$ in distribution.** Let $t$ be a continuity point of $F_X$ and
+$\eps > 0$. Then
+$$
+F_{X_n}(t) = \P(X_n \le t) \le \P(X \le t+\eps) + \P(|X_n - X| > \eps) = F_X(t+\eps) + o(1),
+$$
+and symmetrically $F_{X_n}(t) \ge F_X(t-\eps) - o(1)$. Letting $n \to \infty$ and then $\eps \downarrow 0$,
+continuity of $F_X$ at $t$ squeezes $F_{X_n}(t) \to F_X(t)$.
+
+**Counterexamples.** Take $U$ uniform on $[0,1]$.
+
+- *In probability but not almost surely.* Partition $[0,1]$ into consecutive blocks and let $X_n = \one\{U \in I_n\}$ where $|I_n| = 1/n$ and the $I_n$ cycle through $[0,1]$. Then $\P(X_n \ne 0) = 1/n \to 0$, but $\sum_n |I_n| = \infty$ and the blocks cover $[0,1]$ infinitely often, so $X_n = 1$ infinitely often almost surely.
+- *In probability but not in $L^1$.* $X_n = n\,\one\{U < 1/n\}$ satisfies $X_n \xrightarrow{\P}0$ and even $X_n \to 0$ almost surely, yet $\E X_n = 1$ for all $n$.
+- *Almost surely but not in $L^1$.* The same example.
+- *In $L^p$ but not almost surely.* The first example with $X_n = \one\{U \in I_n\}$ has $\E|X_n|^p = 1/n \to 0$.
+- *In distribution but not in probability.* Let $X_n = (-1)^n Z$ for a standard normal $Z$. Every $X_n$ has the same law, so $X_n \rightsquigarrow Z$, but $|X_n - X_{n+1}| = 2|Z|$ does not go to zero.
+</Proof>
+
+<Note title="A useful partial converse">
+Convergence in probability plus a summable rate gives almost-sure convergence: if
+$\sum_n \P(|X_n - X| > \eps) < \infty$ for every $\eps > 0$, then
+<TopicRef id="probability/probability-spaces">Borel–Cantelli</TopicRef> gives
+$X_n \xrightarrow{a.s.}X$. This is precisely how exponential concentration bounds upgrade
+convergence-in-probability statements throughout this laboratory.
+</Note>
+
+## The law of large numbers
+
+<Theorem id="wlln" title="Weak law of large numbers">
+Let $X_1, X_2, \dots$ be uncorrelated with common mean $\mu$ and variance at most $\sigma^2 < \infty$,
+and let $\bar X_n = \frac1n\sum_{i\le n}X_i$. Then $\bar X_n \xrightarrow{\P} \mu$; quantitatively,
+$$
+\P\big(|\bar X_n - \mu| \ge t\big) \le \frac{\sigma^2}{nt^2}\quad\text{for every } t>0 .
+$$
+</Theorem>
+
+<Proof>
+$\E \bar X_n = \mu$ by linearity. Because the $X_i$ are uncorrelated, the covariances vanish and
+$$
+\Var(\bar X_n) = \frac{1}{n^2}\sum_{i=1}^n \Var(X_i) \le \frac{\sigma^2}{n}.
+$$
+Chebyshev's inequality — that is, Markov applied to $(\bar X_n - \mu)^2$ — gives
+$\P(|\bar X_n - \mu| \ge t) \le \Var(\bar X_n)/t^2 \le \sigma^2/(nt^2)$, which tends to $0$.
+</Proof>
+
+<Assumptions>
+Note exactly what was used: *uncorrelated* (not independent), finite variance, common mean. The
+conclusion is a $1/n$ decay of the failure probability, which is polynomial — much weaker than the
+exponential decay available under stronger assumptions on the
+<TopicRef id="high-dimensional-probability/concentration-inequalities">concentration</TopicRef> page.
+</Assumptions>
+
+<Theorem id="slln" title="Strong law of large numbers">
+If $X_1, X_2, \dots$ are i.i.d. with $\E|X_1| < \infty$ and $\E X_1 = \mu$, then
+$\bar X_n \xrightarrow{a.s.} \mu$. Conversely, if $\E|X_1| = \infty$ then
+$\limsup_n |\bar X_n| = \infty$ almost surely.
+</Theorem>
+
+Kolmogorov's strong law is quoted rather than proved: the standard proofs (via truncation and
+Kolmogorov's maximal inequality, or via the ergodic theorem) are longer than this page warrants, and
+the references give them properly. What is worth stressing is the hypothesis gap: the strong law needs
+only a **first** moment, while the elementary weak law above needed a second.
+
+## The central limit theorem
+
+<Theorem id="clt" title="Central limit theorem (Lindeberg–Lévy)">
+Let $X_1, X_2,\dots$ be i.i.d. with mean $\mu$ and variance $\sigma^2 \in (0,\infty)$. Then
+$$
+\frac{\sqrt{n}\,(\bar X_n - \mu)}{\sigma} \rightsquigarrow \Ncal(0,1) .
+$$
+</Theorem>
+
+The characteristic-function proof is standard and is not reproduced here. The structure worth
+remembering is: $\varphi_{\sqrt n(\bar X_n - \mu)/\sigma}(t) = \big(\varphi_{(X_1-\mu)/\sigma}(t/\sqrt n)\big)^n$,
+expand the inner characteristic function to second order, and recognise
+$(1 - t^2/2n + o(1/n))^n \to e^{-t^2/2}$.
+
+<Theorem id="berry-esseen" title="Berry–Esseen bound">
+Under the hypotheses above with additionally $\rho = \E|X_1 - \mu|^3 < \infty$, there is an absolute
+constant $C$ (one may take $C \le 0.5$) with
+$$
+\sup_{t\in\R}\left|\P\left(\frac{\sqrt n(\bar X_n - \mu)}{\sigma} \le t\right) - \Phi(t)\right|
+\le \frac{C\rho}{\sigma^3\sqrt n} .
+$$
+</Theorem>
+
+This is the quantitative form of the CLT, quoted from the literature. Read the bound carefully: it
+controls the **uniform** error in the CDF by something of order $n^{-1/2}$. That is exactly the
+problem.
+
+<Claim kind="empirical" id="clt-not-tail" title="The CLT does not license Gaussian tail estimates">
+It is tempting to argue: "$\bar X_n$ is approximately $\Ncal(\mu, \sigma^2/n)$ by the CLT, therefore
+$\P(|\bar X_n - \mu| > t) \approx 2\big(1 - \Phi(t\sqrt n/\sigma)\big) \le e^{-nt^2/2\sigma^2}$."
+This step is not valid as stated, and the reason is quantitative rather than philosophical.
+</Claim>
+
+<NotSaid>
+The CLT is a statement about **pointwise convergence of the CDF at fixed $t$**. Berry–Esseen says the
+error in that approximation is of order $n^{-1/2}$ *uniformly*. So when the true tail probability is
+itself smaller than $n^{-1/2}$ — which is the regime every generalisation bound and every
+"with probability $1-\delta$" claim lives in — the CLT approximation carries an error larger than the
+quantity being estimated. It tells you nothing.
+
+Concretely: for $n = 100$ the Berry–Esseen error is on the order of $10^{-1}$, so the CLT cannot
+distinguish a tail probability of $10^{-3}$ from one of $10^{-6}$. Yet those are exactly the
+probabilities one needs for a $\delta = 0.001$ confidence statement.
+
+This is why the entire machinery of the
+<TopicRef id="high-dimensional-probability/concentration-inequalities">concentration inequalities</TopicRef>
+page exists. Hoeffding's inequality gives a *non-asymptotic, valid-for-every-$n$* Gaussian-type tail
+bound under a boundedness hypothesis; the CLT gives an asymptotic shape with no error control in the
+tail. They are not substitutes.
+</NotSaid>
+
+<ExperimentRef id="concentration-inequalities" />
+
+## Problems
+
+<ProblemRef id="mc-modes-counterexample" />
+<ProblemRef id="mc-wlln-uncorrelated" />
+<ProblemRef id="mc-clt-vs-hoeffding" />

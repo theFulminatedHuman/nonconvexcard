@@ -1,0 +1,749 @@
+defaults:
+  field: advanced-optimization
+problems:
+  - id: du-weak-duality
+    title: Weak duality holds without convexity
+    topic: advanced-optimization/duality-and-kkt
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [duality, weak duality, lagrangian]
+    statement: |
+      Prove weak duality $d^\star\le p^\star$ for the general problem $\min f_0(x)$ subject to
+      $f_i(x)\le0$, $h_j(x)=0$, stating exactly which properties of the Lagrangian are used. Give an
+      example with a strictly positive duality gap.
+    solution: |
+      **Proof.** Let $x$ be primal feasible and $(\alpha,\nu)$ dual feasible, i.e. $\alpha\ge0$. Then
+      $$
+      \mathcal L(x,\alpha,\nu) = f_0(x) + \underbrace{\sum_i\alpha_if_i(x)}_{\le0} + \underbrace{\sum_j\nu_jh_j(x)}_{=0} \le f_0(x),
+      $$
+      the first bracket because each $\alpha_i\ge0$ and $f_i(x)\le0$. Taking the infimum over all $x'$
+      on the left,
+      $$
+      g(\alpha,\nu) = \inf_{x'}\mathcal L(x',\alpha,\nu) \le \mathcal L(x,\alpha,\nu) \le f_0(x).
+      $$
+      Since this holds for every feasible $x$ and every dual feasible $(\alpha,\nu)$, take the supremum
+      on the left and the infimum on the right: $d^\star\le p^\star$.
+
+      **What was used.** Only the sign conditions $\alpha\ge0$ and $f_i(x)\le0$, and the fact that an
+      infimum is a lower bound. No convexity, no differentiability, no constraint qualification — which
+      is why weak duality is the one thing always available.
+
+      **A strictly positive gap.** Minimise $f_0(x) = x^3$ over $x\ge1$ (i.e. $f_1(x) = 1-x\le0$). Here
+      $p^\star = 1$. The Lagrangian $x^3+\alpha(1-x)$ is unbounded below in $x$ (take $x\to-\infty$),
+      so $g(\alpha) = -\infty$ for every $\alpha\ge0$ and $d^\star = -\infty$. The gap is infinite; the
+      cause is non-convexity of $x^3$.
+
+  - id: du-qp-dual
+    title: Derive the dual of a quadratic program
+    topic: advanced-optimization/duality-and-kkt
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [duality, quadratic program, derivation]
+    statement: |
+      Derive the Lagrangian dual of
+      $$
+      \min_x\ \tfrac12x^\top Qx + c^\top x \quad\text{subject to}\quad Ax\le b,
+      $$
+      with $Q\succ0$. Verify that the dual is a concave maximisation over the non-negative orthant, and
+      give the map recovering $x^\star$ from $\alpha^\star$.
+    solution: |
+      **Lagrangian.** $\mathcal L(x,\alpha) = \tfrac12x^\top Qx + c^\top x + \alpha^\top(Ax-b)$,
+      $\alpha\ge0$.
+
+      **Inner minimisation.** $\mathcal L$ is strictly convex in $x$ since $Q\succ0$, so the minimiser
+      solves $\nabla_x\mathcal L = Qx + c + A^\top\alpha = 0$:
+      $$
+      x^\star(\alpha) = -Q^{-1}\big(c+A^\top\alpha\big).
+      $$
+
+      **Substitute.** Writing $u = c+A^\top\alpha$,
+      $$
+      \mathcal L(x^\star(\alpha),\alpha) = \tfrac12u^\top Q^{-1}u - u^\top Q^{-1}u - b^\top\alpha
+      = -\tfrac12 u^\top Q^{-1}u - b^\top\alpha .
+      $$
+      Expanding $u$,
+      $$
+      g(\alpha) = -\tfrac12\alpha^\top AQ^{-1}A^\top\alpha - \alpha^\top\big(AQ^{-1}c+b\big) - \tfrac12c^\top Q^{-1}c .
+      $$
+
+      **Dual problem.** $\max_{\alpha\ge0}g(\alpha)$. The Hessian is $-AQ^{-1}A^\top\preceq0$ since
+      $Q^{-1}\succ0$, so $g$ is concave and the dual is a convex problem — as it must be, being an
+      infimum of affine functions of $\alpha$.
+
+      **Recovery.** Strong duality holds whenever some $x$ satisfies $Ax<b$ (Slater). Then
+      $x^\star = -Q^{-1}(c+A^\top\alpha^\star)$.
+
+      **What changed.** The primal has $m$ general inequality constraints and $n$ variables; the dual
+      has $m$ variables and only sign constraints. The constraint structure has been absorbed into the
+      quadratic form $AQ^{-1}A^\top$ — which in the SVM case is exactly the labelled kernel matrix.
+
+  - id: du-complementary-slackness
+    title: Complementary slackness and active constraints
+    topic: advanced-optimization/duality-and-kkt
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [kkt, complementary slackness, active set]
+    statement: |
+      Prove that under strong duality with both optima attained, $\alpha_i^\star f_i(x^\star) = 0$ for
+      every $i$. Deduce that removing any constraint with $\alpha_i^\star = 0$ leaves the optimum
+      unchanged, and explain the consequence for support vectors.
+    solution: |
+      **Complementary slackness.** Strong duality and attainment give
+      $$
+      f_0(x^\star) = p^\star = d^\star = g(\alpha^\star,\nu^\star) = \inf_x\mathcal L(x,\alpha^\star,\nu^\star)
+      \le \mathcal L(x^\star,\alpha^\star,\nu^\star) = f_0(x^\star) + \sum_i\alpha_i^\star f_i(x^\star),
+      $$
+      using $h_j(x^\star)=0$. Hence $\sum_i\alpha_i^\star f_i(x^\star)\ge0$. But each term is a product
+      of a non-negative $\alpha_i^\star$ and a non-positive $f_i(x^\star)$, so each term is
+      non-positive. A sum of non-positive terms that is $\ge0$ must have every term zero.
+
+      **Inactive constraints are removable.** Suppose $\alpha_k^\star = 0$ and delete the $k$-th
+      constraint. The point $x^\star$ is still feasible for the reduced problem, and
+      $(\alpha^\star_{-k},\nu^\star)$ still satisfies the reduced KKT system: stationarity is unchanged
+      because the $k$-th term contributed $\alpha_k^\star\nabla f_k = 0$, and the remaining conditions
+      are inherited. For a convex problem the KKT conditions are sufficient, so $x^\star$ is optimal
+      for the reduced problem, and the optima coincide.
+
+      **Support vectors.** In the SVM the constraints are $1-y_i(\langle w,x_i\rangle+b)\le0$, one per
+      training point. Complementary slackness says $\alpha_i^\star>0$ only when the constraint is
+      active, i.e. $y_i(\langle w,x_i\rangle+b)=1$ — the point lies exactly on the margin. Every other
+      point has $\alpha_i^\star=0$ and, by the argument above, can be deleted without changing the
+      solution. "Support vector" is therefore not a heuristic label but the exact statement
+      "constraint with a non-zero multiplier".
+
+  - id: du-duality-gap-example
+    title: A convex problem with a duality gap
+    topic: advanced-optimization/duality-and-kkt
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [duality gap, slater, counterexample]
+    statement: |
+      Consider
+      $$
+      \min_{x,y}\ e^{-x} \quad\text{subject to}\quad \frac{x^2}{y}\le0,\quad y>0 .
+      $$
+      Show that the problem is convex, compute $p^\star$ and $d^\star$, and identify which hypothesis
+      of Slater's theorem fails.
+    solution: |
+      **Convexity.** The objective $e^{-x}$ is convex. The constraint function $x^2/y$ is the
+      quadratic-over-linear function, which is jointly convex on $\{y>0\}$ (its Hessian is
+      $\frac{2}{y^3}\begin{pmatrix}y^2 & -xy\\-xy & x^2\end{pmatrix} = \frac{2}{y^3}(y,-x)^\top(y,-x)\succeq0$).
+      So the problem is convex.
+
+      **Primal value.** The constraint $x^2/y\le0$ with $y>0$ forces $x = 0$. Hence the feasible set is
+      $\{(0,y):y>0\}$ and $p^\star = e^0 = 1$.
+
+      **Dual value.** $\mathcal L(x,y,\alpha) = e^{-x}+\alpha x^2/y$ for $\alpha\ge0$. For any
+      $\alpha\ge0$, take $x\to+\infty$ with $y = x^3$: then $e^{-x}\to0$ and $\alpha x^2/y = \alpha/x\to0$,
+      so $\inf\mathcal L \le 0$. Since $\mathcal L\ge0$ always, $g(\alpha) = 0$ for every $\alpha\ge0$,
+      giving $d^\star = 0$.
+
+      **The gap.** $p^\star - d^\star = 1 > 0$, despite convexity.
+
+      **Which hypothesis fails.** Slater's condition requires a **strictly feasible** point: some
+      $(x,y)$ with $x^2/y < 0$ strictly. Since $x^2\ge0$ and $y>0$, the constraint function is never
+      negative — it equals zero on the entire feasible set. There is no strictly feasible point, Slater
+      fails, and strong duality is not guaranteed.
+
+      **Moral.** Convexity alone does not give strong duality; a constraint qualification is needed.
+      Fortunately Slater's condition is mild and holds in every application on this site — but the
+      example shows it is not vacuous.
+
+  - id: px-projection-simplex
+    title: Projection onto the probability simplex
+    topic: advanced-optimization/proximal-and-projected-methods
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [projection, simplex, kkt, algorithm]
+    statement: |
+      Derive an algorithm computing $\Pi_\Delta(v) = \arg\min\{\|z-v\|_2 : z\ge0,\ \sum_iz_i=1\}$ and
+      show it runs in $O(d\log d)$ time. State the closed form of the solution in terms of a threshold.
+    hints:
+      - Write the KKT conditions with a multiplier $\theta$ for the equality and $\mu_i\ge0$ for the non-negativity.
+      - Show $z_i = \max(v_i-\theta, 0)$ for a scalar $\theta$, then find $\theta$ from the equality constraint.
+      - The map $\theta\mapsto\sum_i\max(v_i-\theta,0)$ is piecewise linear and decreasing.
+    solution: |
+      **KKT.** Minimise $\tfrac12\|z-v\|_2^2$ subject to $\mathbf1^\top z = 1$, $z\ge0$. The Lagrangian
+      is $\tfrac12\|z-v\|^2 + \theta(\mathbf1^\top z-1) - \mu^\top z$ with $\mu\ge0$. Stationarity:
+      $z_i - v_i + \theta - \mu_i = 0$. Complementary slackness: $\mu_iz_i = 0$.
+
+      - If $z_i>0$ then $\mu_i=0$, so $z_i = v_i-\theta$ (and this is positive).
+      - If $z_i=0$ then $\mu_i = \theta - v_i \ge 0$, so $v_i\le\theta$.
+
+      Both cases are summarised by
+      $$
+      z_i = \max(v_i - \theta,\ 0),
+      $$
+      with $\theta$ determined by the equality constraint
+      $$
+      \varphi(\theta) := \sum_{i=1}^d\max(v_i-\theta,0) = 1 .
+      $$
+
+      **Finding $\theta$.** $\varphi$ is continuous, piecewise linear, non-increasing, with
+      $\varphi(\min_iv_i - 1) \ge 1$ and $\varphi(\max_iv_i) = 0$, so a unique root exists. Sort $v$
+      descending as $v_{(1)}\ge\dots\ge v_{(d)}$. On the interval where exactly the top $k$ coordinates
+      survive, $\varphi(\theta) = \sum_{i\le k}v_{(i)} - k\theta$, so the candidate root is
+      $$
+      \theta_k = \frac{1}{k}\Big(\sum_{i\le k}v_{(i)} - 1\Big).
+      $$
+      The correct $k$ is the largest index with $v_{(k)} - \theta_k > 0$, equivalently
+      $$
+      \rho = \max\Big\{k : v_{(k)} > \tfrac1k\big(\textstyle\sum_{i\le k}v_{(i)}-1\big)\Big\},
+      \qquad \theta = \theta_\rho .
+      $$
+
+      **Complexity.** Sorting is $O(d\log d)$; the prefix sums and the scan for $\rho$ are $O(d)$.
+      (An $O(d)$ expected-time variant uses median-of-medians partitioning instead of a full sort.)
+
+      **Remark.** The answer is a **shift-and-truncate**, structurally identical to soft thresholding —
+      both come from a KKT system with a one-sided constraint, and both produce exact zeros.
+
+  - id: px-prox-l1
+    title: The proximal operator of the l1 norm
+    topic: advanced-optimization/proximal-and-projected-methods
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [proximal, soft threshold, separability]
+    statement: |
+      Show that $\prox_{\eta\|\cdot\|_1}(v)$ is coordinatewise soft thresholding, and verify it is
+      firmly non-expansive: $\|\prox(u)-\prox(v)\|_2\le\|u-v\|_2$.
+    solution: |
+      **Separability.** The objective $\|z\|_1 + \frac{1}{2\eta}\|z-v\|_2^2$ splits as
+      $\sum_i\big(|z_i| + \frac{1}{2\eta}(z_i-v_i)^2\big)$, so the minimisation decouples across
+      coordinates. Each scalar problem was solved in the soft-thresholding derivation:
+      $$
+      z_i^\star = S_\eta(v_i) = \operatorname{sign}(v_i)\max(|v_i|-\eta,0).
+      $$
+
+      **Non-expansiveness.** Coordinatewise, $S_\eta$ is $1$-Lipschitz on $\R$: its derivative is $1$
+      on $\{|v|>\eta\}$ and $0$ on $\{|v|<\eta\}$, and it is continuous, so
+      $|S_\eta(a)-S_\eta(b)|\le|a-b|$ for all $a,b$. Squaring and summing over coordinates,
+      $$
+      \|\prox(u)-\prox(v)\|_2^2 = \sum_i|S_\eta(u_i)-S_\eta(v_i)|^2 \le \sum_i|u_i-v_i|^2 = \|u-v\|_2^2 .
+      $$
+
+      **General fact.** This is an instance of the general result that $\prox_h$ is firmly
+      non-expansive for any convex closed proper $h$ — which is what allows the proximal-gradient
+      convergence proof to reuse the projected-gradient argument verbatim, with $\prox$ in place of
+      $\Pi_{\mathcal C}$.
+
+  - id: px-frank-wolfe-gap
+    title: The Frank–Wolfe duality gap certificate
+    topic: advanced-optimization/proximal-and-projected-methods
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [frank-wolfe, duality gap, stopping criterion]
+    statement: |
+      Show that the quantity $\mathrm{gap}_t = \langle\nabla f(x_t), x_t - s_t\rangle$ computed at each
+      Frank–Wolfe step, where $s_t = \arg\min_{s\in\mathcal C}\langle\nabla f(x_t),s\rangle$, is an
+      upper bound on $f(x_t)-f^\star$. Explain why this makes Frank–Wolfe self-certifying.
+    solution: |
+      By convexity, for any $x^\star\in\mathcal C$,
+      $$
+      f(x^\star) \ge f(x_t) + \langle\nabla f(x_t), x^\star - x_t\rangle ,
+      $$
+      so
+      $$
+      f(x_t) - f(x^\star) \le \langle\nabla f(x_t), x_t - x^\star\rangle .
+      $$
+      Now $s_t$ minimises the linear functional $\langle\nabla f(x_t),\cdot\rangle$ over $\mathcal C$,
+      and $x^\star\in\mathcal C$, so $\langle\nabla f(x_t),s_t\rangle \le \langle\nabla f(x_t),x^\star\rangle$,
+      hence
+      $$
+      \langle\nabla f(x_t),x_t-x^\star\rangle \le \langle\nabla f(x_t),x_t-s_t\rangle = \mathrm{gap}_t .
+      $$
+      Combining, $f(x_t)-f^\star\le\mathrm{gap}_t$.
+
+      **Self-certifying.** $\mathrm{gap}_t$ is computed anyway — $s_t$ is the linear-minimisation oracle
+      call the algorithm already makes — so it costs nothing extra. It gives a **rigorous, computable**
+      bound on the suboptimality at every iteration, without knowing $f^\star$. That is unusual: most
+      first-order methods have only heuristic stopping criteria such as $\|\nabla f\|$ small or the
+      iterates ceasing to move, neither of which bounds the gap. This is a real practical advantage of
+      Frank–Wolfe and one reason it survives despite its $O(1/t)$ rate.
+
+  - id: px-mirror-simplex
+    title: Mirror descent on the simplex beats Euclidean projection
+    topic: advanced-optimization/proximal-and-projected-methods
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [mirror descent, entropy, simplex, dimension dependence]
+    statement: |
+      Consider minimising a convex $f$ over the probability simplex $\Delta_d$ with
+      $\|\nabla f\|_\infty\le G_\infty$.
+
+      1. Show that projected subgradient descent gives a rate $O\big(G_2R_2/\sqrt T\big)$ with
+         $R_2 = \max_x\|x-x_0\|_2$ and $G_2 = \max\|\nabla f\|_2$, and bound $G_2$ by
+         $\sqrt d\,G_\infty$.
+      2. Show that mirror descent with the negative entropy $\Phi(x) = \sum_ix_i\log x_i$ gives
+         $O\big(G_\infty\sqrt{\log d}/\sqrt T\big)$.
+      3. Quantify the improvement at $d = 10^6$.
+    hints:
+      - The negative entropy is 1-strongly convex with respect to the l1 norm on the simplex (Pinsker's inequality).
+      - The Bregman divergence of the negative entropy is the KL divergence, and $\mathrm{KL}(x^\star\|x_0)\le\log d$ for a uniform $x_0$.
+    solution: |
+      **1. Euclidean.** The projected subgradient bound is
+      $f(\bar x_T)-f^\star \le \frac{R_2^2}{2\eta T}+\frac{\eta G_2^2}{2}$, optimised at
+      $\eta = R_2/(G_2\sqrt T)$ giving $G_2R_2/\sqrt T$. On the simplex, $\|x-y\|_2\le\sqrt2$ so
+      $R_2\le\sqrt2$. And $\|g\|_2\le\sqrt d\|g\|_\infty$, so $G_2$ can be as large as
+      $\sqrt d\,G_\infty$. Worst case rate: $O(G_\infty\sqrt{d/T})$.
+
+      **2. Entropic mirror descent.** The negative entropy $\Phi$ is $1$-strongly convex with respect
+      to $\|\cdot\|_1$ on $\Delta_d$ — this is **Pinsker's inequality**,
+      $\mathrm{KL}(p\|q)\ge\tfrac12\|p-q\|_1^2$. The general mirror-descent bound is
+      $$
+      f(\bar x_T)-f^\star \le \frac{D_\Phi(x^\star,x_0)}{\eta T} + \frac{\eta G_*^2}{2},
+      $$
+      where $G_*$ bounds the gradient in the **dual** norm, here $\|\cdot\|_\infty$, so $G_* = G_\infty$.
+      With $x_0$ the uniform distribution,
+      $$
+      D_\Phi(x^\star,x_0) = \mathrm{KL}(x^\star\|x_0) = \sum_ix_i^\star\log(dx_i^\star) \le \log d .
+      $$
+      Optimising $\eta$ gives
+      $$
+      f(\bar x_T)-f^\star \le G_\infty\sqrt{\frac{2\log d}{T}} .
+      $$
+      The update is the exponentiated-gradient step
+      $x_{t+1,i}\propto x_{t,i}e^{-\eta\nabla_if(x_t)}$, which stays on the simplex automatically — no
+      projection needed.
+
+      **3. At $d = 10^6$.** Euclidean: $\sqrt d = 1000$. Entropic: $\sqrt{2\log d}\approx\sqrt{27.6}\approx5.3$.
+      The ratio is about $190$: to reach the same accuracy, projected subgradient descent needs roughly
+      $190^2\approx3.6\times10^4$ times as many iterations.
+
+      **The lesson.** The algorithm did not get smarter; the *geometry* changed. Gradient descent is
+      steepest descent in the Euclidean metric, and on the simplex that metric is the wrong one. Which
+      norm the gradient is measured in is a modelling decision with a four-order-of-magnitude
+      consequence.
+
+  - id: ac-heavy-ball-quadratic
+    title: Heavy ball on a quadratic — the spectral analysis
+    topic: advanced-optimization/acceleration
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [heavy ball, momentum, spectral radius, acceleration, flagship]
+    statement: |
+      For $f(x)=\tfrac12x^\top Ax$ with $\mu I\preceq A\preceq LI$, analyse heavy ball
+      $x_{t+1}=x_t-\eta\nabla f(x_t)+\beta(x_t-x_{t-1})$.
+
+      1. Reduce to $d$ scalar recurrences and write each as a $2\times2$ linear system.
+      2. Compute the characteristic roots and show that when the discriminant is negative both have
+         modulus $\sqrt\beta$.
+      3. Choose $\eta,\beta$ making the discriminant non-positive for every eigenvalue in $[\mu,L]$,
+         and deduce the rate $\rho = \frac{\sqrt\kappa-1}{\sqrt\kappa+1}$.
+    solution: |
+      **1. Diagonalise.** Write $x_t$ in the eigenbasis of $A$; the update decouples, and for the
+      coordinate with eigenvalue $\lambda$,
+      $$
+      z_{t+1} = (1-\eta\lambda+\beta)z_t - \beta z_{t-1} .
+      $$
+      As a first-order system,
+      $$
+      \begin{pmatrix}z_{t+1}\\z_t\end{pmatrix} = M_\lambda\begin{pmatrix}z_t\\z_{t-1}\end{pmatrix},
+      \qquad
+      M_\lambda=\begin{pmatrix}1-\eta\lambda+\beta & -\beta\\ 1 & 0\end{pmatrix}.
+      $$
+
+      **2. Roots.** The characteristic polynomial is $s^2 - (1-\eta\lambda+\beta)s+\beta = 0$, with
+      $$
+      s_\pm = \tfrac12\Big[(1-\eta\lambda+\beta)\pm\sqrt{(1-\eta\lambda+\beta)^2-4\beta}\Big].
+      $$
+      If the discriminant $D(\lambda) = (1-\eta\lambda+\beta)^2-4\beta$ is negative, the roots are
+      complex conjugates, and their product is the constant term:
+      $s_+s_- = |s_\pm|^2 = \beta$. Hence $|s_\pm| = \sqrt\beta$, **independently of $\lambda$**.
+
+      **3. Parameter choice.** We need $D(\lambda)\le0$ for all $\lambda\in[\mu,L]$, i.e.
+      $$
+      |1-\eta\lambda+\beta| \le 2\sqrt\beta \quad\text{for all }\lambda\in[\mu,L].
+      $$
+      The expression $1-\eta\lambda+\beta$ is decreasing in $\lambda$, so it suffices to impose the
+      condition at the two endpoints with equality:
+      $$
+      1-\eta\mu+\beta = 2\sqrt\beta, \qquad 1-\eta L+\beta = -2\sqrt\beta .
+      $$
+      Subtracting: $\eta(L-\mu) = 4\sqrt\beta$. Adding: $2(1+\beta) = \eta(L+\mu)$. Solving,
+      $$
+      \sqrt\beta = \frac{\sqrt L-\sqrt\mu}{\sqrt L+\sqrt\mu} = \frac{\sqrt\kappa-1}{\sqrt\kappa+1},
+      \qquad
+      \eta = \frac{4}{(\sqrt L+\sqrt\mu)^2}.
+      $$
+      (Check: with these values, $1+\beta-\eta\mu = 2\sqrt\beta$ indeed holds after substituting
+      $\beta = \big(\frac{\sqrt L-\sqrt\mu}{\sqrt L+\sqrt\mu}\big)^2$.)
+
+      **Rate.** Every $M_\lambda$ has spectral radius $\sqrt\beta = \rho = \frac{\sqrt\kappa-1}{\sqrt\kappa+1}$,
+      so $\|x_t-x^\star\|_2\le C\rho^t\|x_0-x^\star\|_2$ (the constant $C$ accounts for
+      non-normality of $M_\lambda$, which allows a bounded transient).
+
+      **Comparison.** $\rho \approx 1-2/\sqrt\kappa$ versus gradient descent's $1-2/(\kappa+1)$. For
+      $\kappa = 10^4$: $1-0.02$ versus $1-0.0002$, a hundred-fold reduction in the number of iterations.
+
+      **The mechanism.** Gradient descent has one parameter and must compromise between the $\lambda=\mu$
+      and $\lambda=L$ directions. Momentum has two, and they can be tuned so that *every* eigendirection
+      has the same contraction $\sqrt\beta$. The rate stops depending on which direction is worst — and
+      the value $\rho$ is exactly the Chebyshev-optimal one, so no first-order method can do better on
+      a quadratic.
+
+  - id: ac-nesterov-potential
+    title: The Nesterov potential function
+    topic: advanced-optimization/acceleration
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [nesterov, lyapunov, potential function, o(1/t^2)]
+    statement: |
+      Verify that for Nesterov's method on a convex $L$-smooth $f$, the quantity
+      $$
+      \mathcal E_t = \frac{t(t+1)}{4L}\big(f(x_t)-f^\star\big) + \frac12\|z_t-x^\star\|_2^2,
+      \qquad z_t = x_t + \frac t2(x_t-x_{t-1}),
+      $$
+      is non-increasing, and deduce the $O(1/t^2)$ rate. Identify the exact place where the specific
+      momentum coefficient is needed.
+    hints:
+      - The one-step inequality $f(x_{t+1}) \le f(u) + \langle\nabla f(y_t), y_t-u\rangle - \frac{1}{2L}\|\nabla f(y_t)\|_2^2$ holds for every $u$; apply it with $u = x^\star$ and with $u = x_t$.
+      - Take a convex combination of the two with weights matching the momentum coefficient, then expand $\|z_{t+1}-x^\star\|_2^2$.
+      - The cross terms must cancel exactly; that is where the coefficient is forced.
+    solution: |
+      **Setup.** The one-step inequality: since $x_{t+1} = y_t - \tfrac1L\nabla f(y_t)$, the descent
+      lemma gives $f(x_{t+1})\le f(y_t)-\tfrac{1}{2L}\|\nabla f(y_t)\|_2^2$, and convexity gives
+      $f(y_t)\le f(u)+\langle\nabla f(y_t),y_t-u\rangle$ for any $u$. Combining,
+      $$
+      f(x_{t+1}) \le f(u) + \langle\nabla f(y_t), y_t-u\rangle - \frac{1}{2L}\|\nabla f(y_t)\|_2^2 \tag{$\ast$}
+      $$
+      for every $u$.
+
+      **Two applications.** Apply $(\ast)$ with $u = x^\star$ (weight $\theta_t$) and with $u = x_t$
+      (weight $1-\theta_t$), where $\theta_t = \frac{2}{t+2}$. Adding,
+      $$
+      f(x_{t+1}) \le \theta_tf^\star + (1-\theta_t)f(x_t)
+      + \Big\langle \nabla f(y_t),\ y_t - \theta_tx^\star - (1-\theta_t)x_t\Big\rangle - \frac{\|\nabla f(y_t)\|_2^2}{2L}.
+      $$
+
+      **The extrapolation.** Define $z_t$ so that $y_t = (1-\theta_t)x_t + \theta_tz_t$. Then
+      $$
+      y_t - \theta_tx^\star - (1-\theta_t)x_t = \theta_t(z_t - x^\star),
+      $$
+      so the inner-product term is $\theta_t\langle\nabla f(y_t), z_t-x^\star\rangle$. Subtracting
+      $f^\star$ from both sides,
+      $$
+      \Delta_{t+1} \le (1-\theta_t)\Delta_t + \theta_t\langle\nabla f(y_t),z_t-x^\star\rangle - \frac{\|\nabla f(y_t)\|_2^2}{2L}. \tag{$\dagger$}
+      $$
+
+      **The distance term.** The $z$-update consistent with the above is
+      $z_{t+1} = z_t - \frac{1}{L\theta_t}\nabla f(y_t)$, whence
+      $$
+      \frac12\|z_{t+1}-x^\star\|_2^2 = \frac12\|z_t-x^\star\|_2^2 - \frac{1}{L\theta_t}\langle\nabla f(y_t),z_t-x^\star\rangle + \frac{\|\nabla f(y_t)\|_2^2}{2L^2\theta_t^2}. \tag{$\ddagger$}
+      $$
+
+      **Cancellation.** Multiply $(\dagger)$ by $\frac{1}{L\theta_t^2}$ and add $(\ddagger)$. The
+      inner-product terms cancel **exactly** — this is the step that forces the coefficient. The
+      gradient-norm terms combine to
+      $\frac{\|\nabla f(y_t)\|^2}{2L^2\theta_t^2} - \frac{\|\nabla f(y_t)\|^2}{2L^2\theta_t^2} = 0$.
+      What remains is
+      $$
+      \frac{\Delta_{t+1}}{L\theta_t^2} + \frac12\|z_{t+1}-x^\star\|_2^2
+      \ \le\ \frac{(1-\theta_t)\Delta_t}{L\theta_t^2} + \frac12\|z_t-x^\star\|_2^2 .
+      $$
+      The coefficient sequence must satisfy $\frac{1-\theta_{t}}{\theta_{t}^2} \le \frac{1}{\theta_{t-1}^2}$
+      for the right side to be dominated by $\mathcal E_t$; with $\theta_t = 2/(t+2)$ this holds with
+      equality up to $O(1)$, and $\mathcal E_t$ is non-increasing.
+
+      **Rate.** $\frac{\Delta_t}{L\theta_{t-1}^2} \le \mathcal E_t\le\mathcal E_0 = \tfrac12\|x_0-x^\star\|_2^2$
+      gives
+      $$
+      \Delta_t \le \frac{L\theta_{t-1}^2}{2}\|x_0-x^\star\|_2^2 = \frac{2L\|x_0-x^\star\|_2^2}{(t+1)^2}.
+      $$
+
+      **Where the coefficient is forced.** In the cancellation step. Any other momentum sequence leaves
+      a residual inner-product term whose sign is not controlled, and the telescoping fails. This is
+      why acceleration is brittle: it is not a robust "add momentum" heuristic but an exact algebraic
+      identity.
+
+  - id: ac-chebyshev-polynomial
+    title: Acceleration as an optimal polynomial
+    topic: advanced-optimization/acceleration
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    tags: [chebyshev, polynomial, lower bound, krylov]
+    statement: |
+      For $f(x)=\tfrac12x^\top Ax - b^\top x$ with $\mu I\preceq A\preceq LI$, show that any first-order
+      method whose iterates lie in $x_0 + \operatorname{span}\{r_0,Ar_0,\dots,A^{t-1}r_0\}$ satisfies
+      $x_t-x^\star = p_t(A)(x_0-x^\star)$ for some degree-$t$ polynomial with $p_t(0)=1$. Deduce that
+      the best achievable worst-case rate is
+      $$
+      \min_{p_t}\max_{\lambda\in[\mu,L]}|p_t(\lambda)| = \frac{1}{T_t\big(\frac{L+\mu}{L-\mu}\big)} \approx 2\left(\frac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^t,
+      $$
+      where $T_t$ is the Chebyshev polynomial of the first kind.
+    solution: |
+      **Polynomial form.** With $r_0 = b - Ax_0 = -A(x_0-x^\star)$, any element of the Krylov space
+      $x_0+\operatorname{span}\{r_0,\dots,A^{t-1}r_0\}$ has the form
+      $x_t = x_0 + q_{t-1}(A)r_0$ for a polynomial $q$ of degree $<t$. Then
+      $$
+      x_t - x^\star = (x_0-x^\star) - q_{t-1}(A)A(x_0-x^\star) = p_t(A)(x_0-x^\star),
+      $$
+      with $p_t(\lambda) = 1-\lambda q_{t-1}(\lambda)$, of degree $\le t$ and satisfying $p_t(0)=1$.
+
+      **Worst case over the spectrum.** In the eigenbasis, the error in the $i$-th direction is
+      multiplied by $p_t(\lambda_i)$. Since the spectrum may be anywhere in $[\mu,L]$ and the initial
+      error may be concentrated on the worst direction, the worst-case error factor is
+      $\max_{\lambda\in[\mu,L]}|p_t(\lambda)|$. So the best any Krylov method can guarantee is
+      $$
+      \min_{\deg p_t\le t,\ p_t(0)=1}\ \max_{\lambda\in[\mu,L]}|p_t(\lambda)| .
+      $$
+
+      **Chebyshev solution.** This is the classical minimax polynomial problem. Mapping $[\mu,L]$
+      affinely onto $[-1,1]$ via $\lambda\mapsto\frac{L+\mu-2\lambda}{L-\mu}$, the solution is the
+      rescaled Chebyshev polynomial
+      $$
+      p_t^\star(\lambda) = \frac{T_t\big(\frac{L+\mu-2\lambda}{L-\mu}\big)}{T_t\big(\frac{L+\mu}{L-\mu}\big)},
+      $$
+      which has $p_t^\star(0)=1$ by construction and equioscillates with amplitude
+      $1/T_t\big(\frac{L+\mu}{L-\mu}\big)$ on $[\mu,L]$. Using
+      $T_t(z) = \cosh(t\,\mathrm{arccosh}\,z)$ and $\frac{L+\mu}{L-\mu} = \frac{\kappa+1}{\kappa-1}$,
+      $$
+      \frac{1}{T_t\big(\frac{\kappa+1}{\kappa-1}\big)} \approx 2\left(\frac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^t .
+      $$
+
+      **Interpretation.** Gradient descent corresponds to the suboptimal choice
+      $p_t(\lambda) = (1-\eta\lambda)^t$ — a $t$-fold repeated root, far from equioscillating — and gets
+      $(1-2/(\kappa+1))^t$. Heavy ball and CG realise the Chebyshev polynomial, one with fixed
+      coefficients and one adaptively. The $\sqrt\kappa$ is therefore not a property of any algorithm
+      but of the approximation problem, and no first-order method can beat it.
+
+  - id: ac-simulate-rates
+    title: Simulate and compare convergence rates
+    topic: advanced-optimization/acceleration
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [simulation, momentum, nesterov, rates]
+    statement: |
+      Implement gradient descent, heavy ball, Nesterov and conjugate gradient on a quadratic with
+      controllable $\kappa$.
+
+      1. Verify each method's predicted rate by fitting the slope of $\log(f(x_t)-f^\star)$.
+      2. Confirm that the advantage of momentum grows as $\sqrt\kappa$ versus $\kappa$.
+      3. Show heavy ball diverging when $\eta$ is set too large, and identify the threshold.
+    solution: |
+      ```python
+      import numpy as np
+
+      def run(A, method, steps=500, kappa=None):
+          L, mu = A.max(), A.min()          # A diagonal, given as a vector
+          x = np.ones_like(A)
+          if method == "gd":
+              eta, beta = 1.0 / L, 0.0
+          elif method == "hb":
+              eta = 4.0 / (np.sqrt(L) + np.sqrt(mu))**2
+              beta = ((np.sqrt(L) - np.sqrt(mu)) / (np.sqrt(L) + np.sqrt(mu)))**2
+          else:                              # nesterov
+              eta = 1.0 / L
+              beta = (np.sqrt(L/mu) - 1) / (np.sqrt(L/mu) + 1)
+          v, gaps = np.zeros_like(x), []
+          for _ in range(steps):
+              if method == "nesterov":
+                  y = x + beta * v
+                  xn = y - eta * (A * y)
+                  v, x = xn - x, xn
+              else:
+                  v = beta * v - eta * (A * x)
+                  x = x + v
+              gaps.append(0.5 * np.sum(A * x * x))
+          return np.array(gaps)
+      ```
+
+      **1. Measured rates.** Fit $\rho = (\Delta_T/\Delta_0)^{1/T}$ over a window where the curve is
+      straight on a log axis. Expected values at $\kappa=100$:
+      - gradient descent: $\rho\approx1-1/\kappa = 0.99$;
+      - heavy ball / Nesterov: $\rho\approx1-1/\sqrt\kappa = 0.90$;
+      - CG: at least as fast, and it terminates exactly after $d$ steps in exact arithmetic.
+
+      **2. Scaling of the advantage.** Sweep $\kappa\in\{10,10^2,10^3,10^4\}$ and record the iterations
+      to reach $10^{-8}$. Gradient descent's count grows linearly in $\kappa$; the momentum methods'
+      grows like $\sqrt\kappa$. Plotting iterations against $\kappa$ on log–log axes gives slopes near
+      $1$ and $0.5$.
+
+      **3. Divergence.** For plain gradient descent the threshold is exactly $\eta = 2/L$, visible as a
+      sharp transition from geometric decay to geometric growth. For heavy ball the stability region is
+      $0<\eta<2(1+\beta)/L$, which is *wider* than gradient descent's — momentum tolerates larger steps
+      — but past it the oscillation grows. A useful exercise is to plot the spectral radius of
+      $M_\lambda$ as a function of $\eta$ for $\lambda = L$ and read the threshold off directly.
+
+  - id: so-newton-quadratic-rate
+    title: Local quadratic convergence of Newton's method
+    topic: advanced-optimization/second-order-methods
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [newton, quadratic convergence, lipschitz hessian]
+    statement: |
+      Prove that if $\nabla^2f$ is $M$-Lipschitz and $\nabla^2f(x^\star)\succeq\mu I$ at a stationary
+      point $x^\star$, then Newton's method satisfies $\|e_{t+1}\|_2\le\frac M\mu\|e_t\|_2^2$ in a
+      neighbourhood of $x^\star$, where $e_t = x_t-x^\star$. Quantify the size of the basin.
+    solution: |
+      Write $H_t = \nabla^2f(x_t)$. By the fundamental theorem of calculus applied to $\nabla f$ along
+      the segment from $x^\star$ to $x_t$, using $\nabla f(x^\star)=0$,
+      $$
+      \nabla f(x_t) = \int_0^1\nabla^2f\big(x^\star+se_t\big)e_t\,ds .
+      $$
+      Hence
+      $$
+      e_{t+1} = e_t - H_t^{-1}\nabla f(x_t)
+      = H_t^{-1}\Big[H_te_t - \int_0^1\nabla^2f(x^\star+se_t)e_t\,ds\Big]
+      = H_t^{-1}\int_0^1\big[H_t-\nabla^2f(x^\star+se_t)\big]e_t\,ds .
+      $$
+      By Lipschitzness of the Hessian,
+      $$
+      \big\|H_t-\nabla^2f(x^\star+se_t)\big\| \le M\|x_t - x^\star - se_t\|_2 = M(1-s)\|e_t\|_2 ,
+      $$
+      so
+      $$
+      \|e_{t+1}\|_2 \le \|H_t^{-1}\|\,\|e_t\|_2^2\int_0^1M(1-s)\,ds = \frac M2\|H_t^{-1}\|\,\|e_t\|_2^2 .
+      $$
+
+      **Basin.** By Lipschitzness again, $\nabla^2f(x_t)\succeq\nabla^2f(x^\star) - M\|e_t\|_2I \succeq(\mu - M\|e_t\|_2)I$.
+      If $\|e_t\|_2\le\frac{\mu}{2M}$ then $H_t\succeq\tfrac\mu2I$, so $\|H_t^{-1}\|\le2/\mu$ and
+      $$
+      \|e_{t+1}\|_2 \le \frac M\mu\|e_t\|_2^2 .
+      $$
+      Moreover $\|e_{t+1}\|_2\le\frac M\mu\cdot\frac{\mu}{2M}\|e_t\|_2 = \tfrac12\|e_t\|_2$, so the
+      iterate stays in the basin and the quadratic rate persists. The basin has radius $\mu/(2M)$ —
+      small when the Hessian is nearly singular or rapidly varying.
+
+      **Digits.** Once inside, $\|e_{t+1}\|\le C\|e_t\|^2$ means the number of correct digits doubles
+      each step: $10^{-2}\to10^{-4}\to10^{-8}\to10^{-16}$. Five or six steps suffice from anywhere in
+      the basin, independently of the condition number — which is the affine invariance of the method
+      showing itself.
+
+  - id: so-affine-invariance
+    title: Newton's method is affine invariant
+    topic: advanced-optimization/second-order-methods
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [newton, affine invariance, conditioning]
+    statement: |
+      Let $T$ be invertible and $\tilde f(z) = f(Tz)$. Show that the Newton iterates of $\tilde f$ from
+      $T^{-1}x_0$ are exactly $T^{-1}$ times those of $f$ from $x_0$, and that no analogous statement
+      holds for gradient descent. Explain the consequence for step-size tuning.
+    solution: |
+      **Derivatives.** By the chain rule, $\nabla\tilde f(z) = T^\top\nabla f(Tz)$ and
+      $\nabla^2\tilde f(z) = T^\top\nabla^2f(Tz)T$.
+
+      **Newton step.**
+      $$
+      \big[\nabla^2\tilde f(z)\big]^{-1}\nabla\tilde f(z)
+      = \big(T^\top\nabla^2f(Tz)T\big)^{-1}T^\top\nabla f(Tz)
+      = T^{-1}\big[\nabla^2f(Tz)\big]^{-1}T^{-\top}T^\top\nabla f(Tz)
+      $$
+      $$
+      = T^{-1}\big[\nabla^2f(Tz)\big]^{-1}\nabla f(Tz).
+      $$
+      So if $z_t = T^{-1}x_t$ then
+      $$
+      z_{t+1} = z_t - T^{-1}\big[\nabla^2f(x_t)\big]^{-1}\nabla f(x_t) = T^{-1}x_{t+1}.
+      $$
+      Induction from $z_0 = T^{-1}x_0$ completes the argument.
+
+      **Gradient descent is not invariant.** Its step is $\eta\nabla\tilde f(z) = \eta T^\top\nabla f(Tz)$,
+      which equals $T^{-1}\cdot\eta\nabla f(Tz)$ only if $T^\top = T^{-1}$, i.e. $T$ orthogonal. For a
+      general $T$ the trajectories differ.
+
+      **Consequence.** Newton's convergence rate cannot depend on the condition number, because a
+      rescaling that changes $\kappa$ arbitrarily does not change the iterates. This is why the
+      quadratic-convergence theorem involves $M$ and $\mu$ but no $\kappa$, and why Newton needs no
+      step-size tuning — the natural step is $1$. Gradient descent's rate *does* depend on $\kappa$
+      precisely because the method sees the coordinate system, and its step size must be tuned to the
+      scale of the problem.
+
+  - id: so-cg-krylov
+    title: Conjugate gradient and Krylov optimality
+    topic: advanced-optimization/second-order-methods
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [conjugate gradient, krylov, finite termination]
+    statement: |
+      For $f(x)=\tfrac12x^\top Ax - b^\top x$ with $A\succ0$:
+
+      1. Show that CG's $t$-th iterate minimises $f$ over the Krylov subspace
+         $x_0 + \mathcal K_t = x_0 + \operatorname{span}\{r_0,Ar_0,\dots,A^{t-1}r_0\}$.
+      2. Deduce that CG terminates in at most $m$ steps, where $m$ is the number of **distinct**
+         eigenvalues of $A$.
+      3. Explain why a clustered spectrum makes CG fast even when $\kappa$ is large.
+    solution: |
+      **1.** This is the defining property of CG and follows from its conjugacy construction: the search
+      directions $p_0,\dots,p_{t-1}$ are $A$-orthogonal ($p_i^\top Ap_j = 0$ for $i\ne j$) and span
+      $\mathcal K_t$. Minimising the quadratic over a subspace with an $A$-orthogonal basis decouples
+      into independent one-dimensional minimisations, and CG's step sizes are exactly those
+      minimisers — so the iterate obtained by taking all $t$ steps is the minimiser over the span.
+
+      **2. Finite termination.** By the Krylov characterisation, $x_t-x^\star = p_t(A)(x_0-x^\star)$ for
+      some polynomial with $p_t(0)=1$, and CG chooses the $p_t$ minimising
+      $\|p_t(A)(x_0-x^\star)\|_A$. If $A$ has $m$ distinct eigenvalues $\lambda_1,\dots,\lambda_m$,
+      take
+      $$
+      p(\lambda) = \prod_{j=1}^m\Big(1-\frac{\lambda}{\lambda_j}\Big),
+      $$
+      of degree $m$ with $p(0)=1$ and $p(\lambda_j)=0$ for every $j$. Then $p(A) = 0$ on the whole
+      space, so the error is zero. Since CG is optimal over degree-$m$ polynomials, $x_m = x^\star$
+      exactly (in exact arithmetic).
+
+      **3. Clustered spectra.** Suppose the eigenvalues lie in $k$ tight clusters. Take the degree-$k$
+      polynomial with a root at each cluster centre; it is small — not exactly zero — on every
+      eigenvalue, with magnitude controlled by the cluster widths rather than by $\kappa$. So CG
+      achieves a small error in about $k$ iterations regardless of the ratio $\lambda_{\max}/\lambda_{\min}$.
+
+      This is why **preconditioning** works: the goal is not to reduce $\kappa$ per se but to cluster
+      the spectrum. It also explains an observation that surprises people: CG can be fast on a matrix
+      with $\kappa = 10^8$ if the spectrum is two tight clusters, and slow on one with $\kappa = 10^3$
+      if the spectrum is spread uniformly.
+
+  - id: so-bfgs-secant
+    title: The BFGS update satisfies the secant condition
+    topic: advanced-optimization/second-order-methods
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [bfgs, secant, quasi-newton, positive definiteness]
+    statement: |
+      Let $s = x_{t+1}-x_t$, $g = \nabla f(x_{t+1})-\nabla f(x_t)$, and
+      $$
+      B^+ = \Big(I-\frac{sg^\top}{g^\top s}\Big)B\Big(I-\frac{gs^\top}{g^\top s}\Big) + \frac{ss^\top}{g^\top s}.
+      $$
+      Verify that $B^+g = s$, and show that $B\succ0$ and $g^\top s>0$ imply $B^+\succ0$.
+    solution: |
+      **Secant condition.** Apply $B^+$ to $g$:
+      $$
+      B^+g = \Big(I-\frac{sg^\top}{g^\top s}\Big)B\underbrace{\Big(I-\frac{gs^\top}{g^\top s}\Big)g}_{= g - g\frac{s^\top g}{g^\top s} = 0} + \frac{s(s^\top g)}{g^\top s} = 0 + s = s .
+      $$
+      The middle factor annihilates $g$, and the rank-one correction supplies exactly $s$. This is the
+      inverse form of the secant equation $H^+s = g$.
+
+      **Positive definiteness.** Write $V = I - \frac{gs^\top}{g^\top s}$, so
+      $B^+ = V^\top BV + \frac{ss^\top}{g^\top s}$. For any $z\ne0$,
+      $$
+      z^\top B^+z = (Vz)^\top B(Vz) + \frac{(s^\top z)^2}{g^\top s} \ \ge\ 0,
+      $$
+      since $B\succ0$ makes the first term non-negative and $g^\top s>0$ makes the second.
+
+      For strict positivity, suppose $z^\top B^+z = 0$. Then both terms vanish: $Vz = 0$ (since
+      $B\succ0$) and $s^\top z = 0$. But $Vz = z - g\frac{s^\top z}{g^\top s} = z$ when $s^\top z=0$, so
+      $Vz = 0$ forces $z = 0$. Hence $B^+\succ0$.
+
+      **Why $g^\top s>0$ matters.** This is the **curvature condition**. It holds automatically when $f$
+      is strongly convex (the monotonicity of the gradient gives $g^\top s\ge\mu\|s\|^2>0$). For
+      non-convex $f$ it can fail, and implementations either enforce it with a Wolfe line search or skip
+      the update. If it were violated and the update applied anyway, $B^+$ could become indefinite and
+      the search direction $-B^+\nabla f$ could point uphill.

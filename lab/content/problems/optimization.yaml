@@ -1,0 +1,569 @@
+defaults:
+  field: optimization
+problems:
+  - id: cv-first-order-equivalence
+    title: First-order characterisation of convexity
+    topic: optimization/convex-sets-and-functions
+    difficulty: beginner
+    type: proof
+    estimated_time: 30m
+    tags: [convexity, tangent plane, characterisation]
+    statement: |
+      Prove that a differentiable $f$ on an open convex set is convex if and only if
+      $f(y)\ge f(x)+\langle\nabla f(x),y-x\rangle$ for all $x,y$, and that it is $\mu$-strongly convex
+      if and only if the same holds with an extra $\frac\mu2\|y-x\|_2^2$.
+    solution: |
+      **($\Rightarrow$)** Assume convexity. For $\theta\in(0,1]$,
+      $$
+      f\big(x+\theta(y-x)\big) \le (1-\theta)f(x)+\theta f(y),
+      $$
+      so rearranging,
+      $$
+      \frac{f(x+\theta(y-x))-f(x)}{\theta} \le f(y)-f(x).
+      $$
+      Letting $\theta\downarrow0$, the left side tends to the directional derivative
+      $\langle\nabla f(x),y-x\rangle$, giving the tangent-plane inequality.
+
+      **($\Leftarrow$)** Assume the inequality. Fix $x,y,\theta$ and set $z = \theta x+(1-\theta)y$.
+      Applying the inequality at $z$ with the two targets $x$ and $y$:
+      $$
+      f(x)\ge f(z)+\langle\nabla f(z),x-z\rangle,\qquad f(y)\ge f(z)+\langle\nabla f(z),y-z\rangle .
+      $$
+      Multiply by $\theta$ and $1-\theta$ and add. The gradient terms combine to
+      $\langle\nabla f(z),\theta x+(1-\theta)y-z\rangle = 0$, leaving
+      $\theta f(x)+(1-\theta)f(y)\ge f(z)$.
+
+      **Strong convexity.** Apply the above to $g(x) = f(x)-\frac\mu2\|x\|_2^2$, which is convex by
+      definition of strong convexity, with $\nabla g(x) = \nabla f(x)-\mu x$. The tangent-plane
+      inequality for $g$ reads
+      $$
+      f(y)-\tfrac\mu2\|y\|^2 \ge f(x)-\tfrac\mu2\|x\|^2 + \langle\nabla f(x)-\mu x, y-x\rangle,
+      $$
+      and using $\tfrac12\|y\|^2-\tfrac12\|x\|^2-\langle x,y-x\rangle = \tfrac12\|y-x\|^2$ this
+      rearranges exactly to
+      $f(y)\ge f(x)+\langle\nabla f(x),y-x\rangle+\frac\mu2\|y-x\|_2^2$.
+
+  - id: cv-pl-inequality
+    title: Strong convexity implies the Polyak–Lojasiewicz inequality
+    topic: optimization/convex-sets-and-functions
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [pl inequality, strong convexity, linear convergence]
+    statement: |
+      Prove that $\mu$-strong convexity implies
+      $$
+      \|\nabla f(x)\|_2^2 \ge 2\mu\big(f(x)-f^\star\big) \quad\text{for all }x .
+      $$
+      Then give an example of a **non-convex** function satisfying the PL inequality, showing PL is
+      strictly weaker than strong convexity.
+    hints:
+      - Minimise both sides of the strong convexity inequality over $y$.
+      - For the example, try a function that is a composition of a strongly convex function with a surjective map, or $f(x) = x^2 + 3\sin^2 x$.
+    solution: |
+      **PL from strong convexity.** Strong convexity gives, for all $x,y$,
+      $$
+      f(y) \ge f(x) + \langle\nabla f(x),y-x\rangle + \frac\mu2\|y-x\|_2^2 .
+      $$
+      Take the minimum of both sides over $y$. The left side has minimum $f^\star$. The right side is a
+      quadratic in $y$, minimised at $y = x - \nabla f(x)/\mu$ with value
+      $f(x) - \frac{1}{2\mu}\|\nabla f(x)\|_2^2$. Hence
+      $$
+      f^\star \ge f(x) - \frac{\|\nabla f(x)\|_2^2}{2\mu},
+      $$
+      which rearranges to the PL inequality.
+
+      **Non-convex example.** Take $f(x) = x^2 + 3\sin^2 x$ on $\R$. Then $f^\star = 0$ at $x=0$ and
+      $$
+      f'(x) = 2x + 3\sin 2x, \qquad f''(x) = 2 + 6\cos2x ,
+      $$
+      which is negative for $x$ near $\pi/2$ — so $f$ is **not convex**. Nevertheless one can verify
+      $|f'(x)|^2 \ge \tfrac12 f(x)$ for all $x$, so $f$ satisfies PL with $\mu = 1/4$. (This is the
+      standard example from the Karimi–Nutini–Schmidt analysis.)
+
+      **Why this matters.** Every proof of a linear convergence rate on this site uses PL, not strong
+      convexity directly. Since PL is strictly weaker, those proofs extend to non-convex functions
+      satisfying it — which is precisely the mechanism behind the NTK-regime convergence results for
+      overparameterised networks, where $\lambda_{\min}$ of the tangent kernel plays the role of $\mu$.
+
+  - id: cv-strongly-convex-unique
+    title: Existence and uniqueness of the minimiser
+    topic: optimization/convex-sets-and-functions
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [strong convexity, uniqueness, coercivity]
+    statement: |
+      Prove that a $\mu$-strongly convex differentiable $f$ on $\R^d$ has exactly one minimiser, and
+      that $f(x)-f^\star \ge \frac\mu2\|x-x^\star\|_2^2$ for every $x$.
+    solution: |
+      **Quadratic growth.** Apply the first-order characterisation at $x^\star$, where
+      $\nabla f(x^\star)=0$:
+      $$
+      f(x)\ge f(x^\star) + 0 + \frac\mu2\|x-x^\star\|_2^2 .
+      $$
+
+      **Existence.** From the same inequality applied at an arbitrary base point $x_0$,
+      $f(x)\ge f(x_0)+\langle\nabla f(x_0),x-x_0\rangle+\frac\mu2\|x-x_0\|_2^2$, the right side tends to
+      $+\infty$ as $\|x\|\to\infty$ (the quadratic beats the linear term). So $f$ is coercive, the
+      sublevel set $\{f\le f(x_0)\}$ is bounded, and it is closed by continuity — hence compact. A
+      continuous function on a compact set attains its infimum.
+
+      **Uniqueness.** Suppose $x_1^\star\ne x_2^\star$ are both minimisers. Applying quadratic growth
+      at $x = x_1^\star$ with $x^\star = x_2^\star$ gives
+      $$
+      0 = f(x_1^\star) - f(x_2^\star) \ge \frac\mu2\|x_1^\star-x_2^\star\|_2^2 > 0,
+      $$
+      a contradiction. (Alternatively: the midpoint would have strictly smaller value by strict
+      convexity.)
+
+      Note which hypotheses were used where: coercivity for existence, strictness for uniqueness.
+      A merely convex function may have no minimiser ($e^x$) or infinitely many (a constant).
+
+  - id: cv-operator-norm-convex
+    title: Every norm is convex, and the operator norm is a supremum of linear functions
+    topic: optimization/convex-sets-and-functions
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [convexity, norms, supremum]
+    statement: |
+      1. Prove that any norm is a convex function.
+      2. Prove that $A\mapsto\|A\|$ (spectral norm) is convex on $\R^{m\times n}$, by exhibiting it as a
+         supremum of linear functions of $A$.
+      3. Deduce that $\lambda_{\max}$ is convex on symmetric matrices and $\lambda_{\min}$ is concave.
+    solution: |
+      **1.** By homogeneity and the triangle inequality,
+      $$
+      \|\theta x + (1-\theta)y\| \le \|\theta x\| + \|(1-\theta)y\| = \theta\|x\|+(1-\theta)\|y\| ,
+      $$
+      which is convexity.
+
+      **2.** $\|A\| = \max_{\|u\|_2=\|v\|_2=1}\langle Au,v\rangle$, and for each fixed $(u,v)$ the map
+      $A\mapsto\langle Au,v\rangle = \operatorname{tr}(A u v^\top)$ is **linear** in $A$. A pointwise
+      supremum of convex (here, linear) functions is convex: for
+      $A = \theta A_1+(1-\theta)A_2$,
+      $$
+      \sup_{u,v}\langle Au,v\rangle = \sup_{u,v}\big[\theta\langle A_1u,v\rangle + (1-\theta)\langle A_2u,v\rangle\big]
+      \le \theta\sup_{u,v}\langle A_1u,v\rangle + (1-\theta)\sup_{u,v}\langle A_2u,v\rangle .
+      $$
+
+      **3.** For symmetric $A$, $\lambda_{\max}(A) = \max_{\|u\|_2=1}u^\top Au$, again a supremum of
+      linear functions of $A$, hence convex. And
+      $\lambda_{\min}(A) = \min_{\|u\|_2=1}u^\top Au = -\lambda_{\max}(-A)$ is an **infimum** of linear
+      functions, hence concave.
+
+      This is why semidefinite programs are convex, and why constraints of the form
+      $\lambda_{\max}(A(x))\le t$ define convex sets — a fact used constantly in matrix optimisation.
+
+  - id: cv-counterexamples
+    title: Separating convexity, strong convexity, smoothness and Lipschitzness
+    topic: optimization/convex-sets-and-functions
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [counterexamples, properties, independence]
+    statement: |
+      Consider four properties of a function $f:\R\to\R$:
+
+      - **(C)** $f$ is convex;
+      - **(SC)** $f$ is $\mu$-strongly convex for some $\mu>0$;
+      - **(S)** $f$ is $L$-smooth for some $L$, i.e. differentiable with $f'$ being $L$-Lipschitz;
+      - **(K)** $f$ is $K$-Lipschitz for some $K$.
+
+      Only (SC) $\Rightarrow$ (C) holds by definition. Show that one further implication is forced and
+      that the remaining combinations are all realisable:
+
+      1. Prove that (SC) and (K) cannot hold simultaneously on all of $\R$.
+      2. Give an $f$ satisfying (C) and (S) but neither (SC) nor (K), and prove it has these properties.
+      3. Give an $f$ satisfying (C) and (K) but not (S).
+      4. Give an $f$ satisfying (S) and (K) but not (C).
+      5. Give an $f$ satisfying (SC) and (S), and compute its condition number.
+    hints:
+      - Strong convexity is a *lower* bound on curvature, smoothness an *upper* bound, and Lipschitzness a bound on the gradient itself. They constrain three different objects.
+      - For part 1, compare the growth rate that strong convexity forces from below with the growth rate a Lipschitz bound permits from above.
+      - For part 2 you need $f''$ bounded above, $\inf f'' = 0$, and $f'$ unbounded. A function that is affine on one half-line and quadratic on the other does all three.
+    solution: |
+      **1. (SC) and (K) are incompatible on $\R$.**
+
+      Strong convexity with parameter $\mu$ gives, for every $x,y$,
+      $$
+      f(y) \ \ge\ f(x) + f'(x)(y-x) + \frac{\mu}{2}(y-x)^2 .
+      $$
+      Taking $x = 0$,
+      $$
+      f(y) \ \ge\ f(0) + f'(0)y + \frac{\mu}{2}y^2 ,
+      $$
+      so $f$ grows at least quadratically. A $K$-Lipschitz function satisfies
+      $f(y) \le f(0) + K|y|$, which grows at most linearly. For
+      $|y| > 2(K + |f'(0)|)/\mu$ the lower bound exceeds the upper bound, a contradiction. Hence no
+      function on $\R$ is both strongly convex and Lipschitz.
+
+      The domain matters: on a *bounded* convex set the two are perfectly compatible — $f(x) = x^2$
+      restricted to $[-1,1]$ is $2$-strongly convex and $2$-Lipschitz there. Strong convexity forces
+      unbounded gradients only when there is room to grow.
+
+      **2. (C) and (S), neither (SC) nor (K).** Take the squared hinge
+      $$
+      f(x) = \tfrac12\big(\max(x,0)\big)^2 =
+      \begin{cases} \tfrac12 x^2, & x \ge 0,\\ 0, & x < 0.\end{cases}
+      $$
+
+      - *Differentiable:* $f'(x) = \max(x,0)$, and both one-sided derivatives at $0$ equal $0$.
+      - *(S) with $L = 1$:* $f'$ is the map $x\mapsto\max(x,0)$, which is $1$-Lipschitz, since
+        $|\max(x,0)-\max(y,0)| \le |x-y|$ for all $x,y$.
+      - *(C):* $f'$ is non-decreasing, which for a differentiable function on $\R$ is equivalent to convexity.
+      - *Not (K):* $f'(x) = x \to \infty$ as $x\to\infty$, so the gradient is unbounded.
+      - *Not (SC):* $f$ is identically $0$ on $(-\infty,0]$, so for $x,y \le 0$ the strong-convexity
+        inequality would read $0 \ge \frac{\mu}{2}(y-x)^2$, which fails for every $\mu>0$.
+
+      **3. (C) and (K), not (S).** Take $f(x) = |x|$. It is convex (a norm), $1$-Lipschitz by the
+      reverse triangle inequality, and not differentiable at $0$ — so it is not $L$-smooth for any $L$,
+      since smoothness presupposes differentiability. It is also not strongly convex, being affine on
+      $[0,\infty)$.
+
+      **4. (S) and (K), not (C).** Take $f(x) = \sin x$. Then $|f'| = |\cos x| \le 1$ gives (K) with
+      $K=1$, and $|f''| = |\sin x| \le 1$ gives (S) with $L = 1$. It is not convex because $f'' $
+      takes negative values, for instance $f''(\pi/2) = -1$.
+
+      **5. (SC) and (S).** Take $f(x) = \frac{\mu}{2}x^2 + \log(1+e^{x})$. The logistic term has
+      second derivative $\sigma(x)(1-\sigma(x)) \in (0,\tfrac14]$, so
+      $$
+      \mu \ \le\ f''(x) \ \le\ \mu + \tfrac14 ,
+      $$
+      giving $\mu$-strong convexity and $(\mu+\tfrac14)$-smoothness, with condition number
+      $$
+      \kappa = \frac{\mu + 1/4}{\mu} = 1 + \frac{1}{4\mu}.
+      $$
+      As $\mu \downarrow 0$ the condition number blows up, and the rates that depend on $\kappa$
+      degrade accordingly — which is exactly what the convergence theorems predict.
+
+      **What this establishes.** The four properties constrain different objects: convexity the sign of
+      the curvature, strong convexity a lower bound on it, smoothness an upper bound, Lipschitzness the
+      gradient itself. The only forced relations are (SC) $\Rightarrow$ (C) and, on an unbounded
+      domain, (SC) $\Rightarrow$ not (K). Everything else is independent, which is why a convergence
+      theorem must be read for precisely which of these it assumes — a rate proved under (C) + (S) says
+      nothing about a problem that is merely (C) + (K), and vice versa.
+
+  - id: gd-convex-rate
+    title: Prove the O(1/t) rate for gradient descent
+    topic: optimization/gradient-descent-convergence
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [gradient descent, convex, rate, potential function, flagship]
+    statement: |
+      Let $f$ be convex and $L$-smooth with minimiser $x^\star$. Prove that gradient descent with step
+      $\eta = 1/L$ satisfies
+      $$
+      f(x_t)-f^\star \le \frac{L\|x_0-x^\star\|_2^2}{2t}.
+      $$
+      Identify explicitly the potential function used and the point at which convexity (as opposed to
+      smoothness) is required.
+    hints:
+      - Expand $\|x_{t+1}-x^\star\|_2^2$ using the update rule.
+      - Bound the inner product using convexity and the squared gradient norm using the descent lemma.
+      - Telescope, then use that $f(x_t)$ is non-increasing.
+    solution: |
+      **Step 1: one-step inequality.** From $x_{t+1} = x_t - \eta\nabla f(x_t)$,
+      $$
+      \|x_{t+1}-x^\star\|_2^2 = \|x_t-x^\star\|_2^2 - 2\eta\langle\nabla f(x_t),x_t-x^\star\rangle + \eta^2\|\nabla f(x_t)\|_2^2 .
+      $$
+      **Convexity** (the tangent-plane inequality at $x_t$ evaluated at $x^\star$) gives
+      $$
+      \langle\nabla f(x_t), x_t-x^\star\rangle \ge f(x_t)-f^\star .
+      $$
+      This is the only place convexity is used. **Smoothness** (the descent lemma with $\eta=1/L$)
+      gives $\frac{\eta}{2}\|\nabla f(x_t)\|_2^2 \le f(x_t)-f(x_{t+1})$, hence
+      $\eta^2\|\nabla f(x_t)\|_2^2 \le 2\eta(f(x_t)-f(x_{t+1}))$.
+
+      Substituting both,
+      $$
+      \|x_{t+1}-x^\star\|_2^2 \le \|x_t-x^\star\|_2^2 - 2\eta\big(f(x_t)-f^\star\big) + 2\eta\big(f(x_t)-f(x_{t+1})\big),
+      $$
+      that is,
+      $$
+      2\eta\big(f(x_{t+1})-f^\star\big) \le \|x_t-x^\star\|_2^2 - \|x_{t+1}-x^\star\|_2^2 .
+      $$
+
+      **Step 2: telescope.** The **potential function** is $\Phi_t = \|x_t-x^\star\|_2^2$. Summing the
+      display for $t = 0,\dots,T-1$, the right-hand side telescopes:
+      $$
+      2\eta\sum_{t=1}^{T}\big(f(x_t)-f^\star\big) \le \Phi_0 - \Phi_T \le \|x_0-x^\star\|_2^2 .
+      $$
+
+      **Step 3: monotonicity.** By the descent lemma, $f(x_1)\ge f(x_2)\ge\dots\ge f(x_T)$, so
+      $$
+      T\big(f(x_T)-f^\star\big) \le \sum_{t=1}^T\big(f(x_t)-f^\star\big) \le \frac{\|x_0-x^\star\|_2^2}{2\eta} .
+      $$
+      With $\eta = 1/L$, dividing by $T$ gives the claim.
+
+      **Remarks.** The potential decreases by an amount proportional to the suboptimality at each step;
+      telescoping converts that per-step decrease into a rate. Note the bound involves
+      $\|x_0-x^\star\|_2$, so it is not scale-free, and it says nothing about $\|x_T-x^\star\|_2$ —
+      without strong convexity a flat valley of near-minimisers is possible.
+
+  - id: gd-strongly-convex-rate
+    title: Linear convergence under strong convexity
+    topic: optimization/gradient-descent-convergence
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [gradient descent, strongly convex, linear rate, pl]
+    statement: |
+      Prove that for $\mu$-strongly convex and $L$-smooth $f$, gradient descent with $\eta = 1/L$
+      satisfies $f(x_t)-f^\star \le (1-1/\kappa)^t(f(x_0)-f^\star)$ with $\kappa = L/\mu$. Deduce the
+      number of iterations needed for accuracy $\eps$.
+    solution: |
+      Let $\Delta_t = f(x_t)-f^\star$. Two ingredients:
+
+      - **Descent lemma** with $\eta = 1/L$: $\Delta_{t+1}\le\Delta_t - \frac{1}{2L}\|\nabla f(x_t)\|_2^2$.
+      - **PL inequality** from strong convexity: $\|\nabla f(x_t)\|_2^2\ge2\mu\Delta_t$.
+
+      Combining,
+      $$
+      \Delta_{t+1} \le \Delta_t - \frac{2\mu\Delta_t}{2L} = \Big(1-\frac\mu L\Big)\Delta_t = \Big(1-\frac1\kappa\Big)\Delta_t .
+      $$
+      Iterating gives $\Delta_t \le (1-1/\kappa)^t\Delta_0$.
+
+      **Iteration complexity.** Using $(1-1/\kappa)^t\le e^{-t/\kappa}$, the condition
+      $\Delta_0e^{-t/\kappa}\le\eps$ holds once
+      $$
+      t \ge \kappa\log\frac{\Delta_0}{\eps} .
+      $$
+      So $O(\kappa\log(1/\eps))$ iterations — **logarithmic** in the accuracy (excellent) and
+      **linear** in the condition number (the bottleneck). For $\kappa=10^4$ that is about $10^4$
+      iterations per additional digit. Acceleration reduces the $\kappa$ to $\sqrt\kappa$, and the
+      first-order lower bound says that is optimal.
+
+  - id: gd-nonconvex-stationary
+    title: Non-convex gradient descent reaches an approximate stationary point
+    topic: optimization/gradient-descent-convergence
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [non-convex, stationary point, rate]
+    statement: |
+      Let $f$ be $L$-smooth and bounded below by $f^\star$. Prove that gradient descent with
+      $\eta = 1/L$ satisfies
+      $$
+      \min_{0\le s<t}\|\nabla f(x_s)\|_2 \le \sqrt{\frac{2L(f(x_0)-f^\star)}{t}} .
+      $$
+      Then state three things this does **not** establish, with a concrete example for one of them.
+    solution: |
+      **Proof.** The descent lemma with $\eta=1/L$ gives
+      $$
+      f(x_{s+1}) \le f(x_s) - \frac{1}{2L}\|\nabla f(x_s)\|_2^2 .
+      $$
+      Summing for $s=0,\dots,t-1$ and telescoping,
+      $$
+      \frac{1}{2L}\sum_{s<t}\|\nabla f(x_s)\|_2^2 \le f(x_0)-f(x_t) \le f(x_0)-f^\star .
+      $$
+      The minimum of $t$ non-negative numbers is at most their average, so
+      $$
+      \min_{s<t}\|\nabla f(x_s)\|_2^2 \le \frac1t\sum_{s<t}\|\nabla f(x_s)\|_2^2 \le \frac{2L(f(x_0)-f^\star)}{t}.
+      $$
+
+      **What it does not establish.**
+
+      1. *That the last iterate has small gradient.* The bound is about the minimum over the first $t$
+         iterates. (In fact monotonicity of $f$ makes it plausible, but it is not proved.)
+      2. *That any iterate is near a local minimum.* A saddle point also has zero gradient.
+      3. *That $f(x_t)$ is close to $\inf f$.*
+
+      **Concrete example for (2) and (3).** Take $f(x) = x^3-3x$ on $\R$, which is smooth on any
+      bounded region and has $f'(x) = 3x^2-3$, vanishing at $x=\pm1$. The point $x=-1$ is a local
+      **maximum**. Started exactly at $x_0=-1$, gradient descent never moves: $\nabla f(x_0)=0$, so the
+      bound holds with the left side equal to zero, and the algorithm has found a stationary point that
+      is a local maximum and is not close to any minimum. (Started anywhere else, it escapes — which is
+      the content of the strict-saddle escape results.)
+
+  - id: gd-step-threshold-quadratic
+    title: The exact step-size threshold on a quadratic
+    topic: optimization/gradient-descent-convergence
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [step size, stability, divergence, quadratic]
+    statement: |
+      For $f(x) = \frac12x^\top Ax$ with $A$ symmetric positive definite with eigenvalues in
+      $[\mu, L]$, show that gradient descent with step $\eta$ gives
+      $x_t = (I-\eta A)^tx_0$, and determine exactly the set of $\eta$ for which $x_t\to0$ for every
+      $x_0$. Find the $\eta$ minimising the worst-case contraction factor.
+    solution: |
+      **Iteration.** $\nabla f(x) = Ax$, so $x_{t+1} = x_t-\eta Ax_t = (I-\eta A)x_t$ and
+      $x_t = (I-\eta A)^tx_0$.
+
+      **Convergence.** Diagonalise $A = U\Lambda U^\top$. In the eigenbasis the iteration decouples:
+      the $i$-th coordinate evolves as $(1-\eta\lambda_i)^t$. So $x_t\to0$ for every $x_0$ iff
+      $|1-\eta\lambda_i|<1$ for every eigenvalue, i.e.
+      $$
+      0 < \eta < \frac{2}{\lambda_i} \quad\text{for all } i
+      \qquad\Longleftrightarrow\qquad
+      0 < \eta < \frac2L .
+      $$
+      At $\eta = 2/L$ the top eigendirection oscillates with constant magnitude; beyond it, that
+      direction grows geometrically and the method diverges.
+
+      **Optimal step.** The worst-case contraction factor is
+      $$
+      \rho(\eta) = \max_{\lambda\in[\mu,L]}|1-\eta\lambda| = \max\big(|1-\eta\mu|,\ |1-\eta L|\big),
+      $$
+      since the maximum of a convex function over an interval is at an endpoint. The two branches are
+      $1-\eta\mu$ (decreasing) and $\eta L-1$ (increasing); they cross where $1-\eta\mu = \eta L-1$,
+      i.e.
+      $$
+      \eta^\star = \frac{2}{L+\mu}, \qquad \rho(\eta^\star) = \frac{L-\mu}{L+\mu} = \frac{\kappa-1}{\kappa+1} = 1 - \frac{2}{\kappa+1}.
+      $$
+      Note $\eta^\star = 2/(L+\mu)$ is slightly larger than the $1/L$ used in the general analysis, and
+      gives $1-2/(\kappa+1)$ rather than $1-1/\kappa$ — a factor-of-two improvement in the exponent,
+      available because on a quadratic the exact spectrum is known.
+
+  - id: gd-subgradient-averaging
+    title: Why the subgradient method needs averaging
+    topic: optimization/gradient-descent-convergence
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [subgradient, averaging, non-smooth, counterexample]
+    statement: |
+      1. Prove the $O(1/\sqrt T)$ bound for the averaged iterate of the subgradient method.
+      2. Give a convex Lipschitz function and a starting point for which the **last** iterate does not
+         converge to the minimiser, no matter how many steps are taken with a fixed step size.
+    solution: |
+      **1.** With $x_{t+1} = x_t-\eta g_t$, $g_t\in\partial f(x_t)$, $\|g_t\|_2\le G$:
+      $$
+      \|x_{t+1}-x^\star\|_2^2 = \|x_t-x^\star\|_2^2 - 2\eta\langle g_t,x_t-x^\star\rangle + \eta^2\|g_t\|_2^2 .
+      $$
+      The subgradient inequality gives $\langle g_t,x_t-x^\star\rangle\ge f(x_t)-f^\star$, so
+      $$
+      2\eta\big(f(x_t)-f^\star\big) \le \|x_t-x^\star\|_2^2 - \|x_{t+1}-x^\star\|_2^2 + \eta^2G^2 .
+      $$
+      Summing over $t<T$ and telescoping,
+      $2\eta\sum_{t<T}(f(x_t)-f^\star) \le R^2 + T\eta^2G^2$ with $R = \|x_0-x^\star\|_2$. By Jensen,
+      $f(\bar x_T)\le\frac1T\sum_tf(x_t)$, so
+      $$
+      f(\bar x_T)-f^\star \le \frac{R^2}{2\eta T}+\frac{\eta G^2}{2},
+      $$
+      minimised at $\eta = R/(G\sqrt T)$ with value $GR/\sqrt T$.
+
+      **2. Last iterate fails.** Take $f(x) = |x|$ on $\R$, $G = 1$, $x^\star = 0$, and fixed step
+      $\eta$. Starting from $x_0 = \eta/2$: the subgradient at any $x>0$ is $+1$, so
+      $x_1 = \eta/2-\eta = -\eta/2$; at $x<0$ the subgradient is $-1$, so $x_2 = -\eta/2+\eta = \eta/2$.
+      The iterates cycle between $\pm\eta/2$ forever. Thus
+      $$
+      f(x_t) = \eta/2 \quad\text{for all } t,
+      $$
+      and the last iterate never improves. The **average** is $\bar x_T \approx 0$ (exactly $0$ for
+      even $T$), so $f(\bar x_T)=0$: the averaged guarantee holds while the last-iterate one fails
+      completely.
+
+      **The reason.** There is no descent lemma for non-smooth objectives: a subgradient step need not
+      decrease $f$. Averaging is what converts a bound on the *sum* of suboptimalities into a bound on
+      a single point. The same phenomenon and the same fix reappear in SGD.
+
+  - id: gd-exact-line-search
+    title: Gradient descent with exact line search on a quadratic
+    topic: optimization/gradient-descent-convergence
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [line search, kantorovich, quadratic, rate]
+    statement: |
+      For $f(x) = \frac12x^\top Ax$ with $\mu I\preceq A\preceq LI$, gradient descent with **exact line
+      search** chooses $\eta_t = \arg\min_\eta f(x_t-\eta\nabla f(x_t))$.
+
+      1. Derive the closed form for $\eta_t$.
+      2. Show that the rate is $f(x_{t+1}) \le \left(\frac{\kappa-1}{\kappa+1}\right)^2f(x_t)$
+         (the Kantorovich bound).
+      3. Explain why exact line search does not remove the $\kappa$ dependence.
+    solution: |
+      **1.** With $g = Ax_t$,
+      $$
+      f(x_t-\eta g) = \tfrac12(x_t-\eta g)^\top A(x_t-\eta g) = f(x_t) - \eta g^\top g + \tfrac{\eta^2}{2}g^\top Ag ,
+      $$
+      a quadratic in $\eta$ minimised at
+      $$
+      \eta_t = \frac{g^\top g}{g^\top Ag} = \frac{\|g\|_2^2}{g^\top Ag}.
+      $$
+
+      **2.** Substituting, the achieved value is
+      $$
+      f(x_{t+1}) = f(x_t) - \frac{(g^\top g)^2}{2\,g^\top Ag}.
+      $$
+      Since $f(x_t) = \tfrac12x_t^\top Ax_t = \tfrac12 g^\top A^{-1}g$ (using $g = Ax_t$),
+      $$
+      \frac{f(x_{t+1})}{f(x_t)} = 1 - \frac{(g^\top g)^2}{(g^\top Ag)(g^\top A^{-1}g)} .
+      $$
+      The **Kantorovich inequality** states that for $\mu I\preceq A\preceq LI$ and any $g\ne0$,
+      $$
+      \frac{(g^\top Ag)(g^\top A^{-1}g)}{(g^\top g)^2} \le \frac{(L+\mu)^2}{4L\mu}.
+      $$
+      Hence
+      $$
+      \frac{f(x_{t+1})}{f(x_t)} \le 1 - \frac{4L\mu}{(L+\mu)^2} = \frac{(L-\mu)^2}{(L+\mu)^2} = \left(\frac{\kappa-1}{\kappa+1}\right)^2 .
+      $$
+
+      **3. Why $\kappa$ remains.** The rate $\big(\frac{\kappa-1}{\kappa+1}\big)^2 \approx 1-4/\kappa$
+      is only a constant-factor improvement over the fixed-step $1-2/(\kappa+1)$: the exponent still
+      scales as $1/\kappa$, not $1/\sqrt\kappa$. The reason is structural. Exact line search optimises
+      *within* the current gradient direction, but the difficulty of an ill-conditioned problem is that
+      the gradient direction is itself a poor direction — it zig-zags across the narrow valley. Fixing
+      the step length cannot fix the direction. Acceleration and conjugate gradient improve the
+      exponent precisely because they change the *direction*, using information from previous steps.
+
+  - id: gd-implement-verify
+    title: Implement gradient descent and verify all four rates
+    topic: optimization/gradient-descent-convergence
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [implementation, rates, verification, optimisation]
+    statement: |
+      Implement gradient descent and empirically verify each of the four theorems:
+
+      1. Convex smooth: $O(1/t)$ on $f(x) = \sum_i\log(1+e^{-y_ia_i^\top x})$ (separable data removed so
+         a minimiser exists — add a tiny ridge).
+      2. Strongly convex smooth: linear rate on a quadratic, and check the measured contraction factor
+         against $1-1/\kappa$ and against $1-2/(\kappa+1)$.
+      3. Non-convex smooth: $\min_{s\le t}\|\nabla f\|$ decaying like $t^{-1/2}$ on a non-convex
+         objective.
+      4. Non-smooth convex: the last iterate oscillating and the average converging on $f(x)=\|x\|_1$.
+    solution: |
+      ```python
+      import numpy as np
+
+      def gd(grad, x0, eta, steps):
+          x, path = x0.copy(), [x0.copy()]
+          for _ in range(steps):
+              x = x - eta * grad(x)
+              path.append(x.copy())
+          return np.array(path)
+      ```
+
+      **1. Convex smooth.** Plot $\log(f(x_t)-f^\star)$ against $\log t$; the slope should approach
+      $-1$. Two practical points: you need an accurate $f^\star$ (run to very high precision first, or
+      use a problem with a known optimum), and the asymptotic slope appears only after a transient.
+
+      **2. Strongly convex.** Use $A = \operatorname{diag}(\mu,\dots,L)$ so $\kappa$ is exactly known.
+      Estimate the empirical contraction factor $\rho = (\Delta_T/\Delta_0)^{1/T}$. With $\eta = 1/L$
+      it should match $1-1/\kappa$ closely; with the optimal $\eta = 2/(L+\mu)$ it should match
+      $\big(\frac{\kappa-1}{\kappa+1}\big)^2$ — noticeably faster, confirming that the textbook
+      $\eta=1/L$ is not optimal for quadratics.
+
+      **3. Non-convex.** Use $f(x) = \sum_i\big(x_i^2 + 3\sin^2 x_i\big)$ or a small random neural
+      network's loss. Plot $\min_{s\le t}\|\nabla f(x_s)\|_2$ on log–log axes; the slope should be
+      about $-0.5$. Note that the curve is a running minimum and is therefore monotone by construction
+      — that is what the theorem bounds, and plotting the instantaneous gradient norm instead will look
+      much noisier and is a different quantity.
+
+      **4. Non-smooth.** On $f(x)=\|x\|_1$ with a fixed step, plot both $f(x_t)$ and $f(\bar x_t)$. The
+      former plateaus at a level proportional to $\eta$ and oscillates; the latter decreases like
+      $1/\sqrt t$. Halving $\eta$ halves the plateau and slows the average — the same trade as the SGD
+      noise floor, for the same reason.
+
+      **Common pitfalls.** Using $\eta>2/L$ and concluding the theory is wrong (it is not: the theorem
+      assumes $\eta\le1/L$); comparing against an inaccurate $f^\star$, which flattens the log curve
+      spuriously; and plotting against iteration on a linear axis, where a $1/t$ and a $1/t^2$ rate look
+      identical.

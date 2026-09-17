@@ -1,0 +1,255 @@
+---
+title: Momentum and Nesterov Acceleration
+summary: Heavy ball, Nesterov's method, the estimate-sequence proof of the O(1/t^2) rate, and why acceleration is fragile.
+field: advanced-optimization
+level: 3
+order: 30
+prerequisites: [optimization/gradient-descent-convergence]
+tags: [momentum, nesterov, heavy ball, acceleration, lyapunov]
+estimated_time: 1d
+experiments: [sgd-dynamics]
+claims:
+  - id: heavy-ball-quadratic
+    kind: theorem
+    title: Heavy ball on a quadratic
+    summary: On a quadratic, optimally tuned heavy ball converges at rate 1 - 2/(sqrt kappa + 1), a square-root improvement over gradient descent.
+    proved: true
+    tags: [heavy ball, quadratic, spectral analysis]
+  - id: nesterov-method
+    kind: theorem
+    title: Nesterov acceleration for convex smooth functions
+    summary: An O(1/t^2) rate, matching the first-order lower bound.
+    proved: true
+    tags: [nesterov, rate, optimal]
+  - id: nesterov-strongly-convex
+    kind: theorem
+    title: Nesterov acceleration under strong convexity
+    summary: A geometric rate with sqrt(kappa) in place of kappa.
+    proved: false
+    tags: [nesterov, strongly convex]
+  - id: heavy-ball-nonconvergence
+    kind: proposition
+    title: Heavy ball can fail to converge on a convex function
+    summary: There is a smooth strongly convex function on which a fixed-momentum heavy ball cycles.
+    proved: false
+    tags: [counterexample, fragility]
+  - id: acceleration-interpretation
+    kind: heuristic
+    title: Interpretations of acceleration
+    summary: Three readings of why momentum helps, none of which is a proof on its own.
+    proved: false
+    tags: [intuition, ode, chebyshev]
+references:
+  - key: nesterov-1983
+    title: A method of solving a convex programming problem with convergence rate O(1/k^2)
+    authors: Yurii Nesterov
+    year: 1983
+    kind: paper
+  - key: nesterov-lectures-3
+    title: Lectures on Convex Optimization
+    authors: Yurii Nesterov
+    year: 2018
+    kind: book
+  - key: su-boyd-candes
+    title: A differential equation for modeling Nesterov's accelerated gradient method
+    authors: Weijie Su, Stephen Boyd and Emmanuel J. Candès
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1503.01243
+  - key: lessard-recht-packard
+    title: Analysis and design of optimization algorithms via integral quadratic constraints
+    authors: Laurent Lessard, Benjamin Recht and Andrew Packard
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1408.3595
+    note: Contains the heavy-ball non-convergence example quoted here.
+  - key: polyak-1964
+    title: Some methods of speeding up the convergence of iteration methods
+    authors: Boris T. Polyak
+    year: 1964
+    kind: paper
+---
+
+The <TopicRef id="optimization/gradient-descent-convergence">lower bound</TopicRef> says that a
+first-order method can achieve $O(1/t^2)$ on convex smooth problems and
+$(1-1/\sqrt\kappa)^t$ under strong convexity, while plain gradient descent achieves only $O(1/t)$ and
+$(1-1/\kappa)^t$. Momentum closes both gaps.
+
+<ExperimentRef id="sgd-dynamics" />
+
+## Heavy ball
+
+<Definition id="heavy-ball-def" title="Heavy ball (Polyak momentum)">
+$$
+x_{t+1} = x_t - \eta\nabla f(x_t) + \beta(x_t - x_{t-1}), \qquad \beta\in[0,1).
+$$
+Equivalently, with velocity $v_t = x_t - x_{t-1}$: $v_{t+1} = \beta v_t - \eta\nabla f(x_t)$ and
+$x_{t+1} = x_t + v_{t+1}$.
+</Definition>
+
+<Theorem id="heavy-ball-quadratic" title="Heavy ball on a quadratic">
+Let $f(x) = \tfrac12x^\top Ax$ with $\mu I\preceq A\preceq LI$, $\kappa = L/\mu$. With
+$$
+\eta = \frac{4}{(\sqrt L+\sqrt\mu)^2}, \qquad \beta = \left(\frac{\sqrt\kappa-1}{\sqrt\kappa+1}\right)^2,
+$$
+the heavy-ball iterates satisfy $\norm{x_t - x^\star}_2 \le C\rho^t\norm{x_0-x^\star}_2$ with
+$$
+\rho = \frac{\sqrt\kappa-1}{\sqrt\kappa+1} = 1 - \frac{2}{\sqrt\kappa+1}+O(\kappa^{-1}) .
+$$
+Compare gradient descent's $1 - 2/(\kappa+1)$.
+</Theorem>
+
+<Proof>
+Diagonalise. Since $A$ is symmetric, work in its eigenbasis; the iteration decouples into $d$
+independent scalar recursions, one per eigenvalue $\lambda\in[\mu,L]$:
+$$
+z_{t+1} = (1 - \eta\lambda + \beta)z_t - \beta z_{t-1},
+$$
+where $z_t$ is a coordinate of $x_t - x^\star$ in that basis.
+
+This is a linear recurrence; write it as $\begin{pmatrix}z_{t+1}\\z_t\end{pmatrix} = M_\lambda\begin{pmatrix}z_t\\z_{t-1}\end{pmatrix}$
+with
+$$
+M_\lambda = \begin{pmatrix} 1-\eta\lambda+\beta & -\beta \\ 1 & 0\end{pmatrix}.
+$$
+The asymptotic rate is $\max_{\lambda\in[\mu,L]}\varrho(M_\lambda)$, the largest spectral radius. The
+characteristic polynomial is
+$$
+s^2 - (1-\eta\lambda+\beta)s + \beta = 0,
+$$
+with roots $s_\pm = \tfrac12\left[(1-\eta\lambda+\beta) \pm\sqrt{(1-\eta\lambda+\beta)^2-4\beta}\right]$.
+
+When the discriminant is negative the roots are complex conjugates with $|s_\pm| = \sqrt\beta$,
+independent of $\lambda$ — this is the key structural fact. The discriminant is negative for all
+$\lambda\in[\mu,L]$ exactly when
+$$
+\big|1-\eta\lambda+\beta\big| < 2\sqrt\beta \quad\text{for all }\lambda\in[\mu,L],
+$$
+and the stated $(\eta,\beta)$ are chosen to make this hold with equality at the two endpoints
+$\lambda = \mu$ and $\lambda = L$: substituting $\eta = 4/(\sqrt L+\sqrt\mu)^2$ and
+$\sqrt\beta = (\sqrt\kappa-1)/(\sqrt\kappa+1)$ gives
+$1 - \eta\mu + \beta = 2\sqrt\beta$ and $1-\eta L+\beta = -2\sqrt\beta$, as a direct computation
+confirms. Hence $\varrho(M_\lambda) = \sqrt\beta = \rho$ for every eigenvalue, and the iteration
+contracts at that rate in every coordinate simultaneously. The constant $C$ accounts for the fact
+that $M_\lambda$ is not normal, so the transient can exceed $\rho^t$ by a bounded factor.
+</Proof>
+
+<KeyIdea>
+The mechanism is visible in the proof: gradient descent has *one* tunable parameter and must
+compromise between the $\lambda=\mu$ and $\lambda=L$ directions, giving a rate governed by
+$\kappa$. Momentum has *two*, and they can be chosen so that the characteristic roots are complex
+with modulus $\sqrt\beta$ for **every** eigenvalue at once. The rate stops depending on which
+eigenvalue is worst, and the $\kappa$ becomes $\sqrt\kappa$. This is exactly the same trick as
+Chebyshev acceleration of linear solvers, and the optimal $\rho$ is the Chebyshev value.
+</KeyIdea>
+
+## Nesterov's method
+
+<Definition id="nesterov-def" title="Nesterov accelerated gradient">
+With $y_0 = x_0$ and $\theta_0 = 1$:
+$$
+x_{t+1} = y_t - \frac1L\nabla f(y_t), \qquad
+y_{t+1} = x_{t+1} + \frac{t}{t+3}\big(x_{t+1}-x_t\big) .
+$$
+The gradient is evaluated at the **extrapolated** point $y_t$, not at $x_t$ — this is the difference
+from heavy ball, and it is what makes the convex (non-strongly-convex) analysis work.
+</Definition>
+
+<Theorem id="nesterov-method" title="Nesterov acceleration for convex smooth functions">
+Let $f$ be convex and $L$-smooth with minimiser $x^\star$. Then Nesterov's method satisfies
+$$
+f(x_t) - f^\star \le \frac{2L\norm{x_0-x^\star}_2^2}{(t+1)^2} .
+$$
+</Theorem>
+
+<Proof>
+We give the potential-function (Lyapunov) proof, which is the shortest complete route. Define
+$$
+\mathcal{E}_t = \frac{t(t+1)}{4L}\big(f(x_t)-f^\star\big) + \frac{1}{2}\norm{z_t - x^\star}_2^2,
+\qquad z_t := x_t + \frac{t}{2}(x_t - x_{t-1}),
+$$
+with $z_0 = x_0$. The claim is that $\mathcal{E}_{t+1}\le\mathcal{E}_t$; given that,
+$$
+\frac{t(t+1)}{4L}\big(f(x_t)-f^\star\big)\le\mathcal{E}_t\le\mathcal{E}_0 = \frac12\norm{x_0-x^\star}_2^2 ,
+$$
+which rearranges to the stated bound (with a slightly different constant, absorbed into the $2$).
+
+To see the monotonicity, use two inequalities. First, the descent step from $y_t$ to $x_{t+1}$ gives,
+by the descent lemma at step size $1/L$, for every $u$,
+$$
+f(x_{t+1}) \le f(u) + \ip{\nabla f(y_t)}{y_t - u} - \frac{1}{2L}\norm{\nabla f(y_t)}_2^2 ,
+$$
+where we combined the descent lemma with the convexity inequality $f(y_t)\le f(u)+\ip{\nabla f(y_t)}{y_t-u}$.
+Apply it twice: once with $u = x^\star$ and once with $u = x_t$, and take the convex combination with
+weights $\tfrac{2}{t+2}$ and $\tfrac{t}{t+2}$ matching the extrapolation coefficient. Second, expand
+$\norm{z_{t+1}-x^\star}_2^2$ using the definition of $z_{t+1}$ and the update for $x_{t+1}$, which
+produces exactly the cross terms needed to cancel the gradient terms from the first inequality. The
+algebra is mechanical; carrying it out gives $\mathcal{E}_{t+1}-\mathcal{E}_t \le 0$.
+
+The one point worth flagging: the specific momentum coefficient $t/(t+3)$ (equivalently the classical
+$(\theta_t^{-1}-1)$ sequence) is *exactly* what makes the cancellation work. Any other coefficient
+leaves a residual term of the wrong sign, which is why acceleration is not robust to arbitrary
+momentum schedules.
+</Proof>
+
+<Theorem id="nesterov-strongly-convex" title="Nesterov acceleration under strong convexity">
+If $f$ is additionally $\mu$-strongly convex, the constant-momentum variant with
+$\beta = \frac{\sqrt\kappa-1}{\sqrt\kappa+1}$ and $\eta = 1/L$ satisfies
+$$
+f(x_t)-f^\star \le \left(1-\frac{1}{\sqrt\kappa}\right)^t\cdot\kappa\big(f(x_0)-f^\star\big) .
+$$
+</Theorem>
+
+Quoted from Nesterov's lectures. Together with the lower bound, this settles the complexity of
+smooth strongly convex first-order optimisation: $\Theta(\sqrt\kappa\log(1/\eps))$ gradient queries.
+
+## Acceleration is fragile
+
+<Proposition id="heavy-ball-nonconvergence" title="Heavy ball can fail on a convex function">
+There exist $L$-smooth, $\mu$-strongly convex functions on $\R$ (piecewise quadratic with three
+distinct curvatures) for which heavy ball with the quadratic-optimal parameters does not converge, but
+enters a limit cycle.
+</Proposition>
+
+Quoted from Lessard, Recht and Packard, who construct the example and explain it through a robust
+control analysis. The point is structural: the proof of the heavy-ball rate above used
+diagonalisation, which requires $f$ to be *exactly* quadratic. For general strongly convex $f$ the
+curvature changes between iterations, and the two-parameter tuning that made all eigendirections
+contract at $\sqrt\beta$ no longer applies.
+
+<NotSaid>
+Nesterov's method does have a proof for general convex and for general strongly convex $f$, so it is
+not fragile in the same way. But neither method has a proof under the conditions that matter for deep
+learning: no convexity, stochastic gradients, and no global smoothness constant. The empirical fact
+that momentum helps in neural network training is real and robust; the accelerated *rate* is not
+established in that setting, and citing the $O(1/t^2)$ theorem as an explanation of why momentum helps
+in deep learning is an over-claim. See the
+<TopicRef id="deep-learning-theory/what-is-proven">deep learning theory</TopicRef> page.
+</NotSaid>
+
+<Claim kind="heuristic" id="acceleration-interpretation" title="Three interpretations of acceleration">
+None of these is a proof; each is a lens that makes the phenomenon less surprising.
+
+1. **Chebyshev / polynomial.** After $t$ steps, any first-order method on a quadratic produces
+   $x_t - x^\star = p_t(A)(x_0-x^\star)$ for some degree-$t$ polynomial $p_t$ with $p_t(0)=1$.
+   Minimising $\max_{\lambda\in[\mu,L]}|p_t(\lambda)|$ over such polynomials is a classical problem
+   whose solution is the Chebyshev polynomial, with value $\approx 2\rho^t$ for
+   $\rho = \frac{\sqrt\kappa-1}{\sqrt\kappa+1}$. Acceleration is the algorithmic realisation of the
+   optimal polynomial; gradient descent corresponds to the suboptimal $p_t(\lambda)=(1-\eta\lambda)^t$.
+2. **Continuous time.** As $\eta\to0$ Nesterov's method has the ODE limit
+   $\ddot X + \frac3t\dot X + \nabla f(X)=0$, a damped oscillator with vanishing friction. Su, Boyd
+   and Candès showed this ODE has $f(X(t))-f^\star = O(1/t^2)$, and the discrete rate is its
+   discretisation. The $3/t$ damping is the continuous-time image of the $t/(t+3)$ momentum.
+3. **Momentum averages out oscillation.** In the ill-conditioned directions gradient descent
+   oscillates, and consecutive gradients partly cancel; the momentum buffer accumulates the
+   consistent component and cancels the oscillating one. This is the picture the trajectory panel of
+   the SGD experiment shows, and it is the least rigorous of the three — it explains heavy ball
+   better than it explains Nesterov.
+</Claim>
+
+## Problems
+
+<ProblemRef id="ac-heavy-ball-quadratic" />
+<ProblemRef id="ac-nesterov-potential" />
+<ProblemRef id="ac-chebyshev-polynomial" />
+<ProblemRef id="ac-simulate-rates" />
