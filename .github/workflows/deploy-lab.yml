@@ -1,19 +1,25 @@
 # Builds the AI Mathematics Research Lab (lab/) and publishes the static export
 # to GitHub Pages.
 #
-# This workflow is manual on purpose. The repository's Pages site is currently
-# served from the Jekyll site at the repository root; running this workflow —
-# and switching Settings → Pages → Source to "GitHub Actions" — replaces that
-# site with this application. To deploy on every push instead, add:
+# Nothing here publishes anything until Settings → Pages → Source is set to
+# "GitHub Actions". Until then this workflow builds and uploads an artifact that
+# is never served. Switching that setting replaces whatever Pages currently
+# serves — for this repository, the Jekyll site at the root — with this
+# application, so it is deliberately a setting you change by hand.
 #
-#   push:
-#     branches: [main]
-#     paths: ['lab/**', '.github/workflows/deploy-lab.yml']
-#
-# under `on:` below.
+# `workflow_dispatch` only becomes available once this file is on the default
+# branch: GitHub reads manual triggers from the default branch, not from
+# feature branches.
 name: Deploy lab to GitHub Pages
 
 on:
+  # Deploy whenever the app changes on the default branch.
+  push:
+    branches: [master]
+    paths:
+      - 'lab/**'
+      - '.github/workflows/deploy-lab.yml'
+  # And on demand, for a redeploy without a code change.
   workflow_dispatch:
 
 permissions:
