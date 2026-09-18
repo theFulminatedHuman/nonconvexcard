@@ -1,13 +1,13 @@
 /** Static site metadata and the primary navigation model. */
 
 export const SITE = {
-  name: 'AI Mathematics Research Lab',
-  short: 'AI Math Lab',
+  name: 'nonconvexcard',
+  short: 'nonconvexcard',
   tagline:
     'The mathematical foundations of modern AI — from probability to optimization, learning theory, deep learning and LLM systems.',
   description:
     'An interactive mathematical laboratory: rigorous theory, complete proofs, reproducible numerical experiments and a problem database, from undergraduate foundations to research level.',
-  repo: 'https://github.com/theFulminatedHuman/vedantbhardwaj.github.io',
+  repo: 'https://github.com/theFulminatedHuman/nonconvexcard',
 } as const;
 
 export interface NavItem {
