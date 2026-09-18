@@ -1,0 +1,50 @@
+problem: lr-implement-ridge
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def ridge_fit(X, y, lam):
+      """Return the ridge solution w minimising ||Xw - y||^2 + lam * ||w||^2.
+
+      X has shape (n, d), y has shape (n,). Do not penalise via an intercept:
+      solve exactly the objective above.
+      """
+      raise NotImplementedError
+tests:
+  - name: lambda = 0 matches the least-squares solution
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      X = rng.standard_normal((40, 5))
+      y = rng.standard_normal(40)
+      w = np.asarray(ridge_fit(X, y, 0.0)).ravel()
+      w_ls = np.linalg.lstsq(X, y, rcond=None)[0]
+      assert np.allclose(w, w_ls, atol=1e-6), "at lam=0 ridge must equal least squares"
+  - name: solves the normal equations
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      X = rng.standard_normal((30, 4))
+      y = rng.standard_normal(30)
+      lam = 0.7
+      w = np.asarray(ridge_fit(X, y, lam)).ravel()
+      lhs = X.T @ X @ w + lam * w
+      rhs = X.T @ y
+      assert np.allclose(lhs, rhs, atol=1e-6), "(X^T X + lam I) w = X^T y must hold"
+  - name: shrinks as lambda grows
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(2)
+      X = rng.standard_normal((30, 4))
+      y = rng.standard_normal(30)
+      norms = [np.linalg.norm(np.asarray(ridge_fit(X, y, l)).ravel()) for l in [0.01, 1.0, 100.0]]
+      assert norms[0] > norms[1] > norms[2], f"||w|| should decrease with lambda, got {norms}"
+  - name: works when d exceeds n
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(3)
+      X = rng.standard_normal((8, 20))
+      y = rng.standard_normal(8)
+      w = np.asarray(ridge_fit(X, y, 0.5)).ravel()
+      assert w.shape == (20,), f"expected shape (20,), got {w.shape}"
+      assert np.all(np.isfinite(w)), "solution must be finite in the underdetermined case"

@@ -17,6 +17,7 @@ function entry(id: string, difficulty: Difficulty, field: FieldSlug): ProblemInd
     abyss: false,
     hints: 0,
     teaser: '',
+    runnable: false,
   };
 }
 

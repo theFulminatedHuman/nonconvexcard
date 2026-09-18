@@ -1,0 +1,36 @@
+problem: gd-implement-verify
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def gradient_descent(grad, x0, eta, steps):
+      """Run x <- x - eta * grad(x) for `steps` steps.
+
+      Return the trajectory as an array of shape (steps + 1, d), including x0.
+      """
+      raise NotImplementedError
+tests:
+  - name: trajectory shape includes the start point
+    code: |
+      import numpy as np
+      xs = np.asarray(gradient_descent(lambda x: x, np.ones(3), 0.1, 10))
+      assert xs.shape == (11, 3), f"expected (11, 3), got {xs.shape}"
+      assert np.allclose(xs[0], np.ones(3)), "the first row must be x0"
+  - name: exact contraction on a quadratic
+    code: |
+      import numpy as np
+      x0 = np.array([1.0, -2.0])
+      xs = np.asarray(gradient_descent(lambda x: x, x0, 0.5, 12))
+      for t in range(13):
+          assert np.allclose(xs[t], x0 * 0.5 ** t, atol=1e-10), f"step {t} should be x0 * (1-eta)^t"
+  - name: converges on a conditioned quadratic
+    code: |
+      import numpy as np
+      A = np.diag([1.0, 10.0])
+      xs = np.asarray(gradient_descent(lambda x: A @ x, np.ones(2), 1.0 / 10.0, 400))
+      assert np.linalg.norm(xs[-1]) < 1e-6, f"should converge to 0, ended at {xs[-1]}"
+  - name: diverges above the stability threshold
+    code: |
+      import numpy as np
+      xs = np.asarray(gradient_descent(lambda x: 10.0 * x, np.array([1.0]), 0.3, 60))
+      assert np.abs(xs[-1][0]) > 1e3, "eta > 2/L must diverge — check the update sign and order"

@@ -1,0 +1,42 @@
+problem: mp-simulate-law
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def mp_support(gamma):
+      """Return (lambda_minus, lambda_plus) for the Marchenko-Pastur law."""
+      raise NotImplementedError
+
+  def mp_density(x, gamma):
+      """Marchenko-Pastur density at x, zero outside the support. Accepts arrays."""
+      raise NotImplementedError
+tests:
+  - name: support endpoints
+    code: |
+      lo, hi = mp_support(0.25)
+      assert abs(lo - 0.25) < 1e-12 and abs(hi - 2.25) < 1e-12, f"expected (0.25, 2.25), got ({lo}, {hi})"
+  - name: at gamma = 1 the lower edge touches zero
+    code: |
+      lo, hi = mp_support(1.0)
+      assert abs(lo) < 1e-12 and abs(hi - 4.0) < 1e-12, f"expected (0, 4), got ({lo}, {hi})"
+  - name: density vanishes outside the support
+    code: |
+      import numpy as np
+      lo, hi = mp_support(0.5)
+      vals = np.asarray(mp_density(np.array([lo - 0.1, hi + 0.1, -1.0]), 0.5))
+      assert np.allclose(vals, 0.0), f"density must be zero outside [{lo}, {hi}], got {vals}"
+  - name: density is non-negative inside the support
+    code: |
+      import numpy as np
+      lo, hi = mp_support(0.4)
+      xs = np.linspace(lo + 1e-6, hi - 1e-6, 500)
+      vals = np.asarray(mp_density(xs, 0.4))
+      assert np.all(vals >= -1e-12), "a density cannot be negative"
+  - name: it integrates to one
+    code: |
+      import numpy as np
+      gamma = 0.3
+      lo, hi = mp_support(gamma)
+      xs = np.linspace(lo + 1e-9, hi - 1e-9, 200000)
+      mass = float(np.trapezoid(np.asarray(mp_density(xs, gamma)), xs)) if hasattr(np, "trapezoid") else float(np.trapz(np.asarray(mp_density(xs, gamma)), xs))
+      assert abs(mass - 1.0) < 5e-3, f"total mass should be 1, got {mass}"

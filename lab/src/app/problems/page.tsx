@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { ProblemBrowser } from '@/components/problems/problem-browser';
 import { PageHeader } from '@/components/ui/primitives';
 import { buildProblemIndex } from '@/lib/problem-index';
+import { judgeCount } from '@/lib/judge';
 import { DIFFICULTIES, DIFFICULTY_LABEL, PROBLEM_TYPES, PROBLEM_TYPE_LABEL } from '@/lib/taxonomy';
 
 export const metadata: Metadata = {
@@ -29,7 +30,9 @@ export default function ProblemsPage() {
           <>
             {problems.length} problems across {byType.map((t) => `${t.count} ${PROBLEM_TYPE_LABEL[t.type].toLowerCase()}`).join(', ')}.
             Every problem has a complete worked solution, and most have a hint ladder you can climb
-            one rung at a time. The hardest sit in{' '}
+            one rung at a time. {judgeCount()} of the coding problems run in your browser against
+            test cases — marked <strong className="font-normal text-[var(--color-diff-foundation)]">run</strong>{' '}
+            in the table. The hardest sit in{' '}
             <Link href="/abyss" className="text-[var(--color-accent)] hover:underline">
               The Abyss
             </Link>

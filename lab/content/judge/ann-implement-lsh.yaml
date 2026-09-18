@@ -1,0 +1,58 @@
+problem: ann-implement-lsh
+timeout_seconds: 45
+starter: |
+  import numpy as np
+
+  def simhash_bits(X, planes):
+      """Sign bits of X @ planes.T.
+
+      X is (n, d) and planes is (b, d); return a boolean array of shape (n, b)
+      that is True where the inner product is positive.
+      """
+      raise NotImplementedError
+
+  def hamming_distance(a, b):
+      """Number of differing bits between two boolean arrays."""
+      raise NotImplementedError
+
+  def estimate_angle(a_bits, b_bits):
+      """Estimate the angle between two vectors from their sketches."""
+      raise NotImplementedError
+tests:
+  - name: sketch shape and dtype
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      X = rng.standard_normal((7, 5)); planes = rng.standard_normal((64, 5))
+      B = np.asarray(simhash_bits(X, planes))
+      assert B.shape == (7, 64), f"expected (7, 64), got {B.shape}"
+      assert B.dtype == bool, f"expected a boolean array, got {B.dtype}"
+  - name: bits follow the sign of the projection
+    code: |
+      import numpy as np
+      X = np.array([[1.0, 0.0]])
+      planes = np.array([[1.0, 0.0], [-1.0, 0.0]])
+      B = np.asarray(simhash_bits(X, planes))
+      assert B[0, 0] and not B[0, 1], f"got {B}"
+  - name: hamming distance counts disagreements
+    code: |
+      import numpy as np
+      a = np.array([True, False, True, True])
+      b = np.array([True, True, False, True])
+      assert hamming_distance(a, b) == 2
+  - name: identical sketches give angle zero
+    code: |
+      import numpy as np
+      a = np.array([True, False, True, False] * 16)
+      assert abs(estimate_angle(a, a)) < 1e-12, "identical sketches must estimate a zero angle"
+  - name: recovers a known angle
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(3)
+      theta = np.pi / 3
+      x = np.array([1.0, 0.0])
+      z = np.array([np.cos(theta), np.sin(theta)])
+      planes = rng.standard_normal((20000, 2))
+      B = np.asarray(simhash_bits(np.vstack([x, z]), planes))
+      est = float(estimate_angle(B[0], B[1]))
+      assert abs(est - theta) < 0.05, f"expected about {theta:.3f}, got {est:.3f}"

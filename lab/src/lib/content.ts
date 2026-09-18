@@ -200,6 +200,24 @@ export function allProblems(): Problem[] {
   return problems;
 }
 
+/**
+ * Judge specs must attach to a coding problem that exists. Lives here because
+ * it needs the problem list; `allJudgeSpecs` calls it on every load, so a
+ * dangling or mistyped problem id fails the build.
+ */
+export function validateJudgeSpecs(specIds: Iterable<string>): void {
+  const byId = new Map(allProblems().map((p) => [p.id, p]));
+  for (const id of specIds) {
+    const problem = byId.get(id);
+    if (!problem) throw new Error(`Judge spec references unknown problem "${id}".`);
+    if (problem.type !== 'coding') {
+      throw new Error(
+        `Judge spec "${id}" attaches to a ${problem.type} problem; only coding problems take a judge.`,
+      );
+    }
+  }
+}
+
 export function getProblem(id: string): Problem | undefined {
   return allProblems().find((p) => p.id === id);
 }
