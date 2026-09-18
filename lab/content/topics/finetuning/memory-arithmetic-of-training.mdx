@@ -1,0 +1,222 @@
+---
+title: The Memory Arithmetic of Training
+summary: Sixteen bytes per trainable parameter, the activation bill, and why checkpointing every √L layers is exactly the right thing to do.
+field: finetuning
+level: 2
+order: 20
+prerequisites:
+  - finetuning/low-rank-adaptation
+  - stochastic-optimization/adaptive-methods
+tags: [memory, adam, mixed precision, gradient checkpointing, zero, activations]
+estimated_time: 1h
+claims:
+  - id: adam-state-bytes
+    kind: proposition
+    title: Sixteen bytes per trainable parameter
+    summary: Mixed-precision Adam requires 16 bytes of persistent state per trainable parameter, of which only 2 are the weights used in the forward pass.
+    proved: true
+    tags: [adam, mixed precision, memory]
+  - id: activation-memory
+    kind: proposition
+    title: Activation memory scales with batch, sequence and depth
+    summary: Storing activations for backpropagation costs Θ(L·B·S·d) bytes, independent of parameter count.
+    proved: true
+    tags: [activations, backpropagation]
+  - id: checkpoint-sqrt
+    kind: theorem
+    title: Optimal uniform checkpointing uses √L segments
+    summary: Storing every k-th layer's activations minimises peak memory at k = √L, giving Θ(√L) storage for one extra forward pass.
+    proved: true
+    tags: [gradient checkpointing, optimisation, tradeoff]
+  - id: lora-memory-gain
+    kind: corollary
+    title: Where LoRA's memory saving actually comes from
+    summary: Freezing the base model removes the 14 bytes of optimizer and gradient state per parameter, but leaves activation memory untouched.
+    proved: true
+    tags: [lora, memory]
+references:
+  - key: micikevicius-mixed
+    title: Mixed Precision Training
+    authors: P. Micikevicius et al.
+    year: 2018
+    kind: paper
+    url: https://arxiv.org/abs/1710.03740
+  - key: chen-checkpoint
+    title: Training Deep Nets with Sublinear Memory Cost
+    authors: T. Chen, B. Xu, C. Zhang, C. Guestrin
+    year: 2016
+    kind: paper
+    url: https://arxiv.org/abs/1604.06174
+  - key: rajbhandari-zero
+    title: 'ZeRO: Memory Optimizations Toward Training Trillion Parameter Models'
+    authors: S. Rajbhandari, J. Rasley, O. Ruwase, Y. He
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/1910.02054
+---
+
+<Intuition>
+People are surprised that a 7-billion-parameter model, which occupies 14 GB for inference, cannot be
+fine-tuned on an 80 GB card. The weights are the small part. Adam keeps two running averages per
+parameter, mixed precision keeps a high-precision master copy, and the gradient needs somewhere to
+live. Add the activations saved for the backward pass and the bill is an order of magnitude above
+the weights.
+</Intuition>
+
+## Persistent state
+
+<Claim kind="proposition" id="adam-state-bytes" title="Sixteen bytes per trainable parameter">
+Mixed-precision training with Adam stores, per trainable parameter: BF16 weights (2 bytes), a BF16
+gradient (2), an FP32 master weight (4), and FP32 first and second moment estimates (4 each) —
+$$
+16 \text{ bytes per trainable parameter}.
+$$
+</Claim>
+
+<Assumptions>
+Adam or AdamW with the standard two-moment state; BF16 or FP16 compute with an FP32 master copy, the
+usual mixed-precision recipe. Variants change the constant and not the structure: plain SGD with
+momentum needs 4 bytes of state instead of 8, 8-bit optimizers quantize the moments to 1 byte each,
+and pure FP32 training drops the master copy while doubling the others.
+</Assumptions>
+
+<Proof>
+Count the tensors that must persist across a step. The forward pass reads BF16 weights: 2 bytes. The
+backward pass produces a gradient of the same shape and precision: 2. The update is applied to an
+FP32 master copy, kept because repeatedly adding small BF16 updates to BF16 weights loses the updates
+to rounding: 4. Adam's state is $m$ and $v$, both parameter-shaped and kept in FP32 for numerical
+stability: $4 + 4$. The total is $2+2+4+4+4 = 16$. $\blacksquare$
+</Proof>
+
+<Details summary="A 7B model does not fit, and the arithmetic says by how much">
+Full fine-tuning of a 7B model:
+$$
+6.7\times10^9 \times 16\ \text{bytes} = 107\ \mathrm{GB},
+$$
+before any activations. On an 80 GB H100 this is impossible; it is not a matter of tuning the batch
+size down, because none of those 107 GB depends on batch size.
+
+With LoRA at $r=8$ on the attention projections, trainable parameters drop to a few million. The
+frozen base still needs its 2 bytes per parameter — 13.4 GB — but the other 14 bytes apply only to
+the adapter:
+$$
+13.4\ \mathrm{GB} + 16 \times (\text{a few} \times 10^6)\ \text{bytes} \approx 13.5\ \mathrm{GB}.
+$$
+QLoRA cuts the first term further by holding the frozen base in 4-bit, roughly 3.5 GB. The remaining
+consumer is activations, which is the subject of the rest of this page.
+</Details>
+
+<Claim kind="corollary" id="lora-memory-gain" title="Where LoRA's memory saving actually comes from">
+Freezing a base model of $P$ parameters and training an adapter of $P_a \ll P$ reduces persistent
+state from $16P$ to $2P + 16P_a$ bytes — a saving of $14P - 16P_a \approx 14P$ — and leaves
+activation memory unchanged.
+</Claim>
+
+<Proof>
+Frozen parameters require only their forward-pass copy, 2 bytes each, since they have no gradient, no
+master copy and no optimizer moments; trainable ones require the full 16 by the proposition. The
+activation claim holds because activations are saved to differentiate the *loss with respect to the
+adapter*, and the chain rule still routes gradients through every layer between the adapter and the
+loss — so the same intermediate tensors must be retained. $\blacksquare$
+</Proof>
+
+<Warning>
+This corollary is the most commonly misunderstood part of parameter-efficient fine-tuning. LoRA does
+**not** reduce activation memory, and at long sequence lengths or large batches activations dominate.
+A run that fails with an out-of-memory error at batch size 8 will usually still fail at batch size 8
+after switching to LoRA; what LoRA changes is whether the run can start at all.
+</Warning>
+
+## Activations
+
+<Claim kind="proposition" id="activation-memory" title="Activation memory scales with batch, sequence and depth">
+For a transformer with $L$ layers, width $d$, batch $B$ and sequence length $S$, the activations
+retained for backpropagation occupy
+$$
+M_{\text{act}} = \Theta\big(L\,B\,S\,d\big) \text{ bytes},
+$$
+with a constant depending on how many intermediate tensors per layer are kept, and an additional
+$\Theta(L\,B\,S^2\,n_{\text{heads}})$ term if attention probability matrices are materialised.
+</Claim>
+
+<Proof>
+Reverse-mode differentiation of a composition $f_L \circ \cdots \circ f_1$ requires, at each layer,
+the inputs needed to evaluate that layer's local Jacobian-vector product. For a transformer block
+these are tensors of shape $B \times S \times d$ (or a constant multiple, for the MLP's widened
+hidden state), so each layer retains $\Theta(BSd)$ elements and the network $\Theta(LBSd)$. If the
+softmax output is stored rather than recomputed, each head additionally retains a $B\times S\times S$
+matrix, giving the stated second term. $\blacksquare$
+</Proof>
+
+Note that $P$ does not appear: **activation memory is independent of parameter count** and depends
+instead on the shape of the input. This is why the same model trains fine at $S=512$ and fails at
+$S = 8192$.
+
+## Checkpointing
+
+Gradient checkpointing stores activations only at selected layer boundaries and recomputes the rest
+during the backward pass.
+
+<Claim kind="theorem" id="checkpoint-sqrt" title="Optimal uniform checkpointing uses √L segments">
+Partition $L$ layers into consecutive segments of $k$ layers. Store the activation at each segment
+boundary, and during backpropagation recompute a segment's interior from its stored boundary. Peak
+activation storage, in units of one layer's activations, is
+$$
+m(k) = \frac{L}{k} + k ,
+$$
+minimised over real $k &gt; 0$ at $k^\star = \sqrt L$ with $m(k^\star) = 2\sqrt L$, at the cost of one
+additional forward pass.
+</Claim>
+
+<Proof>
+**Memory.** The boundaries number $L/k$ and are held throughout the backward pass. At any moment
+exactly one segment is being recomputed, and its interior holds at most $k$ layers of activations.
+Since segments are processed one at a time, peak storage is $L/k + k$.
+
+**Minimisation.** $m$ is smooth on $(0,\infty)$ with $m'(k) = -L/k^2 + 1$, vanishing at $k=\sqrt L$,
+and $m''(k) = 2L/k^3 &gt; 0$, so this is the unique minimiser. The value is
+$\sqrt L + \sqrt L = 2\sqrt L$.
+
+**Compute.** Each layer's forward is evaluated once in the original forward pass and at most once
+more during recomputation, so total forward work at most doubles; the backward pass is unchanged.
+$\blacksquare$
+</Proof>
+
+<KeyIdea>
+The trade is $\Theta(L)$ memory for $\Theta(\sqrt L)$ memory at the price of roughly $33\%$ more
+compute — one extra forward pass against the usual forward-plus-backward cost of about three forward
+passes. For $L = 32$ this is $2\sqrt{32} \approx 11$ layers' worth of activations instead of 32, a
+$2.8\times$ reduction. For $L = 80$ it is $8.9\times$ against $80$ — the deeper the model, the better
+the deal.
+</KeyIdea>
+
+<Note>
+Real implementations often checkpoint every transformer block ($k=1$), which is not the optimum of
+the theorem but is simple, has a clean recomputation boundary, and gives $L/1 + 1 = L+1$ — no saving
+at all under this model. The discrepancy is because practical checkpointing discards the *many*
+intermediate tensors inside a block while keeping only the block's input, so the per-layer constant
+differs by roughly an order of magnitude between stored and recomputed layers. The theorem's shape is
+right; its units are per-checkpoint-granule, not per-transformer-block.
+</Note>
+
+<Details summary="Sharding: ZeRO">
+Checkpointing attacks activations. Sharding attacks the 16 bytes per parameter, by splitting them
+across $N$ data-parallel workers instead of replicating them:
+
+- **Stage 1** partitions the optimizer states ($m$, $v$, master weights: 12 of the 16 bytes), leaving
+  $4 + 12/N$ bytes per parameter per device.
+- **Stage 2** additionally partitions gradients, leaving $2 + 14/N$.
+- **Stage 3** additionally partitions the parameters themselves, leaving $16/N$ — memory per device
+  falls linearly in the number of devices.
+
+The cost is communication: stage 3 must gather each layer's parameters before using them and release
+them after, so it trades memory for interconnect bandwidth. Whether that trade is favourable depends
+on the ratio of interconnect bandwidth to compute, which is precisely the roofline question in a
+different guise.
+</Details>
+
+<NotSaid>
+Every count here is of *tensors the algorithm requires*. Real allocators add fragmentation,
+workspace for fused kernels, communication buffers, and framework overhead that together commonly add
+tens of percent. Use these formulas to decide whether a configuration is plausible, then measure.
+</NotSaid>

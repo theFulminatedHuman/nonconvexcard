@@ -110,6 +110,33 @@ const STAGES: StageSpec[] = [
       'derive the DPO objective, read a scaling-law fit critically, and compute a retrieval pipeline’s recall ceiling before blaming the generator.',
     fields: ['llm', 'rag'],
   },
+  {
+    id: 'adaptation',
+    title: 'Adapting a pretrained model',
+    blurb:
+      'What changes when you stop training from scratch: the low-rank hypothesis behind LoRA, the memory arithmetic that decides what fits on a GPU, and what is actually known about forgetting.',
+    outcome:
+      'compute a training run\u2019s memory budget before launching it, and say why LoRA does not reduce activation memory.',
+    fields: ['finetuning'],
+  },
+  {
+    id: 'efficiency',
+    title: 'Quantization and serving',
+    blurb:
+      'The systems half: rounding error and where it goes, the Hessian-weighted objective behind GPTQ, the roofline that separates prefill from decode, and the queueing arithmetic of a server.',
+    outcome:
+      'predict whether a workload is compute- or memory-bound from first principles, and explain why a few outlier channels break per-tensor INT8.',
+    fields: ['quantization', 'llm-ops'],
+  },
+  {
+    id: 'agents',
+    title: 'Agentic systems',
+    blurb:
+      'Multi-step tool-using systems, where per-step reliability is raised to the power of the horizon: compounding error, the bandit view of tool choice, and what inference-time search buys.',
+    outcome:
+      'compute an agent\u2019s trajectory success before building it, and price test-time search in both compute and KL divergence.',
+    fields: ['agents'],
+  },
 ];
 
 export function buildLearningPath(): TrackStage[] {

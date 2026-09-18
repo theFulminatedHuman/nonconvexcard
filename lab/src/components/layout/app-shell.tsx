@@ -10,6 +10,19 @@ import { CloseIcon, MenuIcon, SigmaIcon } from '@/components/ui/icons';
 import { ResearchModeToggle, ThemeToggle } from './controls';
 import { SidebarContent } from './sidebar';
 
+/** The primary sections, as a contest-site tab strip. */
+const TABS = [
+  { href: '/learn', label: 'Learn' },
+  { href: '/problems', label: 'Problems' },
+  { href: '/abyss', label: 'Abyss' },
+  { href: '/proofs', label: 'Proofs' },
+  { href: '/experiments', label: 'Experiments' },
+  { href: '/papers', label: 'Papers' },
+  { href: '/topics', label: 'Topics' },
+  { href: '/graph', label: 'Graph' },
+  { href: '/progress', label: 'Progress' },
+] as const;
+
 export function AppShell({
   fields,
   basePath,
@@ -70,6 +83,27 @@ export function AppShell({
             <ThemeToggle />
           </div>
         </div>
+        <nav
+          aria-label="Sections"
+          className="no-scrollbar hidden overflow-x-auto border-t border-[var(--color-line)] px-2 md:block"
+        >
+          <ul className="flex items-stretch">
+            {TABS.map((tab) => {
+              const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+              return (
+                <li key={tab.href}>
+                  <Link
+                    href={tab.href}
+                    aria-current={active ? 'page' : undefined}
+                    className="navtab"
+                  >
+                    {tab.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
         <div className="border-t border-[var(--color-line)] px-3 py-2 md:hidden">
           <CommandPalette basePath={basePath} />
         </div>

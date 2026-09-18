@@ -1,0 +1,255 @@
+---
+title: Low-Rank Adaptation
+summary: LoRA's parameterisation, why B starts at zero and the update is scaled by α/r, and the low-rank hypothesis that the method rests on but does not prove.
+field: finetuning
+level: 2
+order: 10
+prerequisites:
+  - foundations/linear-algebra
+  - deep-learning/approximation-and-backpropagation
+  - llm/preference-optimisation
+tags: [lora, low rank, peft, eckart-young, adapters, intrinsic dimension]
+estimated_time: 1h
+claims:
+  - id: lora-param-count
+    kind: proposition
+    title: Trainable parameter count
+    summary: A rank-r adapter on a d×k matrix trains r(d+k) parameters instead of dk, a reduction by dk/(r(d+k)).
+    proved: true
+    tags: [counting, memory]
+  - id: lora-zero-init
+    kind: proposition
+    title: Zero initialisation preserves the pretrained function
+    summary: Initialising B = 0 makes the adapted model identical to the pretrained one at step zero while keeping the gradient non-zero.
+    proved: true
+    tags: [initialisation, gradient]
+  - id: lora-scaling
+    kind: proposition
+    title: The α/r scaling makes updates rank-invariant in magnitude
+    summary: Under standard initialisation, scaling by α/r keeps the expected size of the update independent of r, so the learning rate need not be retuned per rank.
+    proved: true
+    tags: [scaling, hyperparameters]
+  - id: eckart-young
+    kind: theorem
+    title: Eckart–Young–Mirsky
+    summary: The best rank-r approximation in Frobenius or spectral norm is given by truncating the SVD, with error determined by the discarded singular values.
+    proved: true
+    tags: [svd, approximation, optimality]
+  - id: intrinsic-dim-hypothesis
+    kind: conjecture
+    title: The low-rank update hypothesis
+    summary: That the weight change required to adapt a pretrained model to a downstream task is well approximated by a low-rank matrix — assumed by LoRA, supported empirically, not proved.
+    proved: false
+    tags: [hypothesis, intrinsic dimension]
+references:
+  - key: hu-lora
+    title: 'LoRA: Low-Rank Adaptation of Large Language Models'
+    authors: E. Hu et al.
+    year: 2021
+    kind: paper
+    url: https://arxiv.org/abs/2106.09685
+  - key: aghajanyan-intrinsic
+    title: Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning
+    authors: A. Aghajanyan, L. Zettlemoyer, S. Gupta
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2012.13255
+  - key: dettmers-qlora
+    title: 'QLoRA: Efficient Finetuning of Quantized LLMs'
+    authors: T. Dettmers et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2305.14314
+---
+
+<Intuition>
+Full fine-tuning updates every weight, so it needs optimizer state for every weight — for a 7B model
+in mixed-precision Adam that is over 100 GB before a single activation is stored. But the *change*
+needed to specialise an already-capable model to a narrow task is plausibly far simpler than the
+model itself. LoRA takes that intuition literally: constrain the update to have low rank, and train
+only its two thin factors.
+</Intuition>
+
+## The parameterisation
+
+<Definition id="lora-def" title="Low-rank adapter">
+For a frozen pretrained matrix $W_0 \in \R^{d\times k}$, a rank-$r$ adapter replaces it with
+$$
+W = W_0 + \frac{\alpha}{r} BA,
+\qquad B \in \R^{d\times r},\quad A \in \R^{r\times k},\quad r \ll \min(d,k),
+$$
+where $A$ and $B$ are trained and $W_0$ is not. The scalar $\alpha$ is a fixed hyperparameter.
+</Definition>
+
+<Claim kind="proposition" id="lora-param-count" title="Trainable parameter count">
+The adapter has $r(d+k)$ trainable parameters against $dk$ for the full matrix, a reduction factor of
+$$
+\frac{dk}{r(d+k)}.
+$$
+For a square matrix $d = k$ this is $d/(2r)$.
+</Claim>
+
+<Proof>
+$B$ contributes $dr$ entries and $A$ contributes $rk$, totalling $r(d+k)$; the full matrix has $dk$.
+The ratio follows, and at $d=k$ it is $d^2/(2rd) = d/(2r)$. $\blacksquare$
+</Proof>
+
+<Details summary="What this is worth in practice">
+A Llama-2-7B attention projection has $d = k = 4096$. At $r = 8$ the adapter trains
+$8\cdot 8192 = 65{,}536$ parameters instead of $16.8$ million — a $256\times$ reduction, matching
+$d/(2r) = 4096/16$.
+
+The saving that matters is not the parameter count itself but the **optimizer state**. Mixed-precision
+Adam carries roughly 16 bytes per *trainable* parameter (fp32 master weights, two moment estimates,
+and the fp16 gradient). Frozen weights need none of it. That is why a model that cannot be
+fine-tuned on a single 80 GB card can be LoRA-tuned on one comfortably — and why QLoRA, which also
+holds $W_0$ in 4-bit, pushes it further still.
+</Details>
+
+## Why $B$ starts at zero
+
+<Claim kind="proposition" id="lora-zero-init" title="Zero initialisation preserves the pretrained function">
+Initialise $B = 0$ and $A$ with i.i.d. entries of variance $\sigma^2 &gt; 0$. Then at initialisation
+$W = W_0$, so the adapted network computes exactly the pretrained function; yet the gradient with
+respect to $B$ is generally non-zero, so training is not stuck.
+</Claim>
+
+<Proof>
+With $B = 0$ we have $BA = 0$ and hence $W = W_0$, giving the first claim.
+
+For the second, let $\mathcal L$ be the loss and $G = \partial\mathcal L/\partial W \in \R^{d\times k}$
+the gradient with respect to the effective matrix. By the chain rule through $W = W_0 + \frac\alpha r BA$,
+$$
+\frac{\partial \mathcal L}{\partial B} = \frac{\alpha}{r}\,G A^\top,
+\qquad
+\frac{\partial \mathcal L}{\partial A} = \frac{\alpha}{r}\,B^\top G .
+$$
+At initialisation the second vanishes because $B=0$, but the first is $\frac\alpha r GA^\top$, which
+is non-zero whenever $G \ne 0$ and $A$ has full row rank — an event of probability one for a
+continuous initialisation. So $B$ moves off zero at the first step, after which $A$ receives gradient
+too. $\blacksquare$
+</Proof>
+
+<KeyIdea>
+The asymmetry is the point. Initialising *both* factors at zero would leave both gradients zero, a
+genuine stationary point. Initialising both randomly would perturb the pretrained function before any
+learning, discarding some of what you are paying to keep. Exactly one factor at zero gives you the
+pretrained function at step zero *and* a live gradient.
+</KeyIdea>
+
+## The $\alpha/r$ scaling
+
+<Claim kind="proposition" id="lora-scaling" title="The α/r scaling makes updates rank-invariant in magnitude">
+Let $B$ and $A$ have i.i.d. mean-zero entries with variances $\sigma_B^2$ and $\sigma_A^2$
+respectively, independent of each other. Then
+$$
+\E\left[\left\|\frac{\alpha}{r}BA\right\|_F^2\right] = \frac{\alpha^2}{r}\,dk\,\sigma_B^2\sigma_A^2 ,
+$$
+so the expected squared magnitude falls as $1/r$ rather than growing linearly with $r$ as it would
+without the scaling.
+</Claim>
+
+<Proof>
+Write $M = BA$, so $M_{ij} = \sum_{t=1}^r B_{it}A_{tj}$. The summands are independent and mean zero,
+so
+$$
+\E\big[M_{ij}^2\big] = \sum_{t=1}^r \E\big[B_{it}^2\big]\E\big[A_{tj}^2\big] = r\,\sigma_B^2\sigma_A^2 ,
+$$
+the cross terms vanishing by independence and zero mean. Summing over the $dk$ entries,
+$\E\|M\|_F^2 = dk\,r\,\sigma_B^2\sigma_A^2$. Multiplying by the scale factor $(\alpha/r)^2$ gives
+$$
+\E\left\|\tfrac{\alpha}{r}M\right\|_F^2 = \frac{\alpha^2}{r^2}\cdot dk\,r\,\sigma_B^2\sigma_A^2
+= \frac{\alpha^2 dk\,\sigma_B^2\sigma_A^2}{r}. \qquad\blacksquare
+$$
+</Proof>
+
+<Note>
+The practical consequence is the one the original work claims: sweeping $r$ does not require
+re-tuning the learning rate, because $\alpha/r$ absorbs the rank dependence. The proposition
+describes magnitudes *at initialisation* under an idealised i.i.d. model; it says nothing about the
+scale of the learned update after training, and the common report that $\alpha = 2r$ works well
+across ranks is an empirical convention rather than a consequence of this calculation.
+</Note>
+
+## What a rank constraint can and cannot represent
+
+<Claim kind="theorem" id="eckart-young" title="Eckart–Young–Mirsky">
+Let $M \in \R^{d\times k}$ have singular values $\sigma_1 \ge \sigma_2 \ge \cdots \ge \sigma_{\min(d,k)}$
+and SVD $M = \sum_i \sigma_i u_i v_i^\top$. Then for any $r$, the truncation
+$M_r = \sum_{i\le r}\sigma_i u_iv_i^\top$ satisfies
+$$
+\min_{\operatorname{rank}(N)\le r}\|M - N\|_F^2 = \|M-M_r\|_F^2 = \sum_{i&gt;r}\sigma_i^2,
+$$
+and the analogous statement in spectral norm with value $\sigma_{r+1}$.
+</Claim>
+
+<Proof>
+We prove the Frobenius case. Let $N$ have rank at most $r$. The Frobenius norm is unitarily
+invariant, so writing $M = U\Sigma V^\top$ and $\tilde N = U^\top N V$ (which still has rank at most
+$r$), we have $\|M-N\|_F = \|\Sigma - \tilde N\|_F$. It therefore suffices to minimise over rank-$r$
+matrices $\tilde N$ against the diagonal $\Sigma$.
+
+By the Weyl inequalities for singular values, for any matrices $P,Q$,
+$\sigma_{i+j-1}(P+Q) \le \sigma_i(P) + \sigma_j(Q)$. Apply this with $P = M - N$, $Q = N$, $j = r+1$:
+since $\operatorname{rank} N \le r$ we have $\sigma_{r+1}(N) = 0$, giving
+$$
+\sigma_{i+r}(M) \ \le\ \sigma_i(M-N) \qquad \text{for all } i \ge 1 .
+$$
+Hence
+$$
+\|M-N\|_F^2 = \sum_{i\ge1}\sigma_i(M-N)^2 \ \ge\ \sum_{i\ge1}\sigma_{i+r}(M)^2 = \sum_{i&gt;r}\sigma_i(M)^2 .
+$$
+The truncation $M_r$ attains this value, since $M - M_r = \sum_{i&gt;r}\sigma_iu_iv_i^\top$ has
+singular values exactly $\sigma_{r+1},\sigma_{r+2},\dots$. $\blacksquare$
+</Proof>
+
+<KeyIdea>
+Eckart–Young tells you *the price of a rank budget, given the matrix*: it is the tail of the singular
+value spectrum. So LoRA at rank $r$ can represent the ideal full fine-tuning update well **exactly
+when that update has rapidly decaying singular values**. The theorem converts the question "is LoRA
+enough?" into an empirical question about a spectrum — and notice that it does not answer it.
+</KeyIdea>
+
+## The hypothesis underneath
+
+<Claim kind="conjecture" id="intrinsic-dim-hypothesis" title="The low-rank update hypothesis">
+For a pretrained model of sufficient capability and a downstream task in its neighbourhood, there
+exists a weight update $\Delta W^\star$ achieving near-full-fine-tuning performance whose singular
+values decay fast enough that $\operatorname{rank}_\eps(\Delta W^\star) \ll \min(d,k)$.
+</Claim>
+
+<Warning>
+This is the load-bearing assumption of every low-rank adaptation method, and it is **not** a theorem.
+What exists is evidence:
+- Measurements that fine-tuning reaches strong performance when optimisation is confined to a random
+  low-dimensional subspace, with the required dimension shrinking as pretrained models get better.
+- Direct reports that LoRA at modest rank matches full fine-tuning on many downstream tasks.
+- Observations that the spectrum of measured $\Delta W$ from full fine-tuning does decay quickly.
+
+What does not exist is a proof, a characterisation of which tasks satisfy it, or a way to predict the
+needed rank before training. There are also documented failure cases — notably when fine-tuning must
+inject substantial *new knowledge* rather than re-weight existing capability, where reported gaps to
+full fine-tuning are larger. Treat "LoRA is as good as full fine-tuning" as a claim with a scope that
+has to be checked per task, not as an established fact.
+</Warning>
+
+<Details summary="Merging, and why it is free at inference">
+Because the adapter is additive and the scaling is a constant, after training you may form
+$$
+W_{\text{merged}} = W_0 + \frac{\alpha}{r}BA
+$$
+once and discard $A$ and $B$. Inference then costs exactly what the original model cost — no extra
+matrices, no extra latency. This is a genuine advantage over adapter layers inserted into the
+residual stream, which add sequential work at every forward pass.
+
+The corresponding cost: merged adapters cannot be swapped per request. Serving many tasks from one
+base model means keeping them unmerged and paying a small per-token overhead, which is the trade
+made by multi-adapter serving systems.
+</Details>
+
+<NotSaid>
+Rank is not the only thing that matters. *Which* matrices carry adapters — attention projections
+only, or the MLP too — changes results substantially and is not addressed by anything above. The
+propositions here concern a single matrix in isolation; the composition of many adapted layers, and
+the interaction with a frozen quantized base as in QLoRA, are outside what has been proved here.
+</NotSaid>

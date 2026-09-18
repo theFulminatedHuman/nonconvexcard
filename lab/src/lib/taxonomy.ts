@@ -23,13 +23,23 @@ export const FIELD_SLUGS = [
   'deep-learning',
   'deep-learning-theory',
   'llm',
+  'finetuning',
+  'quantization',
+  'llm-ops',
   'rag',
+  'agents',
 ] as const;
 
 export type FieldSlug = (typeof FIELD_SLUGS)[number];
 
 /** Coarse grouping used by the sidebar. */
-export type FieldGroup = 'Foundations' | 'Probability' | 'Optimization' | 'Theory' | 'Models';
+export type FieldGroup =
+  | 'Foundations'
+  | 'Probability'
+  | 'Optimization'
+  | 'Theory'
+  | 'Models'
+  | 'Systems';
 
 export interface FieldMeta {
   readonly slug: FieldSlug;
@@ -160,6 +170,33 @@ export const FIELDS: Readonly<Record<FieldSlug, FieldMeta>> = {
       'Autoregressive factorisation, cross-entropy, attention at scale, preference optimisation and scaling laws.',
     requires: ['deep-learning'],
   },
+  finetuning: {
+    slug: 'finetuning',
+    title: 'Fine-Tuning Mathematics',
+    short: 'Fine-Tuning',
+    group: 'Models',
+    blurb:
+      'Adapting a pretrained model: the low-rank hypothesis behind LoRA, the memory arithmetic that decides what fits on your GPU, and what is actually known about forgetting.',
+    requires: ['llm', 'optimization'],
+  },
+  quantization: {
+    slug: 'quantization',
+    title: 'Quantization Mathematics',
+    short: 'Quantization',
+    group: 'Systems',
+    blurb:
+      'Number formats, rounding error and its propagation, the Hessian-weighted objective behind GPTQ, and why a handful of outlier features breaks naive INT8.',
+    requires: ['deep-learning', 'foundations'],
+  },
+  'llm-ops': {
+    slug: 'llm-ops',
+    title: 'LLM Ops & Inference Mathematics',
+    short: 'LLM Ops',
+    group: 'Systems',
+    blurb:
+      'Serving arithmetic: arithmetic intensity and the roofline, KV-cache growth, batching and queueing, and the acceptance algebra of speculative decoding.',
+    requires: ['llm'],
+  },
   rag: {
     slug: 'rag',
     title: 'RAG Mathematics',
@@ -169,6 +206,15 @@ export const FIELDS: Readonly<Record<FieldSlug, FieldMeta>> = {
       'Embeddings, similarity geometry, approximate nearest-neighbour search, and retrieval as a latent-variable model.',
     requires: ['llm', 'high-dimensional-probability'],
   },
+  agents: {
+    slug: 'agents',
+    title: 'Agentic AI Mathematics',
+    short: 'Agents',
+    group: 'Models',
+    blurb:
+      'Tool-using agents as decision processes: how per-step error compounds over a trajectory, the bandit view of tool selection, and what inference-time search buys.',
+    requires: ['llm', 'rag'],
+  },
 };
 
 export const FIELD_GROUPS: readonly FieldGroup[] = [
@@ -177,6 +223,7 @@ export const FIELD_GROUPS: readonly FieldGroup[] = [
   'Optimization',
   'Theory',
   'Models',
+  'Systems',
 ];
 
 export function fieldsInGroup(group: FieldGroup): FieldMeta[] {

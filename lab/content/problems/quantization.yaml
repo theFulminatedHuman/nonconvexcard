@@ -1,0 +1,560 @@
+defaults:
+  field: quantization
+problems:
+  - id: q-affine-roundtrip
+    title: The round-trip error bound
+    topic: quantization/uniform-quantization-and-error
+    difficulty: foundation
+    type: proof
+    estimated_time: 15m
+    tags: [rounding, bound]
+    statement: |
+      Prove that an affine quantizer with step $\Delta$ satisfies $|\widehat x - x| \le \Delta/2$ for
+      every unclipped $x$, and show the bound is attained. Then show that the bound fails, and by how
+      much, when $x$ lies outside the clipping range.
+    solution: |
+      **Bound.** Without clamping, $\widehat x = \Delta\operatorname{round}(x/\Delta)$. Rounding to
+      the nearest integer satisfies $|\operatorname{round}(u) - u| \le 1/2$ for all real $u$; applying
+      this at $u = x/\Delta$ and multiplying by $\Delta > 0$ gives $|\widehat x - x|\le \Delta/2$.
+
+      **Attained.** Take $x = \Delta/2$. Then $x/\Delta = 1/2$, which rounds to either $0$ or $1$
+      depending on the tie rule; with round-half-to-even it rounds to $0$, giving
+      $\widehat x = 0$ and $|\widehat x - x| = \Delta/2$ exactly.
+
+      **Outside the range.** If $x > \beta$ the output is clamped to $\beta$, so the error is
+      $|\widehat x - x| = x - \beta$, which is unbounded in $x$. There is no uniform bound at all
+      outside the clipping interval — the error grows linearly with how far out the value lies.
+
+      This asymmetry is the reason clipping is treated separately from rounding in every error
+      analysis: rounding error is uniformly bounded and clipping error is not.
+
+  - id: q-noise-variance
+    title: The Δ²/12 noise variance
+    topic: quantization/uniform-quantization-and-error
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [variance, uniform, noise model]
+    statement: |
+      1. Prove that a uniform random variable on $[-\Delta/2,\Delta/2]$ has variance $\Delta^2/12$.
+      2. Prove that if $X$ is uniform on a single quantization cell then the error is exactly uniform.
+      3. Give an explicit distribution for $X$ for which the error has variance strictly greater than
+         $\Delta^2/12$, and one for which it is zero.
+    solution: |
+      **1.** For $E \sim \mathrm{Unif}[-a,a]$ the mean is $0$ by symmetry, and
+      $$
+      \Var(E) = \E[E^2] = \frac{1}{2a}\int_{-a}^{a}u^2\,du = \frac{1}{2a}\cdot\frac{2a^3}{3} = \frac{a^2}{3}.
+      $$
+      At $a = \Delta/2$ this is $\Delta^2/12$.
+
+      **2.** On the cell rounding to $k\Delta$ we have $\widehat X = k\Delta$ identically, so
+      $E = k\Delta - X$. This is an affine function of $X$ with slope $-1$, and an affine image of a
+      uniform variable is uniform; as $X$ ranges over
+      $[(k-\tfrac12)\Delta, (k+\tfrac12)\Delta]$, $E$ ranges over $[-\Delta/2,\Delta/2]$.
+
+      **3. Two extremes.**
+
+      *Variance zero:* let $X = 0$ almost surely. Then $\widehat X = 0$ and $E \equiv 0$. More
+      generally any $X$ supported on the grid gives $E \equiv 0$.
+
+      *Variance strictly greater:* let $X$ take the values $\pm\Delta/2$ with probability $1/2$ each,
+      with the tie rule rounding both to the same side, say $X = \Delta/2 \mapsto 0$ and
+      $X = -\Delta/2 \mapsto 0$. Then $E = \mp\Delta/2$ with probability $1/2$ each, so
+      $$
+      \Var(E) = \E[E^2] = \frac{\Delta^2}{4} \;>\; \frac{\Delta^2}{12}.
+      $$
+
+      **What this establishes.** The variance $\Delta^2/12$ is neither an upper nor a lower bound on
+      the true error variance — it is the value under one particular distributional assumption, and
+      real inputs can land on either side of it. That is exactly why the additive-noise model is
+      labelled a heuristic rather than a theorem.
+
+  - id: q-sqnr
+    title: Six decibels per bit, and what outliers cost
+    topic: quantization/uniform-quantization-and-error
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [sqnr, loading factor, outliers]
+    statement: |
+      1. Compute SQNR for a symmetric 8-bit quantizer with loading factor $A/\sigma = 4$.
+      2. Repeat at 4 bits with the same loading factor.
+      3. A tensor has one value at $50\sigma$. Compute the SQNR at 8 bits when $A$ is set to the
+         maximum, and state how many bits are effectively wasted.
+    solution: |
+      Use $\mathrm{SQNR_{dB}} = 6.02b + 4.77 - 20\log_{10}(A/\sigma)$.
+
+      **1.** $b=8$, $A/\sigma = 4$: $20\log_{10}4 = 12.04$, so
+      $$
+      \mathrm{SQNR} = 48.16 + 4.77 - 12.04 = \mathbf{40.9\ dB}.
+      $$
+
+      **2.** $b=4$: $24.08 + 4.77 - 12.04 = \mathbf{16.8\ dB}$. The drop is $24.1$ dB, i.e.
+      $4 \times 6.02$ — exactly four bits' worth, as the rule predicts.
+
+      **3.** With $A/\sigma = 50$: $20\log_{10}50 = 33.98$, so
+      $$
+      \mathrm{SQNR} = 48.16 + 4.77 - 33.98 = \mathbf{18.9\ dB}.
+      $$
+
+      Compared with the well-scaled case in part 1, the single outlier costs $40.9 - 18.9 = 22$ dB,
+      which at $6.02$ dB per bit is
+      $$
+      \frac{22}{6.02} \approx \mathbf{3.7\ bits}.
+      $$
+      Equivalently, $\log_2(50/4) = 3.64$ bits — the loading-factor ratio expressed directly.
+
+      An 8-bit quantizer scaled by one extreme value performs like a 4-bit one on everything else.
+      That single observation motivates per-channel scaling, percentile clipping, and every outlier
+      handling technique in the literature.
+
+  - id: q-outlier-bits
+    title: Effective bits lost to dynamic range
+    topic: quantization/outliers-and-scaling
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [outliers, effective bits, granularity]
+    statement: |
+      A hidden state of 4096 channels has median absolute value $0.5$ and a maximum of $35$.
+
+      1. Compute the effective bits for typical values under per-tensor 8-bit quantization.
+      2. Suppose outliers are confined to 16 known channels. Compute the effective bits for the
+         remaining 4080 channels under per-channel quantization, assuming each has max $\approx 1.5$.
+      3. Compute the memory overhead of per-channel FP16 scales as a fraction of the quantized tensor.
+    solution: |
+      **1. Per-tensor.** $R = 35/0.5 = 70$, so
+      $$
+      b_{\text{eff}} = 8 - \log_2 70 = 8 - 6.13 = \mathbf{1.87\ bits}.
+      $$
+      An 8-bit quantizer behaving like a sub-2-bit one. This is why naive per-tensor INT8 activation
+      quantization of a large model fails outright.
+
+      **2. Per-channel, outliers isolated.** For the ordinary channels $R = 1.5/0.5 = 3$, so
+      $$
+      b_{\text{eff}} = 8 - \log_2 3 = 8 - 1.58 = \mathbf{6.42\ bits}.
+      $$
+      The 16 outlier channels keep their own wide scales and lose precision individually, but they no
+      longer contaminate the other 4080.
+
+      **3. Scale overhead.** One FP16 scale per channel is 16 bits per 4096 values... but note the
+      scale is per channel *across the token dimension*, so per activation matrix of shape
+      $S \times 4096$ there are 4096 scales. As a fraction of the INT8 data
+      $8 \times S \times 4096$ bits:
+      $$
+      \frac{16\times4096}{8\times S\times 4096} = \frac{2}{S}.
+      $$
+      At $S = 512$ that is $0.4\%$ — negligible. At $S = 1$ (single-token decode) it is $200\%$,
+      which is a real consideration for the decode path and an argument for keeping scales static
+      rather than recomputing them per token.
+
+  - id: q-group-overhead
+    title: The true bit width of a group-quantized format
+    topic: quantization/uniform-quantization-and-error
+    difficulty: foundation
+    type: numerical
+    estimated_time: 15m
+    tags: [group quantization, overhead, honesty]
+    statement: |
+      A "4-bit" weight format stores one FP16 scale and one FP16 zero point per group of $g$ weights.
+      Compute the true average bits per weight for $g = 32, 64, 128$, and for a variant storing only a
+      scale. Comment on what this means for comparing published compression ratios.
+    solution: |
+      Each group stores $4g$ bits of weights plus the metadata.
+
+      **Scale and zero point (32 bits per group).**
+      $$
+      b_{\text{true}} = 4 + \frac{32}{g}.
+      $$
+
+      | $g$ | bits/weight | overhead |
+      | --- | --- | --- |
+      | 32 | 5.00 | 25% |
+      | 64 | 4.50 | 12.5% |
+      | 128 | 4.25 | 6.25% |
+
+      **Scale only (16 bits per group), i.e. symmetric quantization.**
+      $$
+      b_{\text{true}} = 4 + \frac{16}{g}: \qquad 4.50,\ 4.25,\ 4.125 \text{ bits}.
+      $$
+
+      **What it means for comparisons.** A method quoting "4-bit" at $g=32$ with asymmetric
+      quantization is really using 5 bits — 25% more memory than a method quoting "4-bit" at $g=128$
+      symmetric (4.125 bits). Comparing their accuracies without normalising for this is comparing
+      two different budgets.
+
+      The correct way to compare quantization methods is at matched *true* bits per weight, and the
+      correct way to report one is to state $g$ and the metadata format. A claimed accuracy advantage
+      that disappears under this normalisation is not an advantage.
+
+  - id: q-clip-optimal
+    title: Optimal clipping for a Laplace-distributed tensor
+    topic: quantization/uniform-quantization-and-error
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [clipping, mse, optimisation, laplace]
+    statement: |
+      Let $X$ have the Laplace density $f(x) = \frac{1}{2\lambda}e^{-|x|/\lambda}$, quantized with $b$
+      bits over $[-A,A]$.
+
+      1. Compute the clipping term $2\int_A^\infty (x-A)^2 f(x)\,dx$ in closed form.
+      2. Write the total MSE, treating $\P(|X|\le A)\approx1$, and derive the stationarity condition
+         for the optimal $A$.
+      3. Solve numerically for $b = 4$ and $b = 8$ with $\lambda = 1$, and comment on how the optimal
+         loading factor moves with $b$.
+    hints:
+      - |
+        For the integral, substitute $u = x - A$ and use $\int_0^\infty u^2 e^{-u/\lambda}du = 2\lambda^3$.
+      - |
+        The rounding term is $A^2/(3\cdot2^{2b})$; differentiate the sum in $A$ and set to zero.
+    solution: |
+      **1. The clipping term.** Substituting $u = x-A$ and using
+      $f(x) = \frac{1}{2\lambda}e^{-x/\lambda}$ for $x>0$:
+      $$
+      2\int_A^\infty (x-A)^2 f(x)\,dx = \frac{1}{\lambda}\int_0^\infty u^2 e^{-(u+A)/\lambda}\,du
+      = \frac{e^{-A/\lambda}}{\lambda}\int_0^\infty u^2 e^{-u/\lambda}\,du .
+      $$
+      Since $\int_0^\infty u^2 e^{-u/\lambda}du = 2\lambda^3$, the clipping term is
+      $$
+      C(A) = 2\lambda^2 e^{-A/\lambda}.
+      $$
+
+      **2. Total MSE and stationarity.** With the rounding term
+      $R(A) = A^2/(3\cdot 2^{2b})$,
+      $$
+      \mathrm{MSE}(A) = \frac{A^2}{3\cdot2^{2b}} + 2\lambda^2 e^{-A/\lambda}.
+      $$
+      Differentiating,
+      $$
+      \mathrm{MSE}'(A) = \frac{2A}{3\cdot2^{2b}} - 2\lambda e^{-A/\lambda} = 0
+      \quad\Longleftrightarrow\quad
+      A\,e^{A/\lambda} = 3\lambda\,2^{2b}.
+      $$
+      The left side is strictly increasing from $0$ to $\infty$ on $A>0$, so the root is unique; and
+      $\mathrm{MSE}''(A) = 2/(3\cdot2^{2b}) + 2e^{-A/\lambda} > 0$ everywhere, so it is the global
+      minimum.
+
+      **3. Numerical solutions ($\lambda = 1$).** Solve $Ae^{A} = 3\cdot2^{2b}$.
+
+      *$b=4$:* right side $= 3\times256 = 768$. Trying $A=5$: $5e^5 = 742$; $A=5.03$: $766$;
+      $A \approx \mathbf{5.04}$.
+
+      *$b=8$:* right side $= 3\times65536 = 196{,}608$. Trying $A=9.9$: $9.9e^{9.9} = 1.98\times10^5$;
+      so $A \approx \mathbf{9.90}$.
+
+      Since the Laplace standard deviation is $\sigma = \lambda\sqrt2 = 1.414$, the optimal loading
+      factors are
+      $$
+      b=4:\ A/\sigma = 3.56, \qquad b=8:\ A/\sigma = 7.00.
+      $$
+
+      **How it moves.** The optimal loading factor *grows* with $b$, but only logarithmically — the
+      equation $Ae^{A} = 3\lambda2^{2b}$ gives $A \approx \lambda\big(2b\ln 2 + \ln(3\lambda) - \ln A\big)$,
+      so roughly $A \propto b$.
+
+      The practical reading: at low bit widths you should clip aggressively, accepting real clipping
+      error to protect resolution; at high bit widths you can afford a wide range. Using the same
+      percentile threshold at 4 bits and 8 bits is therefore wrong in a predictable direction.
+
+  - id: q-obs-derivation
+    title: Derive the optimal weight update
+    topic: quantization/hessian-aware-rounding
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [lagrange, obs, closed form, kkt]
+    statement: |
+      Let $H \succ 0$ and fix coordinate $q$ of $w$ to $\operatorname{quant}(w_q)$.
+
+      1. Derive the error-minimising $\delta$ from the KKT conditions, stating where positive
+         definiteness is used.
+      2. Derive the incurred error $\mathcal E_q$.
+      3. Show that if $H$ is diagonal, the optimal update touches no other coordinate — so
+         round-to-nearest is optimal exactly in that case.
+    solution: |
+      **1. The update.** Minimise $\tfrac12\delta^\top H\delta$ subject to $e_q^\top\delta = c$ where
+      $c = \operatorname{quant}(w_q)-w_q$. The Lagrangian is
+      $\mathcal L = \tfrac12\delta^\top H\delta + \lambda(e_q^\top\delta - c)$, with stationarity
+      $$
+      H\delta + \lambda e_q = 0 \quad\Longrightarrow\quad \delta = -\lambda H^{-1}e_q .
+      $$
+      *Positive definiteness is used twice:* to invert $H$ here, and to guarantee the objective is
+      strictly convex so that the stationary point is the unique global minimiser rather than a
+      saddle. Imposing the constraint,
+      $$
+      e_q^\top\delta = -\lambda\big[H^{-1}\big]_{qq} = c
+      \quad\Longrightarrow\quad
+      \lambda = -\frac{c}{[H^{-1}]_{qq}},
+      $$
+      well defined since $[H^{-1}]_{qq} = e_q^\top H^{-1}e_q > 0$ for $H^{-1}\succ0$. Hence
+      $$
+      \delta^\star = \frac{c}{[H^{-1}]_{qq}}H^{-1}e_q = -\frac{w_q-\operatorname{quant}(w_q)}{[H^{-1}]_{qq}}\,H^{-1}e_q .
+      $$
+
+      **2. The error.**
+      $$
+      \mathcal E_q = \tfrac12(\delta^\star)^\top H\delta^\star
+      = \tfrac12\lambda^2\,e_q^\top H^{-1}HH^{-1}e_q
+      = \tfrac12\lambda^2\big[H^{-1}\big]_{qq}
+      = \frac{\big(w_q-\operatorname{quant}(w_q)\big)^2}{2\big[H^{-1}\big]_{qq}} .
+      $$
+
+      **3. Diagonal $H$.** If $H = \operatorname{diag}(h_1,\dots,h_d)$ then
+      $H^{-1} = \operatorname{diag}(1/h_1,\dots,1/h_d)$, so $H^{-1}e_q = e_q/h_q$ and
+      $$
+      \delta^\star = -\frac{c'}{1/h_q}\cdot\frac{e_q}{h_q} = -c'\,e_q, \qquad c' = w_q - \operatorname{quant}(w_q),
+      $$
+      which is supported on coordinate $q$ alone. No other weight moves, so the procedure reduces
+      exactly to independent round-to-nearest.
+
+      **Interpretation.** $H = 2XX^\top$ is diagonal precisely when the input features are
+      uncorrelated. So the entire benefit of Hessian-aware rounding comes from input correlation, and
+      a method that ignores correlation is implicitly assuming it away. Transformer activations are
+      strongly correlated across channels, which is why the correction matters there.
+
+  - id: q-inverse-deletion
+    title: The rank-one inverse update
+    topic: quantization/hessian-aware-rounding
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [block inverse, schur complement, linear algebra]
+    statement: |
+      Prove that for $H\succ0$ with coordinate $q$ removed,
+      $$
+      (H_{-q})^{-1} = \Big[H^{-1} - \tfrac{1}{[H^{-1}]_{qq}}H^{-1}e_qe_q^\top H^{-1}\Big]_{-q},
+      $$
+      and explain why this makes a full sweep cost one inversion rather than $d$.
+    hints:
+      - |
+        Permute $q$ to the last index and write $H$ in $2\times2$ block form.
+      - |
+        Use the block inverse formula with Schur complement $s = c - b^\top A^{-1}b$, then read off the entries the identity refers to.
+    solution: |
+      **Setup.** Permute so $q$ is last:
+      $$
+      H = \begin{pmatrix} A & b\\ b^\top & c\end{pmatrix}, \qquad A = H_{-q} \succ 0,\ c \in \R .
+      $$
+      Let $s = c - b^\top A^{-1}b$ be the Schur complement, which is positive because $H \succ 0$.
+
+      **Block inverse.**
+      $$
+      H^{-1} = \begin{pmatrix}
+      A^{-1} + \dfrac{A^{-1}bb^\top A^{-1}}{s} & -\dfrac{A^{-1}b}{s}\\[8pt]
+      -\dfrac{b^\top A^{-1}}{s} & \dfrac1s
+      \end{pmatrix}.
+      $$
+      Reading off: $[H^{-1}]_{qq} = 1/s$, and the leading block of the column $H^{-1}e_q$ is
+      $-A^{-1}b/s$.
+
+      **Compute the correction.** The rank-one term restricted to the leading block is
+      $$
+      \frac{1}{[H^{-1}]_{qq}}\big(H^{-1}e_q\big)\big(e_q^\top H^{-1}\big)\bigg|_{\text{lead}}
+      = s\left(-\frac{A^{-1}b}{s}\right)\left(-\frac{b^\top A^{-1}}{s}\right)
+      = \frac{A^{-1}bb^\top A^{-1}}{s}.
+      $$
+      Subtracting this from the leading block of $H^{-1}$:
+      $$
+      \left(A^{-1} + \frac{A^{-1}bb^\top A^{-1}}{s}\right) - \frac{A^{-1}bb^\top A^{-1}}{s} = A^{-1} = (H_{-q})^{-1},
+      $$
+      which is the claim after deleting row and column $q$. $\blacksquare$
+
+      **Why it saves an order.** A naive implementation would, at each of the $d$ steps, invert the
+      Hessian restricted to the remaining coordinates — $O(d^3)$ each, $O(d^4)$ total per row. The
+      identity replaces each inversion with a rank-one correction costing $O(d^2)$, so the sweep is
+      $O(d^3)$ — the same as the single initial inversion.
+
+      Since the proposition on the layer-wise objective showed that all output rows share the same
+      $H$, that one inversion is also shared across every row of the layer, which is what makes the
+      method practical on matrices with thousands of rows.
+
+  - id: q-smoothquant-alpha
+    title: Migrating quantization difficulty
+    topic: quantization/outliers-and-scaling
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [smoothquant, scaling, migration]
+    statement: |
+      A channel $j$ has activation maximum $|X_j|_{\max} = 60$ and weight-row maximum
+      $|W_j|_{\max} = 0.1$. Typical channels have activation max $2$ and weight max $0.1$.
+
+      1. Compute the migration scale $s_j$ at $\alpha = 0.5$ and the resulting maxima.
+      2. Repeat at $\alpha = 0.75$.
+      3. Compute the activation and weight dynamic ranges before and after in each case, and say
+         which $\alpha$ you would choose given that weights are quantized per channel to INT8 and
+         activations per tensor to INT8.
+    solution: |
+      Use $s_j = |X_j|_{\max}^{\alpha}\,/\,|W_j|_{\max}^{1-\alpha}$, after which the activation
+      maximum becomes $|X_j|_{\max}/s_j$ and the weight maximum $s_j|W_j|_{\max}$.
+
+      **1. $\alpha = 0.5$.**
+      $$
+      s_j = \frac{60^{0.5}}{0.1^{0.5}} = \frac{7.746}{0.3162} = 24.49 .
+      $$
+      New activation max: $60/24.49 = \mathbf{2.45}$. New weight max:
+      $24.49\times0.1 = \mathbf{2.45}$. The two are equal — which is what $\alpha = 1/2$ does by
+      construction.
+
+      **2. $\alpha = 0.75$.**
+      $$
+      s_j = \frac{60^{0.75}}{0.1^{0.25}} = \frac{21.56}{0.5623} = 38.34 .
+      $$
+      New activation max: $60/38.34 = \mathbf{1.565}$. New weight max:
+      $38.34\times0.1 = \mathbf{3.83}$.
+
+      **3. Dynamic ranges.**
+
+      *Before:* activations span $60$ against a typical $2$, so the per-tensor activation range ratio
+      is $60/2 = 30$. Weights are uniform at $0.1$, ratio $1$.
+
+      *After, $\alpha=0.5$:* activation ratio $2.45/2 = 1.23$ — the outlier channel is now
+      comparable with the others. Weight ratio $2.45/0.1 = 24.5$ for that channel, but weights are
+      quantized **per channel**, so this channel simply gets its own larger scale and the others are
+      unaffected.
+
+      *After, $\alpha=0.75$:* activation ratio $1.565/2 = 0.78$ — the migrated channel is now
+      *smaller* than typical, so it no longer sets the per-tensor range at all. Weight ratio $38.3$
+      for that one channel, again isolated by per-channel scaling.
+
+      **Choice.** Given per-channel weights and per-tensor activations, the asymmetry favours pushing
+      harder: weight difficulty is absorbed for free by per-channel scales, whereas activation
+      difficulty is shared across the whole tensor. So $\alpha = 0.75$ is preferable here — it
+      removes the outlier's influence on the activation scale entirely, at a cost the weight
+      quantizer does not feel.
+
+      The general rule: choose $\alpha$ by which side has the finer quantization granularity. Equal
+      splitting ($\alpha=0.5$) is the right default only when both sides are quantized at the same
+      granularity.
+
+  - id: q-obs-cost
+    title: Which weight to quantize next
+    topic: quantization/hessian-aware-rounding
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [greedy, selection, ordering]
+    statement: |
+      Using $\mathcal E_q = (w_q-\operatorname{quant}(w_q))^2/(2[H^{-1}]_{qq})$:
+
+      1. Explain what large and small $[H^{-1}]_{qq}$ mean geometrically.
+      2. Show that a weight already on the quantization grid costs nothing, whatever the Hessian.
+      3. Construct a two-coordinate example where the greedy order and the reverse order give
+         different final errors, demonstrating that order matters.
+    solution: |
+      **1. Geometry of $[H^{-1}]_{qq}$.** For a quadratic $\tfrac12\delta^\top H\delta$, the quantity
+      $[H^{-1}]_{qq}$ is the variance of coordinate $q$ under the Gaussian $\mathcal N(0, H^{-1})$
+      whose log-density is that quadratic. So:
+      - **Large** $[H^{-1}]_{qq}$: the objective is *flat* along coordinate $q$ once other
+        coordinates are free to compensate; perturbing $w_q$ is cheap. The denominator is large, so
+        $\mathcal E_q$ is small.
+      - **Small** $[H^{-1}]_{qq}$: the objective rises sharply in that direction even after optimal
+        compensation; the coordinate is load-bearing, and quantizing it is expensive.
+
+      Note this is *not* the same as $H_{qq}$ being large or small — $[H^{-1}]_{qq} \ge 1/H_{qq}$,
+      with equality iff coordinate $q$ is uncorrelated with the rest. The inverse diagonal measures
+      cost *after* the other weights have absorbed what they can.
+
+      **2. On-grid weights are free.** If $w_q$ is already a grid point then
+      $\operatorname{quant}(w_q) = w_q$, so the numerator
+      $(w_q-\operatorname{quant}(w_q))^2 = 0$ and $\mathcal E_q = 0$ for any $[H^{-1}]_{qq} > 0$.
+      Correspondingly $\lambda = 0$ and $\delta^\star = 0$: nothing needs to move.
+
+      **3. Order dependence.** Take
+      $$
+      H = \begin{pmatrix}1 & 0.9\\ 0.9 & 1\end{pmatrix},
+      \qquad w = (0.5,\ 0.45),
+      $$
+      with grid $\lbrace 0, 1 \rbrace$ so $\operatorname{quant}$ rounds to the nearer of $0$ and $1$.
+
+      $H^{-1} = \frac{1}{0.19}\begin{pmatrix}1 & -0.9\\ -0.9 & 1\end{pmatrix}$, so
+      $[H^{-1}]_{11} = [H^{-1}]_{22} = 5.263$.
+
+      *Greedy first step:* residuals are $|0.5 - 0| = 0.5$ (a tie, resolved to $0$) and
+      $|0.45-0| = 0.45$. Costs are $0.5^2/(2\times5.263) = 0.0238$ and
+      $0.45^2/(2\times5.263) = 0.0192$. Greedy picks coordinate 2.
+
+      After fixing $w_2 \to 0$, the update moves $w_1$ by
+      $\delta_1 = -\frac{0.45}{5.263}\cdot[H^{-1}]_{12} = -\frac{0.45}{5.263}\cdot(-4.737) = +0.405$,
+      giving $w_1 \approx 0.905$, which now rounds to $1$ with residual only $0.095$ — a much cheaper
+      second step than it would have been.
+
+      *Reverse order:* fixing $w_1\to0$ first costs $0.0238$ and drags $w_2$ up to
+      $0.45 + 0.45 = 0.90$, which rounds to $1$ with residual $0.10$.
+
+      The two orders leave different final errors because the first decision changes which grid point
+      the second weight is near. This is exactly the order-dependence that the greedy criterion tries
+      to exploit — and that GPTQ gives up, on the empirical finding that for large layers a fixed
+      order costs little while permitting all rows to be processed together.
+
+  - id: q-implement-gptq
+    title: Implement Hessian-aware rounding
+    topic: quantization/hessian-aware-rounding
+    difficulty: advanced
+    type: coding
+    estimated_time: 1d
+    tags: [gptq, implementation, reconstruction error]
+    statement: |
+      Implement and evaluate layer-wise quantization.
+
+      1. Implement round-to-nearest and the Hessian-aware sweep for a single linear layer.
+      2. Compare reconstruction error $\|WX - \widehat WX\|_F$ on held-out activations across bit
+         widths.
+      3. Vary the input correlation and show the gap behaves as the theory predicts.
+      4. Demonstrate the numerical failure of naive repeated rank-one updates and fix it with Cholesky.
+    solution: |
+      ```python
+      import numpy as np
+
+      def quantize_grid(w, scale, levels):
+          q = np.clip(np.round(w / scale), -levels, levels - 1)
+          return q * scale
+
+      def rtn(W, scale, levels):
+          return quantize_grid(W, scale, levels)
+
+      def hessian_aware(W, X, bits=4, damp=0.01):
+          d = W.shape[1]
+          H = 2 * (X @ X.T)
+          H += damp * np.mean(np.diag(H)) * np.eye(d)
+          Hinv = np.linalg.inv(H)
+          Wq = W.copy().astype(float)
+          levels = 2 ** (bits - 1)
+          scale = np.max(np.abs(W), axis=1, keepdims=True) / levels
+          for q in range(d):
+              w_col = Wq[:, q].copy()
+              quant = quantize_grid(w_col, scale[:, 0], levels)
+              err = (w_col - quant) / Hinv[q, q]
+              Wq[:, q] = quant
+              if q + 1 < d:
+                  Wq[:, q+1:] -= np.outer(err, Hinv[q, q+1:])
+              Hinv = Hinv - np.outer(Hinv[:, q], Hinv[q, :]) / Hinv[q, q]
+              Hinv[q, :] = 0; Hinv[:, q] = 0; Hinv[q, q] = 1.0
+          return Wq
+      ```
+
+      **2. What to expect.** Plot reconstruction error against bits for both methods on *held-out*
+      activations — not the calibration set, or you are measuring overfitting to $H$. The gap should
+      be negligible at 8 bits (rounding residuals are tiny, so the correction has little to do) and
+      substantial at 3–4 bits.
+
+      **3. Correlation sweep.** Generate $X$ with covariance $\Sigma_\rho$ having off-diagonal
+      $\rho$, and plot the error ratio RTN/Hessian-aware against $\rho$. The two-coordinate
+      proposition predicts a factor around $1/\sqrt{1-\rho^2}$ in the idealised case; expect the
+      measured ratio to be 1 at $\rho=0$ and to grow with $|\rho|$. If it does not, your $H$ is being
+      estimated from too few samples — check that $n \gg d$ or that damping is not dominating.
+
+      **4. Numerical failure.** Run the loop above in float32 with small damping and track
+      $\min_q [H^{-1}]_{qq}$ across the sweep. You should see it approach zero or go negative, at
+      which point the updates explode. The fix is to avoid iterating the explicit inverse: compute
+      the Cholesky factor of $H^{-1}$ once in float64 and read the required rows off it, since with a
+      fixed elimination order the sequence of needed columns is known in advance. Verify that the
+      Cholesky version's reconstruction error is stable as damping decreases while the naive
+      version's diverges.
+
+      **Honest reporting.** Layer-wise reconstruction error is not end-task quality. If you evaluate
+      a full model, quantize layers sequentially feeding *quantized* activations forward, and report
+      perplexity on held-out text alongside the reconstruction numbers — the two can disagree.

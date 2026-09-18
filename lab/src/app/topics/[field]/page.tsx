@@ -1,9 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ProblemRow } from '@/components/problems/problem-row';
+import { ProblemTable } from '@/components/problems/problem-table';
 import {
-  Card,
   Chip,
   LinkCard,
   PageHeader,
@@ -119,15 +118,9 @@ export default async function FieldPage({ params }: { params: Promise<{ field: s
                   </Link>
                 }
               />
-              <Card>
-                <ul className="divide-y divide-[var(--color-line)]">
-                  {problems.slice(0, 12).map((p) => (
-                    <li key={p.id}>
-                      <ProblemRow problem={p} showTeaser={false} />
-                    </li>
-                  ))}
-                </ul>
-              </Card>
+              <div className="panel">
+                <ProblemTable problems={problems.slice(0, 12)} showField={false} />
+              </div>
             </section>
           ) : null}
         </div>

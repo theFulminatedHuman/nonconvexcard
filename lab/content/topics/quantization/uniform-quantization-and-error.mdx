@@ -1,0 +1,254 @@
+---
+title: Uniform Quantization and Its Error
+summary: Affine quantizers, the exact error bound, the additive-noise model that is not a theorem, and the clipping–resolution trade-off.
+field: quantization
+level: 2
+order: 10
+prerequisites:
+  - foundations/linear-algebra
+  - probability/expectation-and-conditioning
+tags: [quantization, rounding, sqnr, dynamic range, int8, fp8, nf4]
+estimated_time: 1h
+claims:
+  - id: affine-roundtrip
+    kind: proposition
+    title: Affine quantization round-trip error
+    summary: With step size Δ and no clipping, the dequantized value differs from the original by at most Δ/2, deterministically.
+    proved: true
+    tags: [rounding, bound]
+  - id: uniform-cell
+    kind: proposition
+    title: Exact error law on a single cell
+    summary: If the input is uniform on one quantization cell, the error is exactly uniform on [−Δ/2, Δ/2] with variance Δ²/12.
+    proved: true
+    tags: [uniform, variance]
+  - id: additive-noise-model
+    kind: heuristic
+    title: The additive white-noise model
+    summary: Treating quantization error as zero-mean noise of variance Δ²/12, independent of the signal, is an approximation that fails at low bit widths.
+    proved: false
+    tags: [noise model, approximation]
+  - id: six-db-rule
+    kind: proposition
+    title: Six decibels per bit
+    summary: Under the noise model, each additional bit adds 6.02 dB of signal-to-quantization-noise ratio.
+    proved: true
+    tags: [sqnr, bits]
+  - id: clip-tradeoff
+    kind: proposition
+    title: Clipping and resolution trade off
+    summary: Total distortion splits into a clipping term that decreases with range and a rounding term that grows with it, so an interior optimum exists.
+    proved: true
+    tags: [clipping, mse, tradeoff]
+references:
+  - key: gray-quantization
+    title: Quantization
+    authors: R. M. Gray, D. L. Neuhoff
+    year: 1998
+    kind: survey
+    url: https://doi.org/10.1109/18.720541
+    note: The standard reference for the theory, including when the additive-noise model is and is not valid.
+  - key: dettmers-int8
+    title: 'LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale'
+    authors: T. Dettmers et al.
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2208.07339
+---
+
+<Intuition>
+Quantization replaces a real number with the nearest point of a finite grid. Two things can go wrong:
+the grid may be too coarse, so you lose precision; or too narrow, so extreme values fall off the end
+and get clipped. Widening the grid fixes clipping and worsens resolution. Almost all of quantization
+engineering is choosing where to sit on that trade-off, and doing it separately for groups of numbers
+that have different scales.
+</Intuition>
+
+## The affine quantizer
+
+<Definition id="affine-quantizer" title="Affine quantizer">
+For a target integer range $\lbrace 0,1,\dots,2^n-1 \rbrace$ and a clipping interval
+$[\alpha,\beta]$, define the **scale** and **zero point**
+$$
+\Delta = \frac{\beta-\alpha}{2^n-1},
+\qquad
+z = -\operatorname{round}\!\left(\frac{\alpha}{\Delta}\right),
+$$
+and the quantize / dequantize pair
+$$
+Q(x) = \operatorname{clamp}\left(\operatorname{round}\!\left(\frac{x}{\Delta}\right) + z,\ 0,\ 2^n-1\right),
+\qquad
+\widehat{x} = \Delta\,\big(Q(x) - z\big).
+$$
+The quantizer is **symmetric** when $z=0$, which requires $\alpha = -\beta$.
+</Definition>
+
+<Claim kind="proposition" id="affine-roundtrip" title="Affine quantization round-trip error">
+If $x \in [\alpha,\beta]$, so that no clamping occurs, then
+$$
+\big|\widehat{x} - x\big| \ \le\ \frac{\Delta}{2}.
+$$
+</Claim>
+
+<Proof>
+Without clamping, $Q(x) = \operatorname{round}(x/\Delta) + z$, so
+$\widehat x = \Delta \operatorname{round}(x/\Delta)$. Rounding to the nearest integer moves its
+argument by at most $\tfrac12$:
+$$
+\left|\operatorname{round}\!\left(\frac{x}{\Delta}\right) - \frac{x}{\Delta}\right| \le \frac12 .
+$$
+Multiplying by $\Delta &gt; 0$ gives the claim. $\blacksquare$
+</Proof>
+
+This is a *deterministic* bound — it holds for every input, with no probabilistic assumption. Keep it
+separate in your mind from what follows.
+
+## Error as a random variable
+
+<Claim kind="proposition" id="uniform-cell" title="Exact error law on a single cell">
+Let $X \sim \mathrm{Unif}\big([(k-\tfrac12)\Delta,\ (k+\tfrac12)\Delta]\big)$ for an integer $k$, so
+that $X$ lies in the cell rounding to $k\Delta$. Then the error $E = \widehat X - X$ satisfies
+$$
+E \sim \mathrm{Unif}\left[-\frac{\Delta}{2}, \frac{\Delta}{2}\right],
+\qquad \E[E] = 0, \qquad \Var(E) = \frac{\Delta^2}{12}.
+$$
+</Claim>
+
+<Proof>
+On this cell $\widehat X = k\Delta$ identically, so $E = k\Delta - X$ is an affine, orientation-
+reversing image of a uniform variable and is therefore uniform on
+$[-\Delta/2, \Delta/2]$. For a uniform variable on $[-a,a]$ the mean is $0$ by symmetry and
+$$
+\Var = \E[E^2] = \frac{1}{2a}\int_{-a}^{a} u^2\,du = \frac{a^2}{3},
+$$
+which at $a = \Delta/2$ gives $\Delta^2/12$. $\blacksquare$
+</Proof>
+
+<Claim kind="heuristic" id="additive-noise-model" title="The additive white-noise model">
+For a general input distribution, one models quantization as
+$$
+\widehat X = X + E, \qquad \E[E]=0,\quad \Var(E) = \frac{\Delta^2}{12},\quad E \perp X,
+$$
+with $E$ uncorrelated across coordinates.
+</Claim>
+
+<Warning>
+This is **not** a theorem, and the distinction matters. The error is a deterministic function of the
+input, $E = \Delta\operatorname{round}(X/\Delta) - X$, so it cannot be independent of $X$ — for
+instance, $X$ already on the grid forces $E = 0$. The model is accurate in the *high-resolution*
+regime, where $\Delta$ is small relative to the scale over which the density of $X$ varies, so that
+the density is nearly constant across each cell and the previous proposition applies cell by cell.
+There is an exact version (Widrow's quantizing theorem) requiring the characteristic function of $X$
+to vanish outside $(-\pi/\Delta, \pi/\Delta)$, a condition no real distribution satisfies.
+
+At the bit widths that matter for LLMs — 4 bits, sometimes 3 — the high-resolution regime is
+plainly not in force: there are 16 levels covering the whole range of a weight group. Predictions
+derived from this model should be treated as orientation, not as bounds. The deterministic
+$|E| \le \Delta/2$ remains valid throughout.
+</Warning>
+
+## Signal-to-quantization-noise ratio
+
+<Claim kind="proposition" id="six-db-rule" title="Six decibels per bit">
+Assume the noise model, a symmetric $b$-bit quantizer with clipping range $[-A, A]$ so that
+$\Delta = 2A/2^{b}$, and a signal with variance $\sigma^2$ and negligible clipping. Then
+$$
+\mathrm{SQNR}_{\mathrm{dB}} = 10\log_{10}\frac{\sigma^2}{\Var(E)} = 6.02\,b + 4.77 - 20\log_{10}\!\left(\frac{A}{\sigma}\right).
+$$
+</Claim>
+
+<Proof>
+Substituting $\Delta = 2A/2^b$ into $\Var(E) = \Delta^2/12$ gives
+$\Var(E) = 4A^2/(12\cdot 2^{2b}) = A^2/(3\cdot 2^{2b})$. Hence
+$$
+\frac{\sigma^2}{\Var(E)} = \frac{3 \cdot 2^{2b}\,\sigma^2}{A^2},
+$$
+and taking $10\log_{10}$,
+$$
+\mathrm{SQNR}_{\mathrm{dB}} = 10\log_{10} 3 + 20 b \log_{10} 2 - 20\log_{10}\frac{A}{\sigma}
+= 4.77 + 6.02\,b - 20\log_{10}\frac{A}{\sigma}. \qquad\blacksquare
+$$
+</Proof>
+
+<KeyIdea>
+Two readings, both useful:
+
+1. **Each bit buys about 6 dB**, a factor of 4 in noise power. Going from 8-bit to 4-bit costs 24 dB
+   — a 250× increase in quantization noise power, which is why 4-bit needs machinery that 8-bit does
+   not.
+2. **The loading factor $A/\sigma$ enters as a penalty.** If one outlier forces $A$ to be $50\sigma$,
+   the term $20\log_{10}50 \approx 34$ dB eats nearly six bits of precision. The grid is being spent
+   on a range almost no value occupies.
+</KeyIdea>
+
+That second reading is the central practical fact about quantizing transformers, and the reason
+per-tensor scaling is inadequate for activations.
+
+## Clipping versus resolution
+
+<Claim kind="proposition" id="clip-tradeoff" title="Clipping and resolution trade off">
+Let $X$ have density $f$, symmetric about $0$, and quantize with $b$ bits over $[-A,A]$. Under the
+noise model for the unclipped part, the mean squared error decomposes as
+$$
+\mathrm{MSE}(A) = \underbrace{\frac{A^2}{3\cdot 2^{2b}}\,\P(|X| \le A)}_{\text{rounding}}
+\;+\; \underbrace{2\int_A^\infty (x-A)^2 f(x)\,dx}_{\text{clipping}} .
+$$
+The first term is increasing in $A$ and the second decreasing, so if $X$ is unbounded the minimiser
+is attained at some finite $A^\star &gt; 0$.
+</Claim>
+
+<Proof>
+Condition on whether $|X| \le A$. Inside the range the quantizer contributes rounding error of mean
+square $\Delta^2/12 = A^2/(3\cdot2^{2b})$ under the model, weighted by $\P(|X|\le A)$. Outside, the
+value is clamped to $\pm A$, so the error is exactly $|X| - A$ in magnitude; by symmetry the two
+tails contribute equally, giving the stated integral.
+
+Monotonicity: the rounding term is $A^2$ times a factor increasing in $A$ (the probability), hence
+increasing. Differentiating the clipping term in $A$ gives
+$-4\int_A^\infty (x-A) f(x)\,dx \le 0$, so it is non-increasing.
+
+Existence of an interior minimiser: as $A \to 0$ the clipping term tends to $2\E[X^2] &gt; 0$ while
+rounding tends to $0$; as $A\to\infty$ rounding grows like $A^2/(3\cdot2^{2b}) \to \infty$ while
+clipping tends to $0$. Since $\mathrm{MSE}$ is continuous and tends to a positive limit at $0$ and to
+$\infty$, its infimum over $(0,\infty)$ is attained. $\blacksquare$
+</Proof>
+
+<Details summary="Consequences for how scales are chosen in practice">
+The proposition says the naive choice $A = \max_i |x_i|$ is generally **not** optimal: it drives the
+clipping term to zero at the cost of an inflated rounding term. Standard responses:
+
+- **Percentile clipping.** Set $A$ at, say, the 99.9th percentile of $|X|$ and accept clipping on the
+  rest. Directly targets the trade-off above.
+- **MSE-optimal search.** Grid-search $A$ to minimise the measured reconstruction error on a
+  calibration set — the empirical version of minimising $\mathrm{MSE}(A)$.
+- **Finer granularity.** Use one scale per channel, or per group of 64 or 128 weights, instead of one
+  per tensor. Each group then has its own $A$, so a single large value inflates the loading factor
+  only for its own group rather than for the whole tensor. This is usually the highest-leverage
+  change, and it is why group-wise 4-bit formats work at all.
+
+Granularity costs memory: one FP16 scale per 128 weights adds $16/128 = 0.125$ bits per weight, so a
+nominally 4-bit format is really 4.125 bits. Quote that honestly when comparing formats.
+</Details>
+
+## The formats in use
+
+<Note>
+- **INT8** — 8-bit integers with a scale, usually symmetric per channel for weights. Well supported
+  in hardware; adequate for weights almost everywhere, and the difficult case is activations.
+- **FP8** — two variants, E4M3 (4 exponent, 3 mantissa bits) and E5M2 (5 and 2). Trades mantissa
+  precision for exponent range, so it handles wide dynamic range better than INT8 at the same bit
+  count, at coarser resolution near zero.
+- **NF4** — a 4-bit format whose 16 levels are placed at quantiles of a standard normal rather than
+  uniformly, on the argument that neural network weights are approximately Gaussian. Non-uniform
+  quantizers can beat uniform ones when the density is known, which is the Lloyd–Max result; NF4 is
+  that idea specialised to an assumed Gaussian.
+</Note>
+
+<OpenProblem>
+There is no satisfactory theory predicting *end-task* degradation from quantization error. The chain
+from weight-level MSE, through layer output perturbation, to next-token distribution shift, to
+downstream accuracy is not analytically controlled for networks of this depth: layer-wise error
+bounds compose multiplicatively through Lipschitz constants that are far too loose to be informative.
+Quantization methods are selected by measurement, and claims that a format "preserves quality" are
+empirical claims about particular benchmarks, not theorems.
+</OpenProblem>

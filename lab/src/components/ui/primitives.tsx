@@ -174,8 +174,11 @@ export function SectionHeading({
   id?: string;
 }) {
   return (
-    <div className="mb-3 flex items-baseline justify-between gap-4 border-b border-[var(--color-line)] pb-2">
-      <h2 id={id} className="text-sm font-semibold tracking-wide">
+    <div className="mb-3 flex items-baseline justify-between gap-4 border-b-2 border-[var(--color-line-strong)] pb-1.5">
+      <h2
+        id={id}
+        className="text-[0.82rem] font-bold tracking-[0.03em] text-[var(--color-ink)] uppercase"
+      >
         {title}
       </h2>
       {action}

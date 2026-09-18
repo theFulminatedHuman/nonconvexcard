@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ProblemRow } from '@/components/problems/problem-row';
+import { ProblemTable } from '@/components/problems/problem-table';
 import { ArrowRightIcon, FlaskIcon } from '@/components/ui/icons';
 import {
   Card,
@@ -275,15 +275,9 @@ export default function Home() {
                 </Link>
               }
             />
-            <Card>
-              <ul className="divide-y divide-[var(--color-line)]">
-                {featuredProblems.map((p) => (
-                  <li key={p.id}>
-                    <ProblemRow problem={p} />
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            <div className="panel">
+              <ProblemTable problems={featuredProblems} />
+            </div>
           </section>
         ) : null}
 

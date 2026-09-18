@@ -1,0 +1,211 @@
+---
+title: Outlier Features and Scale Migration
+summary: A handful of activation channels with huge magnitudes wrecks per-tensor quantization — and an exact diagonal invariance lets you move the difficulty somewhere it hurts less.
+field: quantization
+level: 3
+order: 30
+prerequisites:
+  - quantization/uniform-quantization-and-error
+  - deep-learning/transformers
+tags: [outliers, smoothquant, awq, per-channel, activation quantization]
+estimated_time: 1h
+claims:
+  - id: outlier-emergence
+    kind: empirical
+    title: Systematic outlier features in large transformers
+    summary: Above a few billion parameters, a small fixed set of hidden dimensions carries activations one to two orders of magnitude larger than the rest.
+    proved: false
+    tags: [outliers, scale]
+  - id: bit-loss
+    kind: proposition
+    title: Outliers cost bits directly
+    summary: A per-tensor quantizer whose range is set by an outlier loses log2(max/typical) bits of effective resolution on ordinary values.
+    proved: true
+    tags: [dynamic range, effective bits]
+  - id: diagonal-invariance
+    kind: proposition
+    title: Diagonal scale migration is exact
+    summary: For any invertible diagonal S, XW equals (XS⁻¹)(SW), so quantization difficulty can be moved between activations and weights without changing the function.
+    proved: true
+    tags: [invariance, smoothquant]
+  - id: awq-error-scaling
+    kind: proposition
+    title: Scaling up a salient channel reduces its relative quantization error
+    summary: If a channel's scale-up does not move the group maximum, its relative error falls by exactly the scale factor.
+    proved: true
+    tags: [awq, salience, group-wise]
+references:
+  - key: dettmers-int8-2
+    title: 'LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale'
+    authors: T. Dettmers et al.
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2208.07339
+    note: Reports the emergence of systematic outlier features and their effect on INT8 accuracy.
+  - key: xiao-smoothquant
+    title: 'SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models'
+    authors: G. Xiao et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2211.10438
+  - key: lin-awq
+    title: 'AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration'
+    authors: J. Lin et al.
+    year: 2024
+    kind: paper
+    url: https://arxiv.org/abs/2306.00978
+---
+
+<Intuition>
+Quantizing the weights of a large language model is comparatively easy. Quantizing its *activations*
+is not, and the reason is concentrated in a few channels. In a large transformer, a small number of
+hidden dimensions carry values perhaps fifty times larger than everything else — consistently, across
+inputs, in the same dimensions. A single scale covering the whole tensor must span that range, and
+almost all of the grid is then spent on values that never occur.
+</Intuition>
+
+## The observation
+
+<Claim kind="empirical" id="outlier-emergence" title="Systematic outlier features in large transformers">
+In transformer language models above roughly 6–7 billion parameters, a small set of hidden dimensions
+— on the order of tens out of thousands — carries activation magnitudes one to two orders of
+magnitude above the median channel. The affected dimensions are largely consistent across inputs and
+across layers, and zeroing them degrades the model sharply.
+</Claim>
+
+<Warning>
+This is a measurement, reproduced across model families, and it is **not** explained by any theory.
+There is no derivation predicting which dimensions become outliers, why the phenomenon has a scale
+threshold, or whether it is intrinsic to the architecture or an artefact of the optimiser and
+normalisation choices. Papers that describe outlier features as "emergent" are naming the
+observation, not accounting for it. Do not carry an explanation into this that the evidence does not
+support.
+</Warning>
+
+## Why a few large values are so expensive
+
+<Claim kind="proposition" id="bit-loss" title="Outliers cost bits directly">
+Consider a symmetric $b$-bit quantizer whose range is set by the tensor maximum, $A = \max_i|x_i|$.
+Let $\tau$ be a typical magnitude, say the median of $|x_i|$, and $R = A/\tau$ the outlier ratio.
+Then the number of quantization levels covering $[-\tau,\tau]$ is
+$$
+2^{b}/R,
+$$
+so ordinary values are represented as if with
+$$
+b_{\text{eff}} = b - \log_2 R
+$$
+bits.
+</Claim>
+
+<Proof>
+The quantizer places $2^b$ levels uniformly across $[-A, A]$, i.e. with spacing
+$\Delta = 2A/2^b$. The subinterval $[-\tau, \tau]$ has width $2\tau$ and therefore contains
+$2\tau/\Delta = 2^{b}\tau/A = 2^b/R$ levels. A $b_{\text{eff}}$-bit quantizer covering $[-\tau,\tau]$
+would supply $2^{b_{\text{eff}}}$ levels; equating gives
+$b_{\text{eff}} = b - \log_2 R$. $\blacksquare$
+</Proof>
+
+At $R = 50$ this costs $\log_2 50 \approx 5.6$ bits. An 8-bit quantizer is then behaving like a
+2.4-bit one for the values that make up almost the whole tensor — which is why naive per-tensor INT8
+activation quantization of a large model collapses, while the same scheme on a small model is fine.
+
+<KeyIdea>
+Finer granularity attacks $R$ directly. Per-channel or per-group scales mean an outlier inflates $R$
+only within *its own* group, leaving every other group at full effective precision. For weights this
+is straightforward. For activations it is awkward: the reduction axis of the matrix multiply is the
+one you would need to scale along, and a per-token scale must be computed at run time.
+</KeyIdea>
+
+## Moving the problem
+
+<Claim kind="proposition" id="diagonal-invariance" title="Diagonal scale migration is exact">
+Let $X \in \R^{n\times d}$, $W \in \R^{d \times m}$, and let $S = \operatorname{diag}(s_1,\dots,s_d)$
+with all $s_j \ne 0$. Then
+$$
+XW \;=\; \big(XS^{-1}\big)\big(SW\big).
+$$
+The transformation rescales column $j$ of $X$ by $1/s_j$ and row $j$ of $W$ by $s_j$, and changes the
+layer's output not at all.
+</Claim>
+
+<Proof>
+$S$ is invertible, so $S^{-1}S = I$ and $(XS^{-1})(SW) = X(S^{-1}S)W = XW$. The entrywise description
+follows from $\big(XS^{-1}\big)_{ij} = X_{ij}/s_j$ and $\big(SW\big)_{jk} = s_jW_{jk}$.
+$\blacksquare$
+</Proof>
+
+Trivial as mathematics, and the basis of the main practical technique: the *function* is invariant,
+but the *quantization error* is not, because the two factors are quantized after the rescaling. Pick
+$s_j$ large for channels where activations are large, and the activation outlier is damped while the
+corresponding weight row grows.
+
+<Details summary="Choosing the migration strength">
+SmoothQuant parameterises the choice as
+$$
+s_j = \frac{\big(\max_i |X_{ij}|\big)^{\alpha}}{\big(\max_k |W_{jk}|\big)^{1-\alpha}},
+\qquad \alpha \in [0,1].
+$$
+At $\alpha = 0$ nothing moves; at $\alpha = 1$ all the activation range is flattened and pushed into
+the weights. Intermediate $\alpha$ — around $0.5$ for many models — equalises the difficulty, and the
+right value depends on how much headroom the weight quantizer has.
+
+The reason a migration helps at all is that the two operands are *not* symmetric in difficulty.
+Weights are static: their range is known exactly, offline, and can be handled per output channel at
+no run-time cost. Activations are input-dependent, must be handled with a scale computed per token or
+estimated from calibration, and carry the outliers. Trading a hard problem for an easier one of the
+same total size is a real gain, and the invariance above is what makes the trade free.
+
+Note also that $S$ can usually be folded into the preceding layer norm or linear layer's parameters,
+so the rescaling of $X$ costs nothing at run time.
+</Details>
+
+## Protecting the channels that matter
+
+A second use of the same invariance: rather than equalising ranges, scale up the weight channels that
+the activations actually excite.
+
+<Claim kind="proposition" id="awq-error-scaling" title="Scaling up a salient channel reduces its relative quantization error">
+Consider group-wise symmetric quantization with step $\Delta = 2A/2^b$ where $A$ is the maximum
+magnitude in the group. Multiply one channel's weights by $s &gt; 1$ and divide the matching
+activations by $s$, per the invariance. If the group maximum is unchanged — that is, the scaled
+channel is still not the largest in its group, so the step stays $\Delta$ — then the contribution of
+that channel to the layer output has quantization error scaled by exactly $1/s$.
+</Claim>
+
+<Proof>
+Write the channel's contribution as $x w$. Unscaled, the quantized weight is $w + e$ with
+$|e| \le \Delta/2$, giving output error $|x||e| \le |x|\Delta/2$.
+
+After migration the channel computes $(x/s)\cdot Q(sw)$. By assumption the group's step is still
+$\Delta$, so $Q(sw) = sw + e'$ with $|e'| \le \Delta/2$, and
+$$
+\frac{x}{s}\,Q(sw) = \frac{x}{s}\big(sw + e'\big) = xw + \frac{x e'}{s}.
+$$
+The output error is now at most $|x|\Delta/(2s)$, smaller by the factor $s$. $\blacksquare$
+</Proof>
+
+<Assumptions>
+The hypothesis "the group maximum is unchanged" is doing all the work and is the reason the technique
+is applied to a *small fraction* of channels. Scaling many channels, or scaling one past the group
+maximum, raises $A$ and hence $\Delta$ for the whole group — which increases the error on every other
+channel in it. The gain is a redistribution, not a free lunch: it is worth taking only when the
+protected channels matter disproportionately to the output, which is what "activation-aware" means
+in practice.
+</Assumptions>
+
+<NotSaid>
+None of this bounds end-to-end degradation. The propositions above control error in one channel's
+contribution to one layer's pre-activation, under stated conditions. They say nothing about how that
+perturbation propagates through the remaining layers, nor about generation quality. As in the
+Hessian-aware setting, the case that these methods preserve model quality is empirical.
+</NotSaid>
+
+<OpenProblem>
+Why outlier features exist at all is open. Candidate accounts — that they implement a soft
+attention-sink or no-op mechanism, that they are a consequence of layer normalisation interacting
+with softmax saturation, that they are an artefact of Adam's per-coordinate scaling — each explain
+part of the evidence and none predicts which dimensions will be affected in a model not yet trained.
+An account that did would likely also suggest how to train models that do not develop them, which
+would make most of this page unnecessary.
+</OpenProblem>

@@ -1,0 +1,223 @@
+---
+title: Error Compounding in Agent Trajectories
+summary: Per-step reliability raised to the power of the horizon — why 95% per step is a failing agent, and what majority voting does and does not repair.
+field: agents
+level: 2
+order: 10
+prerequisites:
+  - probability/expectation-and-conditioning
+  - high-dimensional-probability/concentration-inequalities
+  - llm/scaling-and-in-context-learning
+tags: [agents, horizon, compounding, condorcet, self-consistency, majority vote]
+estimated_time: 1h
+claims:
+  - id: trajectory-success
+    kind: proposition
+    title: Trajectory success decays geometrically in the horizon
+    summary: Under independent steps with success probability p, an n-step trajectory succeeds with probability pⁿ, so the per-step bar for a target T is T^(1/n).
+    proved: true
+    tags: [horizon, compounding]
+  - id: condorcet-hoeffding
+    kind: theorem
+    title: Majority voting with independent votes
+    summary: For k independent votes each correct with probability p > 1/2, the majority is wrong with probability at most exp(−2k(p−1/2)²).
+    proved: true
+    tags: [condorcet, hoeffding, self-consistency]
+  - id: correlated-votes
+    kind: proposition
+    title: Correlated votes destroy the guarantee
+    summary: With perfectly correlated errors the majority is exactly as reliable as a single sample, however large k is.
+    proved: true
+    tags: [correlation, independence]
+  - id: retry-improvement
+    kind: proposition
+    title: Detect-and-retry raises the effective step reliability
+    summary: With detection probability d and m retries, effective per-step success rises to 1 − (1−p)(1−dp)^m under the stated independence.
+    proved: true
+    tags: [retry, recovery, reliability]
+---
+
+<Intuition>
+An agent that calls a tool, reads the result, decides, and repeats is running a chain. Chains break at
+their weakest link and, worse, they break *cumulatively*: each step is another chance to fail. The
+arithmetic is unforgiving and it is the first thing to compute before designing anything else.
+</Intuition>
+
+## The compounding law
+
+<Claim kind="proposition" id="trajectory-success" title="Trajectory success decays geometrically in the horizon">
+Let an agent take $n$ steps, each succeeding independently with probability $p$, where the trajectory
+succeeds only if every step does. Then
+$$
+\P(\text{trajectory succeeds}) = p^{\,n},
+$$
+and achieving a target success rate $T$ requires per-step reliability
+$$
+p \ \ge\ T^{1/n}.
+$$
+</Claim>
+
+<Assumptions>
+Independence across steps, and a strict conjunction — no step is recoverable. Both are idealisations,
+and the second is relaxed below. Independence is the more suspect: a mistaken early step often makes
+later steps harder, which correlates failures *positively* and makes the true number worse than
+$p^n$, not better.
+</Assumptions>
+
+<Proof>
+The success events are independent, so the probability of their intersection is the product,
+$\prod_{i=1}^n p = p^n$. For the second claim, $p^n \ge T \iff n\log p \ge \log T \iff
+p \ge T^{1/n}$, using that $\log$ is increasing and $p \in (0,1]$. $\blacksquare$
+</Proof>
+
+<Details summary="The table every agent designer should have seen">
+Trajectory success $p^n$:
+
+| $p$ \\ $n$ | 5 | 10 | 20 | 50 |
+| --- | --- | --- | --- | --- |
+| 0.90 | 0.59 | 0.35 | 0.12 | 0.005 |
+| 0.95 | 0.77 | 0.60 | 0.36 | 0.08 |
+| 0.99 | 0.95 | 0.90 | 0.82 | 0.61 |
+| 0.999 | 0.995 | 0.990 | 0.980 | 0.951 |
+
+And the bar to hit 90% end-to-end, $p = 0.9^{1/n}$:
+
+| $n$ | 5 | 10 | 20 | 50 | 100 |
+| --- | --- | --- | --- | --- | --- |
+| required $p$ | 0.979 | 0.990 | 0.9947 | 0.9979 | 0.9989 |
+
+**Reading these.** A 95%-reliable step — which sounds strong, and is roughly where careful
+single-shot LLM behaviour sits on many tasks — gives a 36% success rate over 20 steps. To run a
+50-step agent at 90% end to end you need 99.8% per step, which is two orders of magnitude fewer
+errors than "very good".
+
+The design consequence is that **shortening the horizon beats improving the step**, because $n$ sits
+in the exponent. Halving $n$ squares the trajectory success; a few points of per-step accuracy moves
+it linearly. Collapsing five tool calls into one composite call is usually worth more than any
+prompt engineering on the five.
+</Details>
+
+## Voting, and when it works
+
+Sampling a step several times and taking the majority is the standard repair. Its guarantee is
+classical.
+
+<Claim kind="theorem" id="condorcet-hoeffding" title="Majority voting with independent votes">
+Let $V_1,\dots,V_k$ be independent indicators of a correct vote, each with $\P(V_i = 1) = p &gt; 1/2$,
+and let the decision be the majority. Then
+$$
+\P(\text{majority incorrect}) \ \le\ \exp\!\left(-2k\left(p-\tfrac12\right)^2\right),
+$$
+which tends to $0$ as $k\to\infty$.
+</Claim>
+
+<Proof>
+Let $S = \sum_{i=1}^k V_i$, so $\E S = kp$. The majority is incorrect only if $S \le k/2$. Since the
+$V_i$ are independent and bounded in $[0,1]$, Hoeffding's inequality gives, for any $t &gt; 0$,
+$$
+\P\big(S - \E S \le -t\big) \ \le\ \exp\!\left(-\frac{2t^2}{k}\right).
+$$
+Take $t = kp - k/2 = k(p-\tfrac12) &gt; 0$, which is positive exactly because $p &gt; 1/2$. Then
+$$
+\P\big(S \le k/2\big) = \P\big(S - \E S \le -t\big) \le \exp\!\left(-\frac{2k^2(p-\tfrac12)^2}{k}\right)
+= \exp\!\left(-2k\big(p-\tfrac12\big)^2\right). \qquad\blacksquare
+$$
+</Proof>
+
+<KeyIdea>
+The exponent contains $(p - \tfrac12)^2$. At $p = 0.8$ the bound decays like $e^{-0.18k}$ — about 26
+votes to reach 99%. At $p = 0.55$ it decays like $e^{-0.005k}$, needing over 900. Voting rescues a
+step that is *reliably better than chance*; it barely touches one that is marginal, and for
+$p &lt; 1/2$ it drives confidently to the wrong answer.
+</KeyIdea>
+
+## Why it usually helps less than that
+
+<Claim kind="proposition" id="correlated-votes" title="Correlated votes destroy the guarantee">
+Suppose the votes are generated as $V_i = Z$ for a single Bernoulli$(p)$ variable $Z$ — perfectly
+correlated. Then for every odd $k$,
+$$
+\P(\text{majority correct}) = p ,
+$$
+independent of $k$.
+</Claim>
+
+<Proof>
+All votes equal $Z$, so the majority equals $Z$ and is correct precisely when $Z = 1$, which has
+probability $p$ regardless of $k$. $\blacksquare$
+</Proof>
+
+<Warning>
+This degenerate case is not far from reality. Repeated samples from one model at moderate temperature
+share the model's systematic misconceptions: if the model has misread the problem, all $k$ samples
+misread it the same way. Independence is the assumption the theorem needs and the assumption
+sampling does not supply.
+
+What the evidence shows is that self-consistency *does* help on tasks with many distinct valid
+reasoning paths converging on one answer — arithmetic and multi-step reasoning — and helps much less
+where the failure is a shared misunderstanding. The effective number of independent votes is smaller
+than $k$, sometimes very much smaller, and the honest way to use the theorem is as an upper bound on
+the benefit. Diversity across *different* models or prompts recovers some genuine independence, which
+is why ensembles of unlike models outperform repeated samples of one.
+</Warning>
+
+## Recovery changes the exponent
+
+The compounding law assumed a step failure is terminal. Agents that can notice a failure and retry
+are playing a different game.
+
+<Claim kind="proposition" id="retry-improvement" title="Detect-and-retry raises the effective step reliability">
+Suppose a step succeeds with probability $p$; on failure it is detected with probability $d$; and a
+detected failure is retried, independently, up to $m$ times. Then the effective per-step success
+probability is
+$$
+p_{\mathrm{eff}} = 1 - (1-p)\,(1-dp)^{m}.
+$$
+</Claim>
+
+<Proof>
+The step ultimately fails only if the initial attempt fails, which has probability $1-p$, and then
+each of the $m$ retry opportunities fails to rescue it. A given opportunity rescues the step when the
+failure is detected *and* the retry succeeds, with probability $dp$; it fails to rescue with
+probability $1 - dp$. By independence across opportunities,
+$$
+\P(\text{step ultimately fails}) = (1-p)(1-dp)^m,
+$$
+and $p_{\mathrm{eff}}$ is its complement. $\blacksquare$
+</Proof>
+
+<Details summary="Detection is worth more than raw accuracy">
+Take $p = 0.9$ and $m = 2$ retries.
+
+| detection $d$ | $p_{\mathrm{eff}}$ | 20-step trajectory |
+| --- | --- | --- |
+| 0.0 | 0.900 | 0.12 |
+| 0.5 | 0.970 | 0.54 |
+| 0.9 | 0.994 | 0.89 |
+| 0.99 | 0.9992 | 0.98 |
+
+Raising per-step accuracy from 0.90 to 0.994 directly would be a major modelling achievement. Getting
+detection to 0.9 with two retries achieves the same trajectory success and is an *engineering*
+problem: type checks, schema validation, unit tests on generated code, assertions on tool outputs,
+a second model asked only to check.
+
+This is the strongest structural argument for verifiable intermediate steps. It is far easier to
+build a checker for a step than to make the step reliable, and the checker's probability enters the
+same exponent.
+</Details>
+
+<NotSaid>
+Every model on this page assumes independence somewhere — across steps, across votes, across retries.
+Real agent trajectories violate all three, generally in the unfavourable direction: a confused agent
+stays confused, and its self-check is performed by the same confused model. Use these formulas to set
+expectations and to compare designs, not to predict a deployment's success rate. The measured
+quantity that matters, and that none of this derives, is the *correlation structure* of an agent's
+errors along a trajectory.
+</NotSaid>
+
+<OpenProblem>
+No accepted model predicts an agent's end-to-end success rate from measurable properties of its base
+model and its tool environment. The compounding law gives the right qualitative shape and is
+quantitatively wrong because of the correlations it ignores; there is no established way to estimate
+an effective horizon or an effective independent-vote count in advance.
+</OpenProblem>

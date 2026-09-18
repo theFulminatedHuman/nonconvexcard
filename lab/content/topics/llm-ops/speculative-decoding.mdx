@@ -1,0 +1,273 @@
+---
+title: Speculative Decoding
+summary: A draft model proposes, the target model verifies — and a rejection-sampling argument makes the output distribution exactly the target's, with no approximation.
+field: llm-ops
+level: 3
+order: 30
+prerequisites:
+  - llm-ops/inference-arithmetic
+  - probability/expectation-and-conditioning
+  - llm/language-modelling-and-cross-entropy
+tags: [speculative decoding, rejection sampling, total variation, acceptance rate, latency]
+estimated_time: 1h
+claims:
+  - id: spec-correctness
+    kind: theorem
+    title: Speculative sampling is exact
+    summary: Modified rejection sampling with a residual fallback produces samples distributed exactly according to the target model, for any draft model.
+    proved: true
+    tags: [rejection sampling, exactness]
+  - id: acceptance-tv
+    kind: proposition
+    title: Acceptance probability equals one minus total variation distance
+    summary: The per-token acceptance rate is exactly 1 − TV(p, q), tying speedup directly to how well the draft matches the target.
+    proved: true
+    tags: [total variation, acceptance]
+  - id: expected-tokens
+    kind: proposition
+    title: Expected tokens per verification round
+    summary: With draft length γ and i.i.d. acceptance rate α, each round emits (1 − α^(γ+1))/(1 − α) tokens in expectation.
+    proved: true
+    tags: [geometric, expectation]
+  - id: speculative-speedup
+    kind: corollary
+    title: Speedup and the optimal draft length
+    summary: Wall-clock gain is the expected token count divided by γc + 1, which is maximised at a finite γ whenever the draft is not free.
+    proved: true
+    tags: [speedup, optimisation]
+references:
+  - key: leviathan-spec
+    title: Fast Inference from Transformers via Speculative Decoding
+    authors: Y. Leviathan, M. Kalman, Y. Matias
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2211.17192
+  - key: chen-spec
+    title: Accelerating Large Language Model Decoding with Speculative Sampling
+    authors: C. Chen et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2302.01318
+---
+
+<Intuition>
+Decoding is memory-bound: emitting one token costs a full sweep of the weights through memory, and
+the arithmetic units idle through it. But verifying a *guess* at the next $\gamma$ tokens costs the
+same single sweep, because the target model can score $\gamma+1$ positions in one parallel forward
+pass — exactly the work that was going to waste.
+
+So let a small, cheap model guess ahead, then have the big model check the guesses in one pass. When
+the guesses are good you get several tokens for the price of one. The remarkable part is that the
+output distribution is **not** an approximation of the big model's: with the right accept/reject rule
+it is exactly the big model's, whatever the small model does.
+</Intuition>
+
+## The algorithm
+
+<Algorithm title="Speculative sampling, one round">
+1. Given context $x_{&lt;t}$, sample $\gamma$ draft tokens autoregressively from the draft model:
+   $\tilde x_{t+i} \sim q(\cdot \mid x_{&lt;t}, \tilde x_{t:t+i-1})$ for $i = 0,\dots,\gamma-1$.
+2. Run the target model **once**, in parallel over all $\gamma+1$ positions, to obtain
+   $p(\cdot \mid x_{&lt;t}, \tilde x_{t:t+i-1})$ for every $i$.
+3. For $i = 0,1,\dots,\gamma-1$ in order, draw $u \sim \mathrm{Unif}(0,1)$ and accept
+   $\tilde x_{t+i}$ if
+   $$
+   u \ \le\ \min\left(1,\ \frac{p(\tilde x_{t+i})}{q(\tilde x_{t+i})}\right).
+   $$
+   Stop at the first rejection.
+4. If a rejection occurred at position $i$, emit one token drawn from the **residual distribution**
+   $$
+   p'(x) \ \propto\ \max\big(0,\ p(x) - q(x)\big),
+   $$
+   and discard the remaining drafts. If all $\gamma$ were accepted, emit one extra token from
+   $p(\cdot \mid x_{&lt;t}, \tilde x_{t:t+\gamma-1})$, which step 2 already computed.
+</Algorithm>
+
+Every round costs $\gamma$ draft passes plus **one** target pass, and yields between $1$ and
+$\gamma+1$ tokens.
+
+## Exactness
+
+<Claim kind="theorem" id="spec-correctness" title="Speculative sampling is exact">
+Fix distributions $p$ and $q$ on a finite vocabulary $\mathcal V$ with $q(x) &gt; 0$ wherever
+$p(x) &gt; 0$. Draw $X \sim q$, accept with probability $\min(1, p(X)/q(X))$, and on rejection draw
+$Y \sim p'$ where $p'(x) = \max(0, p(x)-q(x))/\beta$ with
+$\beta = \sum_{x}\max(0, p(x)-q(x))$. Then the emitted token is distributed exactly as $p$.
+</Claim>
+
+<Assumptions>
+Absolute continuity of $p$ with respect to $q$ on the support — if the draft assigns zero probability
+to a token the target wants, that token can never be proposed, and the residual step is what repairs
+it. Note the theorem assumes nothing about how *good* $q$ is: a uniform draft model gives an exact
+sampler, just a slow one.
+</Assumptions>
+
+<Proof>
+Write $Z$ for the emitted token and fix $x \in \mathcal V$. There are two disjoint routes to
+emitting $x$.
+
+**Accepted.** The proposal must be $x$ and must survive:
+$$
+\P(\text{propose } x \text{ and accept}) = q(x)\cdot\min\left(1, \frac{p(x)}{q(x)}\right) = \min\big(q(x), p(x)\big).
+$$
+
+**Rejected, then resampled.** The total rejection probability is
+$$
+\P(\text{reject}) = 1 - \sum_{y}\min\big(q(y),p(y)\big) = \sum_y \big(p(y) - \min(p(y),q(y))\big) = \sum_y \max\big(0, p(y)-q(y)\big) = \beta,
+$$
+using $\sum_y p(y) = 1$ and the identity $p - \min(p,q) = \max(0, p-q)$. Conditional on rejection the
+token is drawn from $p'$, so this route contributes
+$$
+\beta \cdot p'(x) = \beta \cdot \frac{\max(0, p(x)-q(x))}{\beta} = \max\big(0, p(x)-q(x)\big).
+$$
+
+Adding the two routes and using $\min(a,b) + \max(0, a-b) = a$ with $a = p(x)$, $b = q(x)$:
+$$
+\P(Z = x) = \min\big(p(x),q(x)\big) + \max\big(0, p(x)-q(x)\big) = p(x). \qquad\blacksquare
+$$
+</Proof>
+
+<KeyIdea>
+The draft model affects **speed only, never quality**. This is what separates speculative decoding
+from approximations like early exit or cascades: there is no quality/latency dial to tune, because
+there is no quality loss to trade. A deployment can adopt it without re-running evaluations.
+</KeyIdea>
+
+<Details summary="Why the same argument extends to a whole accepted run">
+Applying the single-token result at position $t$ shows the emitted token has the target's conditional
+distribution given $x_{&lt;t}$. Conditional on that token, position $t+1$ is verified against
+$p(\cdot \mid x_{&lt;t}, x_t)$ — the target's conditional given the *accepted* prefix, which step 2
+computed. So by induction along the accepted run, the joint distribution of emitted tokens telescopes
+into $\prod_i p(x_{t+i} \mid x_{&lt;t+i})$, which is exactly the target model's joint. The rejection
+step truncates the run but, by the theorem, emits a correctly distributed token at the truncation
+point.
+</Details>
+
+## How often do we accept?
+
+<Claim kind="proposition" id="acceptance-tv" title="Acceptance probability equals one minus total variation distance">
+The probability that a proposal from $q$ is accepted is
+$$
+\alpha = \sum_{x}\min\big(p(x), q(x)\big) = 1 - \mathrm{TV}(p,q),
+\qquad
+\mathrm{TV}(p,q) = \tfrac12\sum_x |p(x)-q(x)| .
+$$
+</Claim>
+
+<Proof>
+The first equality was computed inside the proof above. For the second, use
+$\min(a,b) = \tfrac12(a + b - |a-b|)$:
+$$
+\sum_x \min(p,q) = \tfrac12\left(\sum_x p(x) + \sum_x q(x) - \sum_x|p(x)-q(x)|\right)
+= \tfrac12\big(1 + 1 - 2\,\mathrm{TV}(p,q)\big) = 1 - \mathrm{TV}(p,q). \qquad\blacksquare
+$$
+</Proof>
+
+This is a clean statement of what makes a good draft model: not low perplexity in the usual sense,
+but **small total variation distance to the target's conditional, token by token.** A draft that is
+confidently wrong is worse than one that is diffusely uncertain, because TV punishes mass placed
+where the target puts none.
+
+## Expected yield per round
+
+<Claim kind="proposition" id="expected-tokens" title="Expected tokens per verification round">
+Suppose each draft position is accepted independently with probability $\alpha \in [0,1)$. Then a
+round with draft length $\gamma$ emits
+$$
+\E[\,\text{tokens}\,] = \frac{1 - \alpha^{\gamma+1}}{1-\alpha}
+$$
+tokens in expectation.
+</Claim>
+
+<Assumptions>
+Independence and a common $\alpha$ across positions. Both are idealisations: acceptance at later
+positions is conditioned on the earlier draft tokens being accepted, which correlates the events, and
+$\alpha$ varies token by token — easy continuations accept far more often than hard ones. Treat this
+as a first-order model, and see the caveat at the end.
+</Assumptions>
+
+<Proof>
+Let $n \in \lbrace 0,1,\dots,\gamma \rbrace$ be the number of accepted drafts. For $j &lt; \gamma$,
+$n = j$ requires $j$ acceptances then a rejection, so $\P(n=j) = \alpha^j(1-\alpha)$; and
+$\P(n=\gamma) = \alpha^\gamma$. Exactly one further token is emitted in either case — the residual
+sample on rejection, or the target's own next token when all drafts survive — so the yield is $n+1$.
+
+Rather than summing the series directly, use the tail formula for a non-negative integer variable:
+$$
+\E[n] = \sum_{j=1}^{\gamma} \P(n \ge j) = \sum_{j=1}^{\gamma} \alpha^{j},
+$$
+since $n \ge j$ exactly when the first $j$ drafts were all accepted, which has probability
+$\alpha^j$. Hence
+$$
+\E[n+1] = 1 + \sum_{j=1}^{\gamma}\alpha^j = \sum_{j=0}^{\gamma}\alpha^j = \frac{1-\alpha^{\gamma+1}}{1-\alpha}. \qquad\blacksquare
+$$
+</Proof>
+
+As $\gamma \to \infty$ this saturates at $1/(1-\alpha)$: **however long you draft, you cannot average
+more than $1/(1-\alpha)$ tokens per target pass.** At $\alpha = 0.8$ the ceiling is 5 tokens per
+round, and $\gamma = 8$ already achieves $4.6$ of them.
+
+## Speedup, and how far to draft
+
+<Claim kind="corollary" id="speculative-speedup" title="Speedup and the optimal draft length">
+Let the draft model cost a fraction $c \in (0,1)$ of a target forward pass. Relative to ordinary
+decoding, the wall-clock speedup is
+$$
+\mathcal S(\gamma) = \frac{1-\alpha^{\gamma+1}}{(1-\alpha)\,(\gamma c + 1)} ,
+$$
+which for $c &gt; 0$ is maximised at a finite $\gamma$.
+</Claim>
+
+<Proof>
+A round costs $\gamma$ draft passes and one target pass, i.e. $\gamma c + 1$ target-pass units, and
+yields $(1-\alpha^{\gamma+1})/(1-\alpha)$ tokens by the previous proposition. Ordinary decoding
+yields one token per target pass, so the ratio of tokens per unit time is $\mathcal S(\gamma)$.
+
+For finiteness of the maximiser: the numerator is bounded above by $1/(1-\alpha)$ while the
+denominator grows without bound in $\gamma$, so $\mathcal S(\gamma) \to 0$. Since
+$\mathcal S(0) = 1 &gt; 0$ and $\mathcal S$ is positive, its supremum over the non-negative integers is
+attained. $\blacksquare$
+</Proof>
+
+<Details summary="Worked example: a 7B draft for a 70B target">
+Take $c = 0.1$ (the draft is roughly ten times cheaper) and measure $\alpha = 0.8$.
+
+| $\gamma$ | $\E[\text{tokens}]$ | cost | $\mathcal S$ |
+| --- | --- | --- | --- |
+| 1 | 1.80 | 1.1 | 1.64 |
+| 2 | 2.44 | 1.2 | 2.03 |
+| 4 | 3.36 | 1.4 | 2.40 |
+| 6 | 3.95 | 1.6 | 2.47 |
+| 8 | 4.33 | 1.8 | 2.41 |
+| 12 | 4.72 | 2.2 | 2.15 |
+
+The optimum sits near $\gamma = 6$ at about $2.5\times$. The curve is flat near its peak — anything
+from 4 to 8 is within a few percent — which is fortunate, because $\alpha$ is not constant in
+practice and a sharp optimum would be untunable.
+
+Note also how sensitive this is to $\alpha$: at $\alpha = 0.5$ the ceiling $1/(1-\alpha)$ is only 2,
+so no draft length gets past a $2\times$ speedup, and after paying $c$ the realised gain is closer to
+$1.6\times$.
+</Details>
+
+<Warning>
+The independence assumption behind $\E[\text{tokens}]$ is optimistic. Acceptance is strongly
+correlated along a draft: once the draft model diverges from the target's intent it tends to keep
+diverging, so runs of rejections cluster and the realised mean falls below the formula. Measure the
+empirical distribution of accepted-run lengths rather than assuming a geometric one, then choose
+$\gamma$ from the measurement.
+</Warning>
+
+<Empirical>
+Reported end-to-end speedups for well-matched draft/target pairs cluster around $2$–$3\times$ on
+standard generation workloads, with acceptance rates in the range $0.7$–$0.9$ — consistent with the
+model above once correlation is accounted for. Gains are smaller on tasks where the target's
+conditionals are high-entropy, which is exactly what $\alpha = 1 - \mathrm{TV}$ predicts.
+</Empirical>
+
+<NotSaid>
+This analysis is about *latency for a single stream*. Speculative decoding spends extra FLOPs to buy
+back idle memory-bandwidth time, so its advantage shrinks as batch size grows and the system moves
+towards compute-bound — precisely the regime a throughput-oriented server tries to reach. It is a
+latency technique, and on a saturated server it can reduce total throughput.
+</NotSaid>

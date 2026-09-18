@@ -1,0 +1,597 @@
+defaults:
+  field: agents
+problems:
+  - id: ag-compounding
+    title: Trajectory success from per-step reliability
+    topic: agents/error-compounding-in-trajectories
+    difficulty: foundation
+    type: numerical
+    estimated_time: 15m
+    tags: [compounding, horizon]
+    statement: |
+      1. An agent takes 15 steps, each succeeding independently with probability 0.97. Compute the
+         trajectory success rate.
+      2. What per-step reliability is needed for 95% success over 15 steps?
+      3. If the horizon can be cut to 5 steps at the same per-step reliability of 0.97, what is the
+         new success rate, and how does that compare with the improvement in part 2?
+    solution: |
+      **1.** $0.97^{15} = \mathbf{0.633}$. A step that fails 3% of the time gives an agent that fails
+      more than a third of the time.
+
+      **2.** Need $p^{15}\ge0.95$, so
+      $$
+      p \ge 0.95^{1/15} = e^{\ln(0.95)/15} = e^{-0.003419} = \mathbf{0.99659}.
+      $$
+      Error rate must fall from 3% to 0.34% — a factor of about 8.8.
+
+      **3.** At 5 steps, $0.97^5 = \mathbf{0.859}$.
+
+      **The comparison, which is the point.** Cutting the horizon from 15 to 5 raises success from
+      0.633 to 0.859 with *no improvement to the model at all*. Reaching 0.95 by improving the step
+      requires an 8.8× reduction in error rate — a major modelling effort.
+
+      Because $n$ sits in the exponent and $p$ in the base, restructuring the task to need fewer
+      steps is almost always the cheaper lever. Concretely: batch several tool calls into one,
+      replace a multi-step lookup with a single query, or let the model emit a whole plan and execute
+      it rather than deciding step by step.
+
+  - id: ag-required-reliability
+    title: The reliability wall
+    topic: agents/error-compounding-in-trajectories
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [horizon, reliability, planning]
+    statement: |
+      Tabulate the per-step reliability needed for 99% trajectory success at horizons
+      $n = 10, 50, 100, 500$. Express each as an error rate, and comment on what this implies for
+      long-horizon autonomy.
+    solution: |
+      Required $p = 0.99^{1/n}$, and error rate $1-p$.
+
+      | $n$ | required $p$ | error rate | errors per 1000 steps |
+      | --- | --- | --- | --- |
+      | 10 | 0.998995 | $1.00\times10^{-3}$ | 1.0 |
+      | 50 | 0.999799 | $2.01\times10^{-4}$ | 0.20 |
+      | 100 | 0.9998995 | $1.01\times10^{-4}$ | 0.10 |
+      | 500 | 0.99997990 | $2.01\times10^{-5}$ | 0.020 |
+
+      Useful approximation: for small error rates, $p = T^{1/n} \approx 1 + \frac{\ln T}{n}$, so the
+      allowed error rate is $\approx \frac{\ln(1/T)}{n} = \frac{0.01005}{n}$ — **inversely
+      proportional to the horizon**.
+
+      **What it implies.** A 500-step autonomous run at 99% reliability requires fewer than one error
+      per 50,000 steps. For comparison, humans performing routine procedural tasks have documented
+      error rates in the range $10^{-3}$ to $10^{-2}$ per step — several orders of magnitude worse
+      than required.
+
+      The inference is not that long-horizon autonomy is impossible, but that it cannot be achieved
+      by raw per-step accuracy. It requires **error correction**: checkpoints, verification, and the
+      ability to detect and retry, which change the arithmetic entirely (see the detect-and-retry
+      problem). Any roadmap to long-horizon agents that relies on the base model getting more
+      accurate, without a recovery mechanism, is committing to an unreachable target.
+
+  - id: ag-condorcet
+    title: Majority voting via Hoeffding
+    topic: agents/error-compounding-in-trajectories
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [condorcet, hoeffding, self-consistency]
+    statement: |
+      1. Prove that $k$ independent votes each correct with probability $p>1/2$ give majority error at
+         most $\exp(-2k(p-\frac12)^2)$.
+      2. Compute the number of votes needed for 99% majority accuracy at $p = 0.6, 0.75, 0.9$.
+      3. Show the bound is vacuous at $p = 1/2$ and explain what happens for $p<1/2$.
+    solution: |
+      **1. The bound.** Let $S=\sum_{i=1}^k V_i$ with $\E S = kp$. The majority is wrong only if
+      $S\le k/2$. Hoeffding's inequality for independent $[0,1]$-valued variables gives
+      $\P(S-\E S\le -t)\le\exp(-2t^2/k)$. Take $t = k(p-\tfrac12)>0$:
+      $$
+      \P\big(S\le k/2\big)\le\exp\!\left(-\frac{2k^2(p-\frac12)^2}{k}\right)=\exp\!\left(-2k\big(p-\tfrac12\big)^2\right).
+      $$
+
+      **2. Votes for 99%.** Need $\exp(-2k(p-\frac12)^2)\le0.01$, i.e.
+      $$
+      k \ \ge\ \frac{\ln 100}{2(p-\frac12)^2} = \frac{4.605}{2(p-\frac12)^2}.
+      $$
+
+      | $p$ | $(p-\frac12)^2$ | required $k$ |
+      | --- | --- | --- |
+      | 0.60 | 0.01 | 231 |
+      | 0.75 | 0.0625 | 37 |
+      | 0.90 | 0.16 | 15 |
+
+      (These are what the bound guarantees; the exact binomial requires fewer — at $p=0.75$ the true
+      figure is about 17. Hoeffding is not tight here, and the comparison is worth making.)
+
+      **3. At and below one half.** At $p=1/2$ the exponent is zero, so the bound reads
+      $\P(\text{error})\le1$ — vacuous, and correctly so: with fair coins the majority is a fair coin
+      and no amount of voting helps.
+
+      For $p<1/2$ the situation is worse than useless. The majority now *concentrates on the wrong
+      answer*: by the same argument applied to the incorrect outcome, $\P(\text{majority correct})\le
+      \exp(-2k(\frac12-p)^2)\to0$. Voting amplifies whatever the majority tendency is, so it
+      converts a slightly-worse-than-chance model into a confidently wrong one.
+
+      The practical reading: self-consistency is only safe when you have evidence the single-sample
+      accuracy exceeds 50% on the task at hand. On a task where the model is systematically wrong,
+      sampling more makes it worse, not noisier.
+
+  - id: ag-correlated-votes
+    title: What correlation does to voting
+    topic: agents/error-compounding-in-trajectories
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [correlation, independence, effective sample size]
+    statement: |
+      Model votes as $V_i = \mathbb{1}[Z_i = 1]$ where, with probability $\rho$, all votes equal a
+      single shared draw, and with probability $1-\rho$ they are independent.
+
+      1. Compute the probability the majority is correct as a function of $\rho$, $p$, $k$.
+      2. Take $k\to\infty$ and interpret the limit.
+      3. Define an effective number of independent votes and compute it for $\rho = 0.5$, $k = 100$.
+    solution: |
+      **1. Majority accuracy.** Condition on the mixture:
+      - With probability $\rho$ all votes equal one shared Bernoulli$(p)$ draw, so the majority is
+        correct with probability exactly $p$.
+      - With probability $1-\rho$ the votes are independent, so the majority is correct with
+        probability $M_k(p) := \P(\mathrm{Bin}(k,p) > k/2)$.
+
+      Therefore
+      $$
+      \P(\text{majority correct}) = \rho\,p + (1-\rho)\,M_k(p).
+      $$
+
+      **2. The limit.** For $p>1/2$, $M_k(p)\to1$ as $k\to\infty$, so
+      $$
+      \P(\text{majority correct}) \ \longrightarrow\ \rho p + (1-\rho) = 1 - \rho(1-p).
+      $$
+
+      This is a **ceiling below 1**. At $\rho = 0.3$ and $p = 0.8$ the limit is
+      $1 - 0.3\times0.2 = 0.94$ — no amount of sampling passes 94%. The correlated component is a
+      fixed floor of shared failure that voting cannot touch, because on those draws every vote is
+      the same wrong vote.
+
+      **3. Effective sample size.** Define $k_{\text{eff}}$ as the number of independent votes giving
+      the same majority accuracy. At $\rho = 0.5$, $k = 100$, $p = 0.8$: $M_{100}(0.8)\approx1$, so
+      $$
+      \P(\text{correct}) \approx 0.5\times0.8 + 0.5\times1 = 0.9 .
+      $$
+      We need $M_{k_{\text{eff}}}(0.8) = 0.9$. Using the normal approximation,
+      $M_k(p)\approx\Phi\big(\frac{(p-1/2)\sqrt k}{\sqrt{p(1-p)}}\big)$; setting this to $0.9$ gives
+      $\frac{0.3\sqrt k}{0.4} = 1.282$, so $\sqrt k = 1.709$ and
+      $$
+      k_{\text{eff}} \approx \mathbf{3}.
+      $$
+
+      **One hundred correlated samples are worth about three independent ones.** That ratio is the
+      quantity worth measuring in any self-consistency setup, and it is measurable: estimate $\rho$
+      from the empirical rate at which all samples agree on a wrong answer, then compute the ceiling.
+      A system whose sampling budget is far past $k_{\text{eff}}$ is spending compute for nothing, and
+      the fix is diversity — different prompts, temperatures or models — not more samples.
+
+  - id: ag-retry
+    title: Detect-and-retry arithmetic
+    topic: agents/error-compounding-in-trajectories
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [retry, recovery, detection]
+    statement: |
+      1. Prove $p_{\text{eff}} = 1-(1-p)(1-dp)^m$ for detection probability $d$ and $m$ retries.
+      2. For $p = 0.85$, tabulate $p_{\text{eff}}$ and 30-step trajectory success over
+         $d\in\{0,0.5,0.9,0.99\}$ with $m=3$.
+      3. Show that as $m\to\infty$, $p_{\text{eff}}\to1$ for any $d>0$, and explain why this limit is
+         misleading in practice.
+    solution: |
+      **1. The formula.** The step ultimately fails only if the first attempt fails — probability
+      $1-p$ — and every one of the $m$ retry opportunities fails to rescue it. An opportunity rescues
+      the step when the failure is detected *and* the retry succeeds, probability $dp$; it fails to
+      rescue with probability $1-dp$. By independence across opportunities,
+      $$
+      \P(\text{ultimate failure}) = (1-p)(1-dp)^m,
+      $$
+      and $p_{\text{eff}}$ is its complement.
+
+      **2. Table at $p = 0.85$, $m=3$.** Here $dp$ takes values $0$, $0.425$, $0.765$, $0.8415$.
+
+      | $d$ | $(1-dp)^3$ | $p_{\text{eff}}$ | $p_{\text{eff}}^{30}$ |
+      | --- | --- | --- | --- |
+      | 0 | 1.000 | 0.850 | 0.0076 |
+      | 0.5 | 0.1900 | 0.9715 | 0.421 |
+      | 0.9 | 0.0129 | 0.99806 | 0.943 |
+      | 0.99 | 0.00397 | 0.99940 | 0.982 |
+
+      A 30-step agent goes from essentially never working (0.8%) to working 94% of the time, purely
+      by adding detection — the base model's per-step accuracy never changes.
+
+      **3. The limit and why it misleads.** For $d>0$ and $p>0$ we have $0\le1-dp<1$, so
+      $(1-dp)^m\to0$ and $p_{\text{eff}}\to1$.
+
+      Three reasons this is misleading:
+
+      - **Retries cost time and money.** Expected attempts per step is $1 + m$ in the worst case;
+        unbounded $m$ means unbounded latency. A user-facing agent has a deadline.
+      - **Detection is not independent across retries.** The model applying the check is the same one
+        that produced the error. If it cannot detect a particular failure mode, it will not detect it
+        on the retry either — the true $d$ for that failure is 0, not the average $d$, and the
+        geometric decay does not occur.
+      - **Retries are not independent either.** A retry conditioned on the same context often
+        reproduces the same error, which is the same correlation problem as in voting.
+
+      The honest version: retries help enormously for the first few, and the marginal value collapses
+      quickly. Two or three retries capture most of the benefit; a loop that retries indefinitely is
+      usually masking the absence of a detector that works on the failure actually occurring.
+
+  - id: ag-bon-samples
+    title: Sizing best-of-n
+    topic: agents/inference-time-search
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [best of n, sampling, cost]
+    statement: |
+      A model solves a task with probability $p = 0.25$ per attempt, and a checker identifies correct
+      solutions perfectly.
+
+      1. Compute samples needed for 90%, 99% and 99.9% success.
+      2. Compute the marginal cost of each additional nine.
+      3. If each sample costs $0.002, compute cost per solved task at each target.
+    solution: |
+      **1. Sample counts.** Need $n\ge\log(1-T)/\log(1-p)$ with $\log(0.75) = -0.2877$.
+
+      | target | $\log(1-T)$ | $n$ |
+      | --- | --- | --- |
+      | 0.90 | $-2.303$ | 8 |
+      | 0.99 | $-4.605$ | 16 |
+      | 0.999 | $-6.908$ | 24 |
+
+      **2. Marginal cost per nine.** Each additional nine costs exactly
+      $$
+      \Delta n = \frac{\ln 10}{-\ln(1-p)} = \frac{2.303}{0.2877} = 8.0 \text{ samples},
+      $$
+      a **constant** — 8 more samples per factor of ten in failure probability, forever. That is the
+      logarithmic-return structure: linear compute buys geometric reliability.
+
+      **3. Cost per solved task.** At $0.002 per sample, the cost is $0.002n/T$:
+
+      | target | $n$ | cost per attempt | cost per *solved* task |
+      | --- | --- | --- | --- |
+      | 0.90 | 8 | $0.016 | $0.0178 |
+      | 0.99 | 16 | $0.032 | $0.0323 |
+      | 0.999 | 24 | $0.048 | $0.0481 |
+
+      Going from 90% to 99.9% reliability roughly triples the cost per solved task. Whether that is
+      worth paying depends entirely on the cost of a failure — which is a product decision the
+      mathematics cannot make, but which this table makes explicit rather than implicit.
+
+  - id: ag-passk
+    title: The pass@k estimator
+    topic: agents/inference-time-search
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [pass@k, unbiased, numerics]
+    statement: |
+      1. Prove $\widehat{\mathrm{pass}@k} = 1 - \binom{n-c}{k}/\binom{n}{k}$ is the exact probability
+         that a uniform random $k$-subset of the $n$ samples contains a correct one.
+      2. Derive the product form and explain why it is preferred numerically.
+      3. Show that estimating pass@k by drawing exactly $k$ samples once is unbiased but has strictly
+         larger variance, and quantify the gap for $n=100$, $k=1$, $c=20$.
+    solution: |
+      **1. Exactness.** Given $c$ correct among $n$, a $k$-subset contains no correct sample exactly
+      when all $k$ elements are drawn from the $n-c$ incorrect ones. The number of such subsets is
+      $\binom{n-c}{k}$ out of $\binom nk$, so
+      $$
+      \P(\text{no correct in subset}) = \frac{\binom{n-c}{k}}{\binom nk},
+      $$
+      with $\binom mk = 0$ for $m<k$. The estimator is its complement, which is therefore the exact
+      conditional probability rather than an approximation of it.
+
+      **2. Product form.**
+      $$
+      \frac{\binom{n-c}{k}}{\binom nk}
+      = \frac{(n-c)!\,(n-k)!}{(n-c-k)!\,n!}
+      = \prod_{i=0}^{k-1}\frac{n-c-i}{n-i}.
+      $$
+      Numerically this is preferred because $\binom{100}{50}\approx10^{29}$ overflows double
+      precision for modest $n$, whereas the product is a sequence of ratios each in $[0,1]$, so it is
+      stable and never leaves representable range.
+
+      **3. Variance comparison.** Both estimators are unbiased. Drawing exactly $k$ samples once
+      yields a Bernoulli indicator $Y$ with mean $q := \mathrm{pass}@k$, so
+      $$
+      \Var(Y) = q(1-q).
+      $$
+      The subset estimator is the *conditional expectation* of $Y$ given the $n$ samples — it
+      averages over all $\binom nk$ subsets rather than picking one. By the law of total variance,
+      $$
+      \Var(Y) = \Var\big(\E[Y\mid \text{samples}]\big) + \E\big[\Var(Y\mid\text{samples})\big]
+      \ \ge\ \Var\big(\widehat{\mathrm{pass}@k}\big),
+      $$
+      with strict inequality whenever the conditional variance is positive — which it is here. This
+      is Rao–Blackwellisation: conditioning on a sufficient statistic never increases variance.
+
+      **Quantifying at $n=100$, $k=1$, $c=20$.** With $k=1$ the estimator is simply $c/n = 0.2$,
+      whose variance across repetitions of the whole experiment is $p(1-p)/n = 0.16/100 = 0.0016$
+      (standard error 0.04). The single-draw estimator has variance $0.2\times0.8 = 0.16$ (standard
+      error 0.40) — **ten times larger**, matching $\sqrt n = 10$.
+
+      This is why benchmark reports draw $n \gg k$ and apply the combinatorial correction rather than
+      running $k$ samples: for the same conclusion they need a hundredth of the repetitions.
+
+  - id: ag-bon-kl
+    title: The KL divergence of best-of-n
+    topic: agents/inference-time-search
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [kl divergence, order statistics, alignment]
+    statement: |
+      Prove that best-of-$n$ sampling against a continuous reward satisfies
+      $\mathrm{KL}(\pi_n\|\pi) = \log n - \frac{n-1}{n}$.
+
+      Then: compute the value for $n = 4, 16, 64$; show the divergence is unbounded in $n$; and
+      explain why this quantity is the right thing to compare against a KL-regularised fine-tune.
+    hints:
+      - |
+        The density ratio of best-of-$n$ with respect to the base is $n F(r(x))^{n-1}$ where $F$ is the reward CDF under the base policy.
+      - |
+        Under the base policy, $F(r(X))$ is uniform on $[0,1]$ by the probability integral transform. Under best-of-$n$ it is the maximum of $n$ uniforms.
+      - |
+        You will need $\int_0^1 (\log u)\,nu^{n-1}\,du$; integrate by parts.
+    solution: |
+      **Density ratio.** Let $F$ be the CDF of $r(X)$ for $X\sim\pi$, continuous so ties have
+      probability zero. A given draw $x$ is the selected one when it is drawn and all other $n-1$
+      draws have smaller reward. Choosing which of the $n$ positions holds $x$ gives the factor $n$,
+      and the others fall below independently with probability $F(r(x))$ each:
+      $$
+      \frac{d\pi_n}{d\pi}(x) = n\,F\big(r(x)\big)^{n-1}.
+      $$
+
+      **Divergence.**
+      $$
+      \mathrm{KL}(\pi_n\|\pi) = \E_{\pi_n}\!\left[\log\frac{d\pi_n}{d\pi}\right]
+      = \log n + (n-1)\,\E_{\pi_n}\big[\log F(r(X))\big].
+      $$
+
+      **The order statistic.** Put $U = F(r(X))$. Under $\pi$, $U\sim\mathrm{Unif}[0,1]$ by the
+      probability integral transform (valid because $F$ is continuous). Under $\pi_n$, $U$ is the
+      maximum of $n$ i.i.d. uniforms, with CDF $u^n$ and density $nu^{n-1}$ on $[0,1]$. Hence
+      $$
+      \E_{\pi_n}[\log U] = \int_0^1 (\log u)\,nu^{n-1}\,du .
+      $$
+      Integrate by parts with $dv = nu^{n-1}du$, $v = u^n$, $w = \log u$, $dw = du/u$:
+      $$
+      \int_0^1(\log u)\,nu^{n-1}du = \big[u^n\log u\big]_0^1 - \int_0^1 u^{n}\cdot\frac{du}{u}
+      = 0 - \int_0^1 u^{n-1}du = -\frac1n,
+      $$
+      the boundary term vanishing at $u=1$ since $\log 1 = 0$, and at $u\to0^+$ since
+      $u^n\log u\to0$.
+
+      **Conclusion.**
+      $$
+      \mathrm{KL}(\pi_n\|\pi) = \log n + (n-1)\left(-\frac1n\right) = \log n - \frac{n-1}{n}. \qquad\blacksquare
+      $$
+
+      **Values.**
+
+      | $n$ | $\log n$ | $(n-1)/n$ | KL (nats) |
+      | --- | --- | --- | --- |
+      | 4 | 1.386 | 0.750 | 0.636 |
+      | 16 | 2.773 | 0.938 | 1.835 |
+      | 64 | 4.159 | 0.984 | 3.175 |
+
+      **Unbounded.** $\log n \to\infty$ while $(n-1)/n \to 1$, so the divergence grows without bound,
+      asymptotically like $\log n - 1$. There is no $n$ beyond which best-of-$n$ stops drifting from
+      the base policy.
+
+      **Why this is the right comparison.** KL-regularised fine-tuning (the RLHF objective
+      $\E[r] - \beta\,\mathrm{KL}(\pi_\theta\|\pi_{\text{ref}})$) explicitly prices distribution shift
+      at $\beta$ nats. Best-of-$n$ produces a policy whose shift is known *exactly*, with no
+      dependence on the reward — so the two can be placed on one axis and compared at matched KL.
+      That comparison is the standard way to ask whether test-time search or training-time
+      optimisation gets more reward per nat of drift.
+
+      The practical significance: a learned reward model is trustworthy only near the distribution it
+      was fit on. Knowing that $n=64$ costs 3.2 nats tells you how far outside that region you are
+      sampling, which is precisely the regime where reward-model error — and hence reward hacking —
+      becomes the dominant effect.
+
+  - id: ag-imperfect-verifier
+    title: The ceiling imposed by a fallible verifier
+    topic: agents/inference-time-search
+    difficulty: advanced
+    type: proof
+    estimated_time: 30m
+    tags: [verifier, precision, reward hacking]
+    statement: |
+      1. Prove that with false-positive rate $\varphi$ and perfect recall, the large-$n$ accuracy of
+         uniform selection from the accepted pool tends to $p/(p+(1-p)\varphi)$.
+      2. Compute the ceiling for $p=0.2$ and $\varphi\in\{0.01, 0.05, 0.2\}$.
+      3. Suppose the verifier instead *ranks* and you take the top-scored sample. Explain why the
+         large-$n$ behaviour can be worse than the bound in part 1.
+    solution: |
+      **1. The limit.** Among $n$ samples, the expected number correct is $np$, all accepted by
+      perfect recall; the expected number incorrect-but-accepted is $n(1-p)\varphi$. By the law of
+      large numbers the pool composition converges to these proportions, so selecting uniformly from
+      the pool gives
+      $$
+      \P(\text{correct}) \longrightarrow \frac{np}{np + n(1-p)\varphi} = \frac{p}{p+(1-p)\varphi}.
+      $$
+      It is strictly below 1 whenever $\varphi>0$ and $p<1$. $\blacksquare$
+
+      **2. Ceilings at $p = 0.2$.**
+
+      | $\varphi$ | $(1-p)\varphi$ | ceiling |
+      | --- | --- | --- |
+      | 0.01 | 0.008 | 0.962 |
+      | 0.05 | 0.040 | 0.833 |
+      | 0.20 | 0.160 | 0.556 |
+
+      A verifier that wrongly accepts one in twenty incorrect answers caps the system at 83%,
+      regardless of how many samples are drawn. Increasing $n$ from 10 to 10,000 moves this number
+      not at all.
+
+      **3. Why ranking can be worse.** Taking the top-scored sample is an extreme order statistic of
+      the verifier's score, so it selects for the samples the verifier scores *highest* — which
+      includes the ones it scores highest **in error**. Formally, if the verifier's score on an
+      incorrect sample has any upper tail, then as $n$ grows the maximum incorrect score grows, and
+      eventually exceeds the typical correct score. The probability of returning a correct answer can
+      then *decrease* in $n$.
+
+      Uniform selection from the accepted pool does not have this property: it averages over the pool
+      rather than seeking the extreme, so it converges to the ceiling from below rather than
+      overshooting and coming back down.
+
+      This is the precise mechanism behind reported best-of-$n$ curves against learned reward models
+      that rise, peak, and decline — and it is why the same curves against an executable checker
+      (where $\varphi$ is essentially 0 and there is no score to exploit) keep rising. The practical
+      advice follows directly: prefer verifiers that *decide* over verifiers that *score*, and where
+      you must score, cap $n$ at the observed peak rather than assuming monotonicity.
+
+  - id: ag-ucb-pulls
+    title: The UCB pull bound
+    topic: agents/tool-selection-and-regret
+    difficulty: graduate
+    type: proof
+    estimated_time: 3h
+    abyss: true
+    tags: [ucb, bandits, hoeffding, union bound]
+    statement: |
+      Prove that UCB1 pulls a suboptimal arm at most $8\log T/\Delta_i^2 + 1 + \pi^2/3$ times in
+      expectation. Identify the three events whose union must occur when a suboptimal arm is selected,
+      and show why the third becomes impossible once the pull count is large enough.
+    hints:
+      - |
+        Suppose arm $i$ is selected at round $t$. Then $\mathrm{UCB}_i(t)\ge\mathrm{UCB}_{i^\star}(t)$; ask what must be true for that to happen if both confidence intervals are behaving.
+      - |
+        The confidence radius $\sqrt{2\log t/s}$ is chosen exactly so that Hoeffding gives a $t^{-4}$ tail.
+      - |
+        Union bound over the possible values of the pull count, then sum over rounds using $\sum t^{-3} < \pi^2/6$.
+    solution: |
+      Let $\ell = \lceil 8\log T/\Delta_i^2\rceil$ and suppose UCB1 selects arm $i$ at round $t$ while
+      $n_i(t)\ge\ell$. Selection means $\mathrm{UCB}_i(t)\ge\mathrm{UCB}_{i^\star}(t)$.
+
+      **The three events.** At least one of these must hold:
+
+      **(a)** $\hat\mu_{i^\star}(t) + \sqrt{2\log t/n_{i^\star}(t)} \le \mu^\star$ — the optimal arm's
+      upper confidence bound fails to cover its true mean;
+
+      **(b)** $\hat\mu_i(t) > \mu_i + \sqrt{2\log t/n_i(t)}$ — arm $i$'s empirical mean exceeds its
+      confidence band;
+
+      **(c)** $\mu^\star < \mu_i + 2\sqrt{2\log t/n_i(t)}$ — the band is still wide enough to span the
+      gap.
+
+      *Why.* If all three fail then
+      $$
+      \mathrm{UCB}_{i^\star}(t) > \mu^\star \ \ge\ \mu_i + 2\sqrt{\frac{2\log t}{n_i(t)}}
+      \ \ge\ \hat\mu_i(t) + \sqrt{\frac{2\log t}{n_i(t)}} = \mathrm{UCB}_i(t),
+      $$
+      where the first inequality is the negation of (a), the second of (c), and the third of (b).
+      That contradicts selection of arm $i$.
+
+      **(c) is impossible for $n_i(t)\ge\ell$.** Rearranging (c),
+      $$
+      \Delta_i = \mu^\star-\mu_i < 2\sqrt{\frac{2\log t}{n_i(t)}}
+      \iff n_i(t) < \frac{8\log t}{\Delta_i^2} \le \frac{8\log T}{\Delta_i^2}\le\ell
+      $$
+      for $t\le T$ — contradicting $n_i(t)\ge\ell$.
+
+      **(a) and (b) are rare.** Fix a pull count $s$ and let $\hat\mu_{i,s}$ be the mean of $s$
+      i.i.d. rewards in $[0,1]$. Hoeffding gives
+      $$
+      \P\!\left(\hat\mu_{i,s} > \mu_i + \sqrt{\tfrac{2\log t}{s}}\right)
+      \le \exp\!\left(-2s\cdot\frac{2\log t}{s}\right) = e^{-4\log t} = t^{-4},
+      $$
+      and symmetrically for (a). The pull count is not fixed but takes at most $t$ values, so a union
+      bound over $s\in\lbrace1,\dots,t\rbrace$ gives
+      $$
+      \P\big((a)\text{ at round }t\big) + \P\big((b)\text{ at round }t\big) \ \le\ 2t\cdot t^{-4} = 2t^{-3}.
+      $$
+
+      **Assemble.** Arm $i$ can be pulled at most $\ell$ times "for free"; beyond that each pull
+      requires (a) or (b). Hence
+      $$
+      \E[n_i(T)] \le \ell + \sum_{t=1}^{\infty} 2t^{-3}
+      \le \frac{8\log T}{\Delta_i^2} + 1 + 2\cdot\frac{\pi^2}{6}\cdot\frac{1}{2}\cdot 2 ,
+      $$
+      and using $\sum_{t\ge1}t^{-3} \le \sum_{t\ge1}t^{-2} = \pi^2/6$ together with
+      $\lceil x\rceil\le x+1$,
+      $$
+      \E[n_i(T)] \ \le\ \frac{8\log T}{\Delta_i^2} + 1 + \frac{\pi^2}{3}. \qquad\blacksquare
+      $$
+
+      **Where the constants come from.** The radius $\sqrt{2\log t/s}$ is chosen so the Hoeffding
+      exponent is exactly $4\log t$, leaving $t^{-4}$ — enough to survive the union bound over $s$
+      (costing a factor $t$) and still be summable over $t$. A smaller constant inside the square root
+      would break summability; a larger one would explore more than necessary and inflate the
+      $8/\Delta_i^2$ term.
+
+  - id: ag-implement-agent-sim
+    title: Simulate an agent pipeline end to end
+    topic: agents/error-compounding-in-trajectories
+    difficulty: advanced
+    type: coding
+    estimated_time: 1d
+    tags: [simulation, agents, correlation, verification]
+    statement: |
+      Build a simulator that makes the theory's assumptions visible.
+
+      1. Simulate trajectories with independent steps and verify $p^n$ empirically.
+      2. Add correlated failures via a shared latent "task difficulty" and measure the gap from $p^n$.
+      3. Add detection and retry; verify the $p_{\text{eff}}$ formula and then break it by making
+         detection correlated with the failure.
+      4. Add majority voting and measure the effective independent vote count.
+    solution: |
+      ```python
+      import numpy as np
+
+      def trajectory(rng, n, p, d=0.0, m=0, rho=0.0):
+          """One trajectory. rho mixes in a shared difficulty that correlates steps."""
+          shared = rng.random() < rho
+          hard = shared and rng.random() < 0.5      # a 'hard task' halves per-step success
+          for _ in range(n):
+              q = p * (0.5 if hard else 1.0)
+              ok = rng.random() < q
+              tries = 0
+              while not ok and tries < m:
+                  if rng.random() < d and rng.random() < q:
+                      ok = True
+                  tries += 1
+              if not ok:
+                  return False
+          return True
+
+      def rate(rng, trials=20000, **kw):
+          return np.mean([trajectory(rng, **kw) for _ in range(trials)])
+      ```
+
+      **1. Verify the baseline.** With `rho=0, d=0, m=0`, compare `rate(...)` against $p^n$. They
+      should agree within Monte Carlo error $\sqrt{p^n(1-p^n)/\text{trials}}$. If they do not, the
+      simulator is wrong — fix it before proceeding, because everything below is measured against
+      this.
+
+      **2. Correlation.** Sweep `rho` from 0 to 1 and plot measured success against $p^n$. Two things
+      to observe: the measured rate falls *below* $p^n$, and the gap widens with $n$. Report the
+      ratio, not the difference — it is the multiplicative penalty that matters at long horizons.
+
+      **3. Retry, then break it.** With `rho=0`, verify $1-(1-p)(1-dp)^m$ exactly. Then introduce a
+      detector that fails on precisely the failures a "hard" task produces — i.e. make $d$ depend on
+      the same latent variable as the failure. The formula's prediction will now be far too
+      optimistic. This is the single most important experiment here: it reproduces, in a controlled
+      setting, why measured agent reliability falls short of what the arithmetic promises.
+
+      **4. Voting.** Add $k$ samples per step with a shared-latent correlation, take the majority, and
+      fit $k_{\text{eff}}$ by finding the independent-vote count giving the same accuracy. Plot
+      $k_{\text{eff}}$ against $k$: it should saturate, and the saturation level is the number worth
+      reporting when someone proposes increasing the sampling budget.
+
+      **What to conclude.** The deliverable is not the simulator but a statement of the form "at our
+      measured correlation, samples beyond $k^\ast$ and retries beyond $m^\ast$ buy nothing". Both
+      numbers come from measurement, and neither is predicted by the closed forms — which is exactly
+      the honest position the topic page takes.

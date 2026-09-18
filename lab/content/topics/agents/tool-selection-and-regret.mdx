@@ -1,0 +1,225 @@
+---
+title: Tool Selection and Regret
+summary: An agent choosing among tools is running a bandit — and the logarithmic regret of UCB tells you exactly what exploration is worth.
+field: agents
+level: 3
+order: 30
+prerequisites:
+  - agents/error-compounding-in-trajectories
+  - high-dimensional-probability/concentration-inequalities
+tags: [bandits, ucb, regret, exploration, tool use]
+estimated_time: 3h
+claims:
+  - id: regret-def
+    kind: definition
+    title: Cumulative regret
+    summary: The shortfall of an algorithm's total reward against always playing the best arm in hindsight.
+    proved: false
+    tags: [regret]
+  - id: ucb-pulls
+    kind: theorem
+    title: UCB1 pulls a suboptimal arm O(log T / Δ²) times
+    summary: With confidence radius √(2 log t / n), the expected number of pulls of an arm with gap Δ is at most 8 log T/Δ² plus a constant.
+    proved: true
+    tags: [ucb, hoeffding, union bound]
+  - id: ucb-regret
+    kind: corollary
+    title: Logarithmic regret for UCB1
+    summary: Cumulative regret is O(Σ log T/Δᵢ) for gap-dependent bounds, and O(√(KT log T)) uniformly over gaps.
+    proved: true
+    tags: [regret, ucb]
+  - id: bandit-lower-bound
+    kind: theorem
+    title: No algorithm beats logarithmic regret
+    summary: Any algorithm with sublinear regret on every instance suffers Ω(log T) regret on some instance, so UCB is optimal in order.
+    proved: false
+    tags: [lower bound, lai-robbins]
+references:
+  - key: auer-ucb
+    title: Finite-time Analysis of the Multiarmed Bandit Problem
+    authors: P. Auer, N. Cesa-Bianchi, P. Fischer
+    year: 2002
+    kind: paper
+    url: https://doi.org/10.1023/A:1013689704352
+  - key: lai-robbins
+    title: Asymptotically Efficient Adaptive Allocation Rules
+    authors: T. L. Lai, H. Robbins
+    year: 1985
+    kind: paper
+    url: https://doi.org/10.1016/0196-8858(85)90002-8
+  - key: lattimore-bandit
+    title: Bandit Algorithms
+    authors: T. Lattimore, C. Szepesvári
+    year: 2020
+    kind: book
+    url: https://tor-lattimore.com/downloads/book/book.pdf
+    note: The standard modern reference; the analysis below is the classical one, stated independently.
+---
+
+<Intuition>
+An agent with several tools — a search index, a calculator, a code interpreter, a database — must
+pick one at each step without knowing in advance which works best for the query at hand. Picking the
+one that has worked best so far exploits what you know and risks never discovering a better option.
+Picking at random explores but wastes calls. The bandit literature settles this trade with a precise
+answer: be optimistic in proportion to your uncertainty, and your total loss grows only
+logarithmically in the number of decisions.
+</Intuition>
+
+## Setup
+
+<Claim kind="definition" id="regret-def" title="Cumulative regret">
+There are $K$ arms (tools). Arm $i$ yields i.i.d. rewards in $[0,1]$ with unknown mean $\mu_i$. Let
+$\mu^\star = \max_i \mu_i$ and $\Delta_i = \mu^\star - \mu_i$ be arm $i$'s **gap**. An algorithm
+choosing arm $I_t$ at round $t$ has cumulative regret
+$$
+R_T = T\mu^\star - \E\left[\sum_{t=1}^T \mu_{I_t}\right] = \sum_{i=1}^K \Delta_i\,\E\big[n_i(T)\big],
+$$
+where $n_i(T)$ counts pulls of arm $i$ in $T$ rounds.
+</Claim>
+
+The second equality is just bookkeeping: each pull of arm $i$ costs exactly $\Delta_i$ against the
+benchmark, so total regret is the gap-weighted pull count. **Bounding regret therefore means bounding
+how often a suboptimal arm is pulled.**
+
+<Algorithm title="UCB1">
+1. Pull each arm once.
+2. For $t &gt; K$, pull the arm maximising
+   $$
+   \mathrm{UCB}_i(t) = \hat\mu_i(t) + \sqrt{\frac{2\log t}{n_i(t)}},
+   $$
+   where $\hat\mu_i(t)$ is the empirical mean of arm $i$'s rewards so far.
+3. Update $\hat\mu$ and $n$ and repeat.
+</Algorithm>
+
+The second term is a confidence radius: wide for rarely-pulled arms, shrinking like $1/\sqrt{n_i}$.
+Acting on the *upper* end of the interval is "optimism in the face of uncertainty" — an arm is played
+either because it looks good or because you do not yet know that it is not.
+
+## The pull bound
+
+<Claim kind="theorem" id="ucb-pulls" title="UCB1 pulls a suboptimal arm O(log T / Δ²) times">
+For rewards in $[0,1]$ and any arm $i$ with $\Delta_i &gt; 0$, UCB1 satisfies
+$$
+\E\big[n_i(T)\big] \ \le\ \frac{8\log T}{\Delta_i^2} \;+\; 1 + \frac{\pi^2}{3}.
+$$
+</Claim>
+
+<Assumptions>
+Rewards i.i.d. per arm, bounded in $[0,1]$, independent across arms and rounds, and **stationary**.
+The last is the assumption most often violated in agent settings and is discussed at the end.
+</Assumptions>
+
+<Proof>
+Let $\ell = \lceil 8\log T/\Delta_i^2\rceil$. We show that once arm $i$ has been pulled $\ell$ times,
+further pulls are rare.
+
+Suppose UCB1 pulls arm $i$ at round $t$ while $n_i(t) \ge \ell$. Then
+$\mathrm{UCB}_i(t) \ge \mathrm{UCB}_{i^\star}(t)$ for the optimal arm $i^\star$, which forces at least
+one of the following three events:
+
+**(a)** $\hat\mu_{i^\star}(t) + \sqrt{2\log t / n_{i^\star}(t)} \le \mu^\star$ — the optimal arm's
+confidence interval fails to cover its mean;
+
+**(b)** $\hat\mu_i(t) &gt; \mu_i + \sqrt{2\log t/n_i(t)}$ — arm $i$'s empirical mean is far above its
+true mean;
+
+**(c)** $\mu^\star &lt; \mu_i + 2\sqrt{2\log t/n_i(t)}$ — the confidence radius is still wide enough to
+straddle the gap.
+
+Indeed, if none of (a)–(c) holds then
+$$
+\mathrm{UCB}_{i^\star}(t) &gt; \mu^\star \ \ge\ \mu_i + 2\sqrt{\frac{2\log t}{n_i(t)}}
+\ \ge\ \hat\mu_i(t) + \sqrt{\frac{2\log t}{n_i(t)}} = \mathrm{UCB}_i(t),
+$$
+contradicting the assumption that $i$ was selected.
+
+**(c) is impossible once $n_i(t) \ge \ell$.** Rearranged, (c) says
+$\Delta_i &lt; 2\sqrt{2\log t/n_i(t)}$, i.e. $n_i(t) &lt; 8\log t/\Delta_i^2 \le 8\log T/\Delta_i^2 \le \ell$.
+
+**(a) and (b) are rare.** Each is a deviation of an empirical mean of $s$ bounded rewards from its
+expectation by $\sqrt{2\log t/s}$. By Hoeffding's inequality, for a fixed count $s$,
+$$
+\P\left(\hat\mu_{i,s} &gt; \mu_i + \sqrt{\frac{2\log t}{s}}\right) \le \exp\left(-2s\cdot\frac{2\log t}{s}\right) = t^{-4},
+$$
+and likewise for (a). Union bounding over the at most $t$ possible values of each arm's pull count,
+$$
+\P\big((a)\big) + \P\big((b)\big) \ \le\ 2\,t\cdot t^{-4} = 2t^{-3}.
+$$
+
+Summing over rounds,
+$$
+\E\big[n_i(T)\big] \ \le\ \ell + \sum_{t=1}^{\infty} 2t^{-3} \ \le\ \frac{8\log T}{\Delta_i^2} + 1 + \frac{\pi^2}{3},
+$$
+using $\sum_{t\ge1} t^{-3} \le \sum_{t\ge1}t^{-2} = \pi^2/6$ and $\lceil x\rceil \le x+1$.
+$\blacksquare$
+</Proof>
+
+<Claim kind="corollary" id="ucb-regret" title="Logarithmic regret for UCB1">
+$$
+R_T \ \le\ \sum_{i:\Delta_i&gt;0}\left(\frac{8\log T}{\Delta_i} + \left(1+\frac{\pi^2}{3}\right)\Delta_i\right)
+\qquad\text{and}\qquad
+R_T = O\big(\sqrt{KT\log T}\big).
+$$
+</Claim>
+
+<Proof>
+The first bound is the theorem multiplied by $\Delta_i$ and summed, using
+$R_T = \sum_i \Delta_i\E[n_i(T)]$.
+
+For the gap-free bound, split at a threshold $\Delta &gt; 0$. Arms with $\Delta_i \le \Delta$
+contribute at most $T\Delta$ in total, since every round costs at most $\Delta$. Arms with
+$\Delta_i &gt; \Delta$ contribute at most $\sum_i 8\log T/\Delta_i \le 8K\log T/\Delta$ plus a constant.
+Hence
+$$
+R_T \ \lesssim\ T\Delta + \frac{8K\log T}{\Delta},
+$$
+and optimising over $\Delta$ — the two terms balance at $\Delta = \sqrt{8K\log T/T}$ — gives
+$R_T = O(\sqrt{KT\log T})$. $\blacksquare$
+</Proof>
+
+<KeyIdea>
+Two readings of the same result:
+
+- **Per-instance:** regret grows like $\log T$, not $T$. The *fraction* of rounds spent on the wrong
+  tool tends to zero. Exploration is nearly free in the long run.
+- **Small gaps are expensive.** The $1/\Delta_i^2$ in the pull bound says arms that are *nearly* as
+  good as the best get pulled a lot — which is fine, because each such pull costs only $\Delta_i$.
+  That is exactly why the regret bound carries $1/\Delta_i$ rather than $1/\Delta_i^2$.
+</KeyIdea>
+
+<Claim kind="theorem" id="bandit-lower-bound" title="No algorithm beats logarithmic regret">
+For any algorithm whose regret is $o(T^a)$ for every $a &gt; 0$ on every instance, and for a broad class
+of reward families, there are instances on which
+$$
+\liminf_{T\to\infty}\frac{R_T}{\log T} \ \ge\ \sum_{i:\Delta_i&gt;0}\frac{\Delta_i}{\mathrm{KL}(\nu_i\,\|\,\nu^\star)},
+$$
+where $\mathrm{KL}(\nu_i\|\nu^\star)$ is the divergence between arm $i$'s reward distribution and the
+optimal arm's.
+</Claim>
+
+<Warning>
+The proof is not given here; it is a change-of-measure argument showing that distinguishing two
+nearby instances requires a number of samples inversely proportional to their KL divergence. What
+matters for use: **UCB1's $\log T$ rate is optimal in order**, so no cleverer exploration rule
+improves the shape of the bound — only its constants. Stated without that lower bound, "UCB achieves
+logarithmic regret" would sound like an achievement that might be beaten; it cannot be.
+</Warning>
+
+<NotSaid>
+The gap between this theory and an actual agent is wide, and each gap is a genuine modelling failure
+rather than a technicality:
+
+- **Tool quality is context-dependent.** The right tool depends on the query, which makes this a
+  *contextual* bandit; the analysis above is for a single fixed distribution per arm. Contextual
+  algorithms exist with their own guarantees and different assumptions.
+- **Rewards are not stationary.** Tools change, indexes go stale, APIs degrade. UCB's confidence
+  radius shrinks monotonically, so it becomes progressively *less* willing to re-explore an arm that
+  has gone bad — the wrong behaviour under drift. Discounted or sliding-window variants exist.
+- **Calls are not free or equal.** Arms have different latencies and costs; the reward-per-round
+  model prices them identically.
+- **Feedback is delayed and partial.** Whether a tool call helped is often only apparent at the end
+  of a trajectory, if at all — the credit-assignment problem the bandit formulation assumes away.
+
+Use the bandit framing to reason about exploration budgets and to recognise that a small persistent
+exploration rate is cheap. Do not read the regret bound as a guarantee about a deployed agent.
+</NotSaid>
