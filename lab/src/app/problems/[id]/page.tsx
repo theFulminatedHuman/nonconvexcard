@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Hint, Hints, Proof } from '@/components/content/disclosure';
 import { Markdown } from '@/components/content/markdown';
+import { CodeRunner } from '@/components/judge/code-runner';
 import { ProblemTable } from '@/components/problems/problem-table';
 import { CompleteButton } from '@/components/progress/complete-button';
 import {
@@ -14,6 +15,8 @@ import {
 } from '@/components/ui/primitives';
 import { allProblems, getProblem, getTopicById } from '@/lib/content';
 import { renderMarkdown } from '@/lib/markdown';
+import { BASE_PATH } from '@/lib/base-path';
+import { getJudgeSpec } from '@/lib/judge';
 import { buildProblemIndex } from '@/lib/problem-index';
 import { DIFFICULTY_LABEL, FIELDS, PROBLEM_TYPE_LABEL, TIME_MINUTES } from '@/lib/taxonomy';
 
@@ -62,6 +65,7 @@ export default async function ProblemPage({ params }: { params: Promise<{ id: st
   // Research-difficulty entries are open problems: they have no solution, and the
   // page must not imply otherwise.
   const open = problem.difficulty === 'research';
+  const judge = getJudgeSpec(problem.id);
 
   const index = buildProblemIndex();
   const related = index
@@ -147,6 +151,23 @@ export default async function ProblemPage({ params }: { params: Promise<{ id: st
             : TYPE_BRIEF[problem.type]}
         </p>
       </section>
+
+      {judge ? (
+        <section className="mt-8">
+          <SectionHeading title="Write it" />
+          <CodeRunner
+            spec={judge}
+            basePath={BASE_PATH}
+            problem={{
+              id: problem.id,
+              title: problem.title,
+              field: problem.field,
+              difficulty: problem.difficulty,
+              minutes: TIME_MINUTES[problem.estimated_time],
+            }}
+          />
+        </section>
+      ) : null}
 
       {hints.length > 0 ? (
         <section className="mt-8">

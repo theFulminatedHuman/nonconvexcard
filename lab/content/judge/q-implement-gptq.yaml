@@ -1,0 +1,47 @@
+problem: q-implement-gptq
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def quantize_dequantize(w, scale, levels):
+      """Symmetric uniform quantize-then-dequantize.
+
+      Round w / scale to the nearest integer, clamp to [-levels, levels - 1],
+      then multiply back by scale. Works elementwise on arrays.
+      """
+      raise NotImplementedError
+
+  def symmetric_scale(W, bits):
+      """Scale for a symmetric `bits`-bit quantizer covering max|W|."""
+      raise NotImplementedError
+tests:
+  - name: values already on the grid are unchanged
+    code: |
+      import numpy as np
+      w = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+      out = np.asarray(quantize_dequantize(w, 1.0, 8))
+      assert np.allclose(out, w), f"on-grid values must round-trip exactly, got {out}"
+  - name: round-trip error never exceeds half a step
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      w = rng.uniform(-3.5, 3.5, size=2000)
+      scale = 0.25
+      out = np.asarray(quantize_dequantize(w, scale, 32))
+      assert np.max(np.abs(out - w)) <= scale / 2 + 1e-9, "unclipped error must be at most scale/2"
+  - name: clamping at the top of the range
+    code: |
+      import numpy as np
+      out = np.asarray(quantize_dequantize(np.array([1000.0]), 1.0, 8))
+      assert out[0] == 7.0, f"expected clamp to levels-1 = 7, got {out[0]}"
+  - name: clamping at the bottom of the range
+    code: |
+      import numpy as np
+      out = np.asarray(quantize_dequantize(np.array([-1000.0]), 1.0, 8))
+      assert out[0] == -8.0, f"expected clamp to -levels = -8, got {out[0]}"
+  - name: the scale covers the tensor maximum
+    code: |
+      import numpy as np
+      W = np.array([-3.0, 0.5, 7.0])
+      s = symmetric_scale(W, 4)
+      assert abs(s - 7.0 / 8) < 1e-12, f"expected max|W| / 2^(bits-1) = 0.875, got {s}"

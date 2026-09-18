@@ -1,0 +1,63 @@
+problem: tf-implement-attention
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def attention(Q, K, V, mask=None):
+      """Scaled dot-product attention.
+
+      Q, K, V have shape (n, d). Return (output, weights), where weights has
+      shape (n, n) and each row sums to 1. Scale scores by 1/sqrt(d).
+      If mask is given it is a boolean (n, n) array; True means "may attend".
+      """
+      raise NotImplementedError
+tests:
+  - name: shapes
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      Q, K, V = (rng.standard_normal((6, 8)) for _ in range(3))
+      out, w = attention(Q, K, V)
+      assert np.asarray(out).shape == (6, 8), "output must be (n, d)"
+      assert np.asarray(w).shape == (6, 6), "weights must be (n, n)"
+  - name: attention weights are a distribution
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      Q, K, V = (rng.standard_normal((7, 5)) for _ in range(3))
+      _, w = attention(Q, K, V)
+      w = np.asarray(w)
+      assert np.all(w >= -1e-12), "weights must be non-negative"
+      assert np.allclose(w.sum(axis=1), 1.0, atol=1e-8), "each row must sum to 1"
+  - name: the 1/sqrt(d) scaling is applied
+    code: |
+      import numpy as np
+      d = 16
+      Q = np.zeros((1, d)); Q[0, 0] = 1.0
+      K = np.zeros((2, d)); K[0, 0] = 4.0
+      V = np.array([[1.0], [0.0]])
+      V = np.repeat(V, d, axis=1)
+      _, w = attention(Q, K, V)
+      w = np.asarray(w)
+      expected = np.exp(4.0 / np.sqrt(d)) / (np.exp(4.0 / np.sqrt(d)) + 1.0)
+      assert abs(w[0, 0] - expected) < 1e-8, f"expected {expected}, got {w[0, 0]} — check the 1/sqrt(d) factor"
+  - name: uniform scores give a uniform average
+    code: |
+      import numpy as np
+      n, d = 4, 3
+      Q = np.zeros((n, d)); K = np.zeros((n, d))
+      V = np.arange(n * d, dtype=float).reshape(n, d)
+      out, w = attention(Q, K, V)
+      assert np.allclose(np.asarray(w), 1.0 / n), "equal scores must give uniform weights"
+      assert np.allclose(np.asarray(out), V.mean(axis=0)), "output should be the mean of V"
+  - name: a causal mask blocks the future
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(3)
+      n, d = 5, 4
+      Q, K, V = (rng.standard_normal((n, d)) for _ in range(3))
+      mask = np.tril(np.ones((n, n), dtype=bool))
+      _, w = attention(Q, K, V, mask=mask)
+      w = np.asarray(w)
+      assert np.allclose(w[np.triu_indices(n, 1)], 0.0, atol=1e-10), "masked positions must get zero weight"
+      assert np.allclose(w.sum(axis=1), 1.0, atol=1e-8), "rows must still sum to 1 after masking"

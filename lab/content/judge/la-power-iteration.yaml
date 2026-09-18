@@ -1,0 +1,52 @@
+problem: la-power-iteration
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def power_iteration(A, iters=500):
+      """Return (eigenvalue, eigenvector) for the dominant eigenpair of symmetric A.
+
+      The eigenvector must be a unit vector. The eigenvalue should be the
+      Rayleigh quotient of the returned vector.
+      """
+      raise NotImplementedError
+tests:
+  - name: diagonal matrix, dominant eigenvalue
+    code: |
+      import numpy as np
+      A = np.diag([5.0, 2.0, 1.0])
+      lam, v = power_iteration(A)
+      assert abs(lam - 5.0) < 1e-6, f"expected 5.0, got {lam}"
+  - name: eigenvector is a unit vector
+    code: |
+      import numpy as np
+      A = np.diag([5.0, 2.0, 1.0])
+      _, v = power_iteration(A)
+      assert abs(np.linalg.norm(v) - 1.0) < 1e-8, "eigenvector must be normalised"
+  - name: eigenvector points along the dominant axis
+    code: |
+      import numpy as np
+      A = np.diag([5.0, 2.0, 1.0])
+      _, v = power_iteration(A)
+      v = np.asarray(v).ravel()
+      assert abs(abs(v[0]) - 1.0) < 1e-5, "dominant direction should be e_0 (either sign)"
+  - name: agrees with numpy on a random symmetric matrix
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      M = rng.standard_normal((6, 6))
+      A = M + M.T
+      lam, v = power_iteration(A)
+      truth = np.linalg.eigvalsh(A)
+      expected = truth[np.argmax(np.abs(truth))]
+      assert abs(abs(lam) - abs(expected)) < 1e-4, f"expected |{expected}|, got |{lam}|"
+  - name: the returned pair actually satisfies Av = lambda v
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      M = rng.standard_normal((5, 5))
+      A = M + M.T
+      lam, v = power_iteration(A)
+      v = np.asarray(v).ravel()
+      residual = np.linalg.norm(A @ v - lam * v)
+      assert residual < 1e-4, f"residual ||Av - lam v|| = {residual} is too large"

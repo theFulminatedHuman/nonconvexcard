@@ -83,6 +83,14 @@ export function ProblemTable({
                   >
                     {p.title}
                   </Link>
+                  {p.runnable ? (
+                    <span
+                      className="ml-1.5 font-mono text-[10px] tracking-wide text-[var(--color-diff-foundation)] uppercase"
+                      title="Has tests you can run in the browser"
+                    >
+                      run
+                    </span>
+                  ) : null}
                   {p.abyss ? (
                     <span className="ml-1.5 font-mono text-[10px] tracking-wide text-[var(--color-diff-olympiad)] uppercase">
                       abyss

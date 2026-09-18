@@ -1,0 +1,45 @@
+problem: sgd-implement-verify
+timeout_seconds: 40
+starter: |
+  import numpy as np
+
+  def sgd(grad_sample, x0, eta, steps, seed=0):
+      """Stochastic gradient descent.
+
+      `grad_sample(x, rng)` returns a stochastic gradient estimate at x. Build
+      the generator with np.random.default_rng(seed) and pass it in each step.
+      Return the trajectory, shape (steps + 1, d), including x0.
+      """
+      raise NotImplementedError
+tests:
+  - name: with a noiseless oracle it reduces to gradient descent
+    code: |
+      import numpy as np
+      x0 = np.array([1.0, -2.0])
+      xs = np.asarray(sgd(lambda x, rng: x, x0, 0.5, 10, seed=0))
+      for t in range(11):
+          assert np.allclose(xs[t], x0 * 0.5 ** t, atol=1e-10), f"step {t} disagrees with exact GD"
+  - name: reproducible for a fixed seed
+    code: |
+      import numpy as np
+      f = lambda x, rng: x + rng.standard_normal(x.shape)
+      a = np.asarray(sgd(f, np.ones(2), 0.05, 50, seed=3))
+      b = np.asarray(sgd(f, np.ones(2), 0.05, 50, seed=3))
+      assert np.allclose(a, b), "the same seed must reproduce the same trajectory"
+  - name: the generator is actually advanced
+    code: |
+      import numpy as np
+      f = lambda x, rng: x + rng.standard_normal(x.shape)
+      a = np.asarray(sgd(f, np.ones(2), 0.05, 50, seed=3))
+      c = np.asarray(sgd(f, np.ones(2), 0.05, 50, seed=4))
+      assert not np.allclose(a, c), "different seeds should give different trajectories"
+  - name: settles into a noise floor rather than converging
+    code: |
+      import numpy as np
+      sigma, eta = 1.0, 0.05
+      f = lambda x, rng: x + sigma * rng.standard_normal(x.shape)
+      xs = np.asarray(sgd(f, np.ones(1) * 5.0, eta, 4000, seed=1))
+      tail = xs[2000:]
+      spread = float(np.mean(tail ** 2))
+      assert spread < 1.0, f"iterates should approach the origin, got mean square {spread}"
+      assert spread > 1e-4, "with constant step and noise the iterates must not converge exactly"

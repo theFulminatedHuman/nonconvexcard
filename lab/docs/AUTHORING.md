@@ -173,6 +173,61 @@ the site's claim that every figure is reproducible has to be true.
 
 Then add the id to `experiments:` in any topic frontmatter that should link to it.
 
+## Add a runnable judge to a coding problem
+
+Create `content/judge/<problem-id>.yaml` — the filename must match the `problem`
+field, and the problem must already exist and be `type: coding`. Both are checked
+at build time.
+
+```yaml
+problem: la-power-iteration
+timeout_seconds: 30          # the run is killed after this; default 30
+starter: |                   # what the editor opens with — signatures, never a solution
+  import numpy as np
+
+  def power_iteration(A, iters=500):
+      """Return (eigenvalue, eigenvector) for the dominant eigenpair."""
+      raise NotImplementedError
+preamble: |                  # optional; runs before the submission
+  import numpy as np
+tests:
+  - name: diagonal matrix, dominant eigenvalue
+    code: |
+      import numpy as np
+      A = np.diag([5.0, 2.0, 1.0])
+      lam, v = power_iteration(A)
+      assert abs(lam - 5.0) < 1e-6, f"expected 5.0, got {lam}"
+```
+
+**How it runs.** Python executes in the reader's own browser via Pyodide
+(CPython on WebAssembly) inside a Web Worker. There is no server and nothing is
+uploaded, which is why the site stays a static export with no attack surface.
+The worker exists so a non-terminating submission can be killed — the only way
+to enforce a time limit in a browser.
+
+**Writing good tests.**
+
+- A test is plain Python that raises to fail. Prefer `assert` with a message
+  that shows the actual value: `f"expected 5.0, got {lam}"`. That message is
+  what the reader sees in the verdict table.
+- Test *properties*, not exact floats. These are numerical problems: check a
+  tolerance, a rate, an invariant, agreement with a reference computation.
+- Tests share one namespace with the submission, in order, so a later test can
+  use what an earlier one defined. Do not rely on that — write each to stand alone.
+- Seed every generator (`np.random.default_rng(0)`) so a verdict is reproducible.
+- Keep runtimes short. Pyodide is roughly an order of magnitude slower than
+  native CPython, and the whole set must finish inside `timeout_seconds`.
+
+**Verify before committing.** Write a reference solution and run every test
+against it, then mutate the reference in a plausible way and check the tests
+catch it. A test set that passes everything is worse than none. The 14 specs in
+this repository were verified both ways: 67/67 tests pass against references,
+and 10/10 seeded mutations were caught.
+
+**Bumping Pyodide.** The version is the `PYODIDE_VERSION` constant at the top of
+`public/judge-worker.js`, used for both the script URL and the package index. If
+the CDN 404s, the UI reports the failure with that version in the message.
+
 ## Add a paper
 
 Create `content/papers/<id>.mdx`:

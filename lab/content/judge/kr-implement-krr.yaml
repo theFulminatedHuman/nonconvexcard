@@ -1,0 +1,62 @@
+problem: kr-implement-krr
+timeout_seconds: 40
+starter: |
+  import numpy as np
+
+  def rbf_kernel(X, Z, gamma):
+      """Gaussian kernel matrix, k(x, z) = exp(-gamma * ||x - z||^2).
+
+      X is (n, d) and Z is (m, d); return an (n, m) matrix.
+      """
+      raise NotImplementedError
+
+  def krr_fit(K, y, lam):
+      """Solve (K + lam*I) alpha = y and return alpha."""
+      raise NotImplementedError
+
+  def krr_predict(K_star, alpha):
+      """Predictions for test points, given their kernel against the training set."""
+      raise NotImplementedError
+tests:
+  - name: kernel shape and diagonal
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      X = rng.standard_normal((5, 3))
+      K = np.asarray(rbf_kernel(X, X, 0.5))
+      assert K.shape == (5, 5), f"expected (5, 5), got {K.shape}"
+      assert np.allclose(np.diag(K), 1.0), "k(x, x) must be 1"
+  - name: kernel is symmetric and positive semidefinite
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      X = rng.standard_normal((12, 4))
+      K = np.asarray(rbf_kernel(X, X, 0.3))
+      assert np.allclose(K, K.T, atol=1e-12), "the kernel matrix must be symmetric"
+      assert np.min(np.linalg.eigvalsh(K)) > -1e-8, "the kernel matrix must be PSD"
+  - name: kernel values decay with distance
+    code: |
+      import numpy as np
+      X = np.array([[0.0]]); Z = np.array([[0.0], [1.0], [3.0]])
+      K = np.asarray(rbf_kernel(X, Z, 1.0)).ravel()
+      assert abs(K[0] - 1.0) < 1e-12
+      assert abs(K[1] - np.exp(-1.0)) < 1e-10, f"expected exp(-1), got {K[1]}"
+      assert K[0] > K[1] > K[2]
+  - name: alpha solves the regularised system
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(2)
+      X = rng.standard_normal((10, 2)); y = rng.standard_normal(10)
+      K = np.asarray(rbf_kernel(X, X, 0.5))
+      lam = 0.1
+      a = np.asarray(krr_fit(K, y, lam)).ravel()
+      assert np.allclose(K @ a + lam * a, y, atol=1e-8), "(K + lam I) alpha = y must hold"
+  - name: small lambda interpolates the training data
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(3)
+      X = rng.standard_normal((8, 2)); y = rng.standard_normal(8)
+      K = np.asarray(rbf_kernel(X, X, 0.5))
+      a = np.asarray(krr_fit(K, y, 1e-10)).ravel()
+      pred = np.asarray(krr_predict(K, a)).ravel()
+      assert np.allclose(pred, y, atol=1e-4), f"should interpolate as lam -> 0, max error {np.max(np.abs(pred - y))}"

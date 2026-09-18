@@ -8,6 +8,7 @@
  */
 import { allProblems, allTopics } from './content';
 import { latexToText } from './latex-text';
+import { allJudgeSpecs } from './judge';
 import type { Difficulty, EstimatedTime, FieldSlug, ProblemType } from './taxonomy';
 import { DIFFICULTY_RANK, TIME_MINUTES } from './taxonomy';
 
@@ -25,8 +26,10 @@ export interface ProblemIndexEntry {
   tags: string[];
   abyss: boolean;
   hints: number;
-  /** First ~200 characters of the statement, LaTeX intact, for the row preview. */
+  /** First ~200 characters of the statement, rendered as plain prose. */
   teaser: string;
+  /** True when the problem has runnable tests in the browser judge. */
+  runnable: boolean;
 }
 
 /** Renders the opening of a statement as plain prose, math resolved to text. */
@@ -41,6 +44,7 @@ function teaserOf(statement: string): string {
 
 export function buildProblemIndex(): ProblemIndexEntry[] {
   const titles = new Map(allTopics().map((t) => [t.id, t.frontmatter.title]));
+  const judged = allJudgeSpecs();
   return allProblems()
     .map((p) => ({
       id: p.id,
@@ -57,6 +61,7 @@ export function buildProblemIndex(): ProblemIndexEntry[] {
       abyss: p.abyss,
       hints: p.hints.length,
       teaser: teaserOf(p.statement),
+      runnable: judged.has(p.id),
     }))
     .sort((a, b) => {
       const d = DIFFICULTY_RANK[a.difficulty] - DIFFICULTY_RANK[b.difficulty];

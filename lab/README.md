@@ -115,6 +115,10 @@ time estimates and claim kinds are each defined exactly once and validated every
 - The Abyss: the hardest problems, including genuinely open ones, marked as open.
 - 8 interactive experiments, each code-split, seeded and reproducible, each stating what the figure
   *is not* evidence for.
+- **An in-browser judge**: 14 coding problems ship starter code and test cases, and run Python in
+  the reader's own browser through Pyodide in a Web Worker — no server, nothing uploaded, still a
+  static export. Passing every test marks the problem solved. A non-terminating submission is killed
+  on a time limit, which is what the worker is for.
 
 **Reference**
 - Proof library over every stated result, filterable by epistemic status and by whether a complete
