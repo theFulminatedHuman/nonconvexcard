@@ -1,0 +1,73 @@
+problem: dl-implement-backprop
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def relu(x):
+      """Elementwise ReLU."""
+      raise NotImplementedError
+
+  def relu_backward(dout, x):
+      """Gradient of the loss with respect to the ReLU input, given dout at its output."""
+      raise NotImplementedError
+
+  def linear_backward(dout, x, W):
+      """Backward pass of y = x @ W.
+
+      x has shape (n, d), W has shape (d, m), dout has shape (n, m).
+      Return (dx, dW).
+      """
+      raise NotImplementedError
+tests:
+  - name: relu is correct
+    code: |
+      import numpy as np
+      x = np.array([-2.0, -0.5, 0.0, 0.5, 2.0])
+      assert np.allclose(np.asarray(relu(x)), [0.0, 0.0, 0.0, 0.5, 2.0])
+  - name: relu gradient gates on the sign of the input
+    code: |
+      import numpy as np
+      x = np.array([-1.0, 2.0])
+      g = np.asarray(relu_backward(np.array([3.0, 5.0]), x))
+      assert np.allclose(g, [0.0, 5.0]), f"expected [0, 5], got {g}"
+  - name: linear backward shapes
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      x = rng.standard_normal((4, 3)); W = rng.standard_normal((3, 5))
+      dx, dW = linear_backward(rng.standard_normal((4, 5)), x, W)
+      assert np.asarray(dx).shape == (4, 3) and np.asarray(dW).shape == (3, 5)
+  - name: linear backward matches a numerical gradient
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      x = rng.standard_normal((3, 4)); W = rng.standard_normal((4, 2))
+      G = rng.standard_normal((3, 2))            # dLoss/dy for Loss = sum(G * y)
+      dx, dW = linear_backward(G, x, W)
+      eps = 1e-6
+      num_dx = np.zeros_like(x)
+      it = np.nditer(x, flags=['multi_index'])
+      while not it.finished:
+          i = it.multi_index
+          xp = x.copy(); xp[i] += eps
+          xm = x.copy(); xm[i] -= eps
+          num_dx[i] = (np.sum(G * (xp @ W)) - np.sum(G * (xm @ W))) / (2 * eps)
+          it.iternext()
+      assert np.allclose(np.asarray(dx), num_dx, atol=1e-5), "dx disagrees with the numerical gradient"
+  - name: dW matches a numerical gradient
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(2)
+      x = rng.standard_normal((3, 4)); W = rng.standard_normal((4, 2))
+      G = rng.standard_normal((3, 2))
+      _, dW = linear_backward(G, x, W)
+      eps = 1e-6
+      num_dW = np.zeros_like(W)
+      it = np.nditer(W, flags=['multi_index'])
+      while not it.finished:
+          i = it.multi_index
+          Wp = W.copy(); Wp[i] += eps
+          Wm = W.copy(); Wm[i] -= eps
+          num_dW[i] = (np.sum(G * (x @ Wp)) - np.sum(G * (x @ Wm))) / (2 * eps)
+          it.iternext()
+      assert np.allclose(np.asarray(dW), num_dW, atol=1e-5), "dW disagrees with the numerical gradient"

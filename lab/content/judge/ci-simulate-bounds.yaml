@@ -1,0 +1,41 @@
+problem: ci-simulate-bounds
+timeout_seconds: 30
+starter: |
+  import numpy as np
+
+  def markov_bound(mean, t):
+      """P(X >= t) <= mean / t, for a non-negative X and t > 0."""
+      raise NotImplementedError
+
+  def chebyshev_bound(var, t):
+      """P(|X - EX| >= t) <= var / t^2."""
+      raise NotImplementedError
+
+  def hoeffding_bound(n, t, a, b):
+      """Two-sided bound on P(|mean - Emean| >= t) for n i.i.d. variables in [a, b]."""
+      raise NotImplementedError
+tests:
+  - name: Markov on a simple case
+    code: |
+      assert abs(markov_bound(1.0, 4.0) - 0.25) < 1e-12
+  - name: Chebyshev on a simple case
+    code: |
+      assert abs(chebyshev_bound(2.0, 2.0) - 0.5) < 1e-12
+  - name: Hoeffding matches the closed form
+    code: |
+      import math
+      got = hoeffding_bound(100, 0.1, 0.0, 1.0)
+      want = 2 * math.exp(-2 * 100 * 0.1 ** 2 / (1.0 - 0.0) ** 2)
+      assert abs(got - want) < 1e-12, f"expected {want}, got {got}"
+  - name: Hoeffding tightens as n grows
+    code: |
+      vals = [hoeffding_bound(n, 0.1, 0.0, 1.0) for n in [10, 100, 1000]]
+      assert vals[0] > vals[1] > vals[2], f"bound must decrease in n, got {vals}"
+  - name: the bounds actually hold on a simulation
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      n, trials, t = 200, 20000, 0.1
+      means = rng.random((trials, n)).mean(axis=1)
+      empirical = float(np.mean(np.abs(means - 0.5) >= t))
+      assert empirical <= hoeffding_bound(n, t, 0.0, 1.0) + 1e-9, "Hoeffding must upper bound the empirical rate"
