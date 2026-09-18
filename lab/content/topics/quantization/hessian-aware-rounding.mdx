@@ -1,0 +1,293 @@
+---
+title: Hessian-Aware Rounding
+summary: Rounding each weight to the nearest grid point is not optimal — the layer-wise reconstruction objective has a closed-form correction, and that is what GPTQ computes.
+field: quantization
+level: 3
+order: 20
+prerequisites:
+  - quantization/uniform-quantization-and-error
+  - foundations/linear-algebra
+  - advanced-optimization/duality-and-kkt
+tags: [gptq, obq, optimal brain surgeon, hessian, layer-wise, lagrange]
+estimated_time: 3h
+claims:
+  - id: layerwise-objective
+    kind: proposition
+    title: The layer-wise objective is a quadratic form in the weight error
+    summary: Reconstruction error decouples across output rows and equals a quadratic form with Hessian 2XXᵀ.
+    proved: true
+    tags: [objective, quadratic]
+  - id: obs-update
+    kind: theorem
+    title: Optimal update under a fixed rounding
+    summary: Fixing one weight to its quantized value, the error-minimising correction to the remaining weights has a closed form involving one column of the inverse Hessian.
+    proved: true
+    tags: [lagrange, closed form, optimal brain surgeon]
+  - id: obs-cost
+    kind: corollary
+    title: The cost of quantizing a coordinate
+    summary: The incurred error is the squared rounding residual divided by twice the corresponding diagonal entry of the inverse Hessian.
+    proved: true
+    tags: [greedy, selection]
+  - id: inverse-deletion
+    kind: lemma
+    title: Inverse Hessian after deleting a coordinate
+    summary: Removing one coordinate updates the inverse Hessian by a rank-one correction, so the whole sweep costs one inversion rather than one per weight.
+    proved: true
+    tags: [block inverse, schur complement]
+  - id: rtn-suboptimal
+    kind: proposition
+    title: Round-to-nearest is suboptimal whenever inputs are correlated
+    summary: If the input covariance is not diagonal, rounding each weight independently is strictly worse than the corrected update for some weight vector.
+    proved: true
+    tags: [correlation, suboptimality]
+references:
+  - key: lecun-obd
+    title: Optimal Brain Damage
+    authors: Y. LeCun, J. Denker, S. Solla
+    year: 1989
+    kind: paper
+    url: https://proceedings.neurips.cc/paper/1989/hash/6c9882bbac1c7093bd25041881277658-Abstract.html
+  - key: hassibi-obs
+    title: 'Second Order Derivatives for Network Pruning: Optimal Brain Surgeon'
+    authors: B. Hassibi, D. Stork
+    year: 1992
+    kind: paper
+    url: https://proceedings.neurips.cc/paper/1992/hash/303ed4c69846ab36c2904d3ba8573050-Abstract.html
+    note: The constrained-quadratic argument reproduced below originates here, for pruning.
+  - key: frantar-gptq
+    title: 'GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers'
+    authors: E. Frantar, S. Ashkboos, T. Hoefler, D. Alistarh
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2210.17323
+---
+
+<Intuition>
+Round-to-nearest treats each weight as if it acted alone. It does not. If two input features are
+correlated, rounding one weight up can be compensated by nudging its partner down, leaving the
+layer's output almost unchanged. The nearest grid point is the right answer for the *weight*; it is
+the wrong answer for the *function the layer computes*.
+
+So quantize the weights one at a time, and after each one, solve exactly for the best correction to
+everything not yet quantized. That correction has a closed form, and computing it is the whole
+algorithm.
+</Intuition>
+
+## The layer-wise objective
+
+Post-training quantization methods almost never optimise the end-to-end loss — that would need
+labels, backpropagation through the whole network, and far more compute. Instead they fix each layer
+in turn and ask that its *output* be preserved on a small calibration set.
+
+<Claim kind="proposition" id="layerwise-objective" title="The layer-wise objective is a quadratic form in the weight error">
+Let a linear layer have weights $W \in \R^{m \times d}$ and let $X \in \R^{d \times n}$ hold $n$
+calibration inputs as columns. Then
+$$
+\big\|WX - \widehat W X\big\|_F^2 \;=\; \sum_{i=1}^{m} \delta_i^\top \big(XX^\top\big)\, \delta_i,
+\qquad \delta_i = \big(\widehat W - W\big)_{i,:}^\top ,
+$$
+so the problem decouples across the $m$ output rows, each governed by the same matrix
+$H := 2XX^\top$, the Hessian of the row objective.
+</Claim>
+
+<Proof>
+The squared Frobenius norm sums over rows:
+$\|WX - \widehat WX\|_F^2 = \sum_i \|(W-\widehat W)_{i,:}X\|_2^2$. For a single row, writing
+$\delta = (\widehat W - W)_{i,:}^\top \in \R^d$,
+$$
+\|\delta^\top X\|_2^2 = \delta^\top X X^\top \delta .
+$$
+Rows share $X$ and appear in no common term, so the objective separates. Writing the row objective as
+$f(\delta) = \delta^\top XX^\top \delta$, its Hessian is $\nabla^2 f = 2XX^\top = H$, constant in
+$\delta$ because $f$ is exactly quadratic. $\blacksquare$
+</Proof>
+
+<Note>
+$H = 2XX^\top$ is positive semidefinite but singular whenever $n &lt; d$ or the calibration inputs are
+linearly dependent — routine in practice. Implementations add a damping term $H + \lambda I$ with
+$\lambda$ a small multiple of $\operatorname{tr}(H)/d$. This is ridge regularisation of the
+correction step, and it is a numerical necessity rather than a modelling choice; the algorithm below
+assumes $H \succ 0$ after damping.
+</Note>
+
+## The optimal correction
+
+<Claim kind="theorem" id="obs-update" title="Optimal update under a fixed rounding">
+Let $H \succ 0$, let $w \in \R^d$ be the current row, and fix coordinate $q$ to the quantized value
+$\operatorname{quant}(w_q)$. Among all $\delta \in \R^d$ satisfying that constraint, the one
+minimising $\tfrac12\delta^\top H \delta$ is
+$$
+\boxed{\;\delta^\star \;=\; -\,\frac{w_q - \operatorname{quant}(w_q)}{\big[H^{-1}\big]_{qq}}\;H^{-1}e_q\;}
+$$
+where $e_q$ is the $q$-th standard basis vector.
+</Claim>
+
+<Assumptions>
+$H \succ 0$, so the objective is strictly convex and $H^{-1}$ exists; the constraint is the single
+linear equation $e_q^\top \delta = \operatorname{quant}(w_q) - w_q$. No assumption is made about the
+other coordinates — they are all free to move, which is precisely the point.
+</Assumptions>
+
+<Derivation>
+<Step why="A strictly convex quadratic under one linear equality constraint; KKT reduces to stationarity of the Lagrangian.">
+Write $c = \operatorname{quant}(w_q) - w_q$ and form
+$$
+\mathcal L(\delta,\lambda) = \tfrac12\delta^\top H\delta + \lambda\big(e_q^\top\delta - c\big).
+$$
+</Step>
+<Step why="Stationarity in δ.">
+$\nabla_\delta \mathcal L = H\delta + \lambda e_q = 0 \implies \delta = -\lambda H^{-1}e_q$.
+</Step>
+<Step why="Impose the constraint to identify the multiplier.">
+$e_q^\top \delta = -\lambda\, e_q^\top H^{-1} e_q = -\lambda\big[H^{-1}\big]_{qq} = c$, hence
+$\lambda = -c/[H^{-1}]_{qq}$, which is well defined because $[H^{-1}]_{qq} &gt; 0$ for $H \succ 0$.
+</Step>
+<Step why="Substitute back, and rewrite c in terms of the rounding residual.">
+$$
+\delta^\star = \frac{c}{[H^{-1}]_{qq}}H^{-1}e_q
+= -\frac{w_q - \operatorname{quant}(w_q)}{[H^{-1}]_{qq}}H^{-1}e_q .
+$$
+Strict convexity makes this stationary point the unique global minimiser. $\blacksquare$
+</Step>
+</Derivation>
+
+<KeyIdea>
+Read the formula: $H^{-1}e_q$ is the $q$-th column of the inverse Hessian, so the correction spreads
+over **every** remaining coordinate, in proportion to how strongly each is coupled to $q$ through the
+input covariance. Round-to-nearest is the special case where you refuse to apply this correction at
+all.
+</KeyIdea>
+
+<Claim kind="corollary" id="obs-cost" title="The cost of quantizing a coordinate">
+The minimum objective value incurred by fixing coordinate $q$ is
+$$
+\mathcal E_q \;=\; \tfrac12 (\delta^\star)^\top H \delta^\star
+\;=\; \frac{\big(w_q - \operatorname{quant}(w_q)\big)^2}{2\big[H^{-1}\big]_{qq}} .
+$$
+</Claim>
+
+<Proof>
+With $\delta^\star = -\lambda H^{-1}e_q$,
+$$
+\tfrac12(\delta^\star)^\top H\delta^\star = \tfrac12\lambda^2\, e_q^\top H^{-1}HH^{-1}e_q
+= \tfrac12\lambda^2 \big[H^{-1}\big]_{qq},
+$$
+and substituting $\lambda = -\big(w_q-\operatorname{quant}(w_q)\big)/[H^{-1}]_{qq}$ gives the
+result. $\blacksquare$
+</Proof>
+
+So the greedy rule is: quantize next the coordinate with the smallest
+$(w_q - \operatorname{quant}(w_q))^2 / [H^{-1}]_{qq}$ — small rounding residual, or a direction the
+data barely constrains.
+
+## Doing it for the whole row without $d$ inversions
+
+Naively, after fixing $q$ you would re-invert the Hessian restricted to the remaining coordinates.
+That would be $O(d^4)$ per row. It is unnecessary.
+
+<Claim kind="lemma" id="inverse-deletion" title="Inverse Hessian after deleting a coordinate">
+Let $H \succ 0$ and let $F$ index its coordinates with $q \in F$. Writing $H_{-q}$ for $H$ with row
+and column $q$ removed,
+$$
+\big(H_{-q}\big)^{-1} \;=\; \Big[H^{-1} - \frac{1}{[H^{-1}]_{qq}}\,H^{-1}e_q\,e_q^\top H^{-1}\Big]_{-q},
+$$
+a rank-one correction followed by deletion.
+</Claim>
+
+<Proof>
+Permute so $q$ is last and write in blocks
+$$
+H = \begin{pmatrix} A & b \\ b^\top & c\end{pmatrix},
+\qquad A = H_{-q}.
+$$
+The standard block inverse, with Schur complement $s = c - b^\top A^{-1}b &gt; 0$, is
+$$
+H^{-1} = \begin{pmatrix}
+A^{-1} + \dfrac{A^{-1}bb^\top A^{-1}}{s} & -\dfrac{A^{-1}b}{s}\\[6pt]
+-\dfrac{b^\top A^{-1}}{s} & \dfrac{1}{s}
+\end{pmatrix}.
+$$
+Hence $[H^{-1}]_{qq} = 1/s$ and the leading block of $H^{-1}e_q$ is $-A^{-1}b/s$. Therefore
+$$
+\frac{1}{[H^{-1}]_{qq}}\big[H^{-1}e_q\big]\big[e_q^\top H^{-1}\big]
+\Big|_{\text{leading block}}
+= s\cdot\frac{A^{-1}b}{s}\cdot\frac{b^\top A^{-1}}{s} = \frac{A^{-1}bb^\top A^{-1}}{s},
+$$
+which is exactly the correction that must be subtracted from the leading block of $H^{-1}$ to leave
+$A^{-1}$. $\blacksquare$
+</Proof>
+
+<Algorithm title="Hessian-aware rounding of one layer">
+1. Accumulate $H = 2XX^\top$ over the calibration set and damp: $H \leftarrow H + \lambda I$.
+2. Compute $H^{-1}$ once — **shared by all $m$ rows**, since the proposition showed they share $H$.
+3. For $q = 1,\dots,d$ in a fixed order, and for all rows in parallel:
+   a. Set $\widehat w_q = \operatorname{quant}(w_q)$.
+   b. Apply $\delta^\star$ to the not-yet-quantized coordinates.
+   c. Update $H^{-1}$ by the rank-one deletion above.
+4. Emit the quantized weights and the per-group scales.
+</Algorithm>
+
+<Details summary="Why a fixed order, and why Cholesky">
+The greedy order of the corollary is the locally optimal choice, but it makes different rows quantize
+coordinates in different sequences, which destroys the shared-$H^{-1}$ structure and with it any hope
+of using the GPU efficiently. The empirical finding behind GPTQ is that for large layers a fixed
+order costs very little accuracy while allowing every row to be processed simultaneously — an
+engineering trade justified by measurement, not by a theorem.
+
+With a fixed order the sequence of rank-one deletions is known in advance, and the required columns
+of the successive inverses are exactly the rows of the Cholesky factor of $H^{-1}$. Computing that
+factorisation once, in double precision, replaces $d$ explicit rank-one updates whose errors
+accumulate — the repeated updates are numerically fragile because $H$ is ill-conditioned after
+damping.
+</Details>
+
+## Is the correction actually needed?
+
+<Claim kind="proposition" id="rtn-suboptimal" title="Round-to-nearest is suboptimal whenever inputs are correlated">
+Suppose $H$ is not diagonal. Then there exist a weight vector $w$ and a quantization grid for which
+round-to-nearest incurs strictly larger layer-wise error than the corrected procedure.
+</Claim>
+
+<Proof>
+Take $d = 2$ with
+$$
+H = \begin{pmatrix} 1 & \rho \\ \rho & 1 \end{pmatrix}, \qquad 0 &lt; |\rho| &lt; 1,
+$$
+which is positive definite. Let the grid be the integers and take $w = (\tfrac12 - \eps,\ 0)$ for
+small $\eps &gt; 0$, so that $\operatorname{quant}(w_1) = 0$ and $w_2 = 0$ is already on the grid.
+
+Round-to-nearest produces $\widehat w = (0,0)$, hence $\delta^{\mathrm{RTN}} = -w$ and
+$$
+\mathcal E^{\mathrm{RTN}} = \tfrac12 \delta^\top H \delta = \tfrac12\big(\tfrac12-\eps\big)^2 .
+$$
+
+The corrected procedure fixes coordinate 1 to $0$ and then chooses $\delta_2$ freely, minimising
+$$
+g(\delta_2) = \tfrac12\Big[\big(\tfrac12-\eps\big)^2 - 2\rho\big(\tfrac12-\eps\big)\delta_2 + \delta_2^2\Big]
+$$
+— note $\delta_1 = -(\tfrac12-\eps)$ is forced. Setting $g'(\delta_2)=0$ gives
+$\delta_2^\star = \rho(\tfrac12-\eps)$ and
+$$
+\mathcal E^{\mathrm{OBS}} = \tfrac12\big(\tfrac12-\eps\big)^2\big(1-\rho^2\big)
+\;&lt;\; \mathcal E^{\mathrm{RTN}},
+$$
+strictly, since $0 &lt; 1-\rho^2 &lt; 1$. $\blacksquare$
+</Proof>
+
+The gap is governed by $1-\rho^2$: the more correlated the inputs, the more there is to gain. Since
+the input activations of a transformer layer are strongly correlated across channels, this is the
+regime that applies.
+
+<NotSaid>
+The objective optimised here is *layer-wise output reconstruction on a calibration set*, not the
+model's loss. Three gaps follow, and they are all real:
+- **Error accumulates across layers.** Each layer is optimised assuming its input is the
+  *unquantized* model's input; once earlier layers are quantized, that assumption is false.
+  Sequential variants that feed quantized activations forward address this partially.
+- **Calibration set dependence.** $H$ is estimated from a few hundred sequences; a distribution shift
+  at deployment invalidates it, and nothing in the derivation bounds that.
+- **Reconstruction is a proxy.** Nothing here shows small layer-wise MSE implies small degradation in
+  generation quality. The literature reports that it usually does; that is an empirical regularity,
+  not a consequence of any of the results above.
+</NotSaid>

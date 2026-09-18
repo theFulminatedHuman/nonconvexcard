@@ -20,7 +20,7 @@ import {
 import { SearchIcon } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/primitives';
 import { FilterChip, FilterGroup, toggleIn } from './filters';
-import { ProblemRow } from './problem-row';
+import { ProblemTable } from './problem-table';
 
 type Status = 'all' | 'todo' | 'done';
 type Sort = 'difficulty' | 'time' | 'title';
@@ -259,13 +259,11 @@ export function ProblemBrowser({
           />
         ) : (
           <>
-            <ul className="divide-y divide-[var(--color-line)]">
-              {filtered.slice(0, limit).map((p) => (
-                <li key={p.id}>
-                  <ProblemRow problem={p} solved={mounted && solved.has(p.id)} />
-                </li>
-              ))}
-            </ul>
+            <ProblemTable
+              problems={filtered.slice(0, limit)}
+              solvedIds={mounted ? solved : undefined}
+              showField={!lockedField}
+            />
             {filtered.length > limit ? (
               <button
                 type="button"

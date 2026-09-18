@@ -3,10 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Hint, Hints, Proof } from '@/components/content/disclosure';
 import { Markdown } from '@/components/content/markdown';
-import { ProblemRow } from '@/components/problems/problem-row';
+import { ProblemTable } from '@/components/problems/problem-table';
 import { CompleteButton } from '@/components/progress/complete-button';
 import {
-  Card,
   Chip,
   DifficultyChip,
   SectionHeading,
@@ -185,15 +184,9 @@ export default async function ProblemPage({ params }: { params: Promise<{ id: st
               </Link>
             }
           />
-          <Card>
-            <ul className="divide-y divide-[var(--color-line)]">
-              {related.map((p) => (
-                <li key={p.id}>
-                  <ProblemRow problem={p} showTeaser={false} />
-                </li>
-              ))}
-            </ul>
-          </Card>
+          <div className="panel">
+            <ProblemTable problems={related} />
+          </div>
         </section>
       ) : null}
     </div>

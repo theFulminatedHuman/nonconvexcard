@@ -20,6 +20,7 @@ import {
   type Topic,
 } from './schema';
 import { FIELDS, FIELD_SLUGS, isFieldSlug, type FieldSlug } from './taxonomy';
+import { latexToText } from './latex-text';
 
 const CONTENT_ROOT = path.join(process.cwd(), 'content');
 
@@ -57,7 +58,9 @@ function extractHeadings(body: string): Topic['headings'] {
   const seen = new Map<string, number>();
   for (const m of body.matchAll(HEADING_RE)) {
     const depth = m[1]!.length;
-    const text = m[2]!.replace(/\{#[^}]+\}/, '').trim();
+    // Headings routinely contain inline math; the table of contents cannot run
+    // KaTeX, so resolve it to text rather than rendering raw source.
+    const text = latexToText(m[2]!.replace(/\{#[^}]+\}/, '').trim());
     let id = slugifyHeading(text);
     if (!id) continue;
     const n = seen.get(id) ?? 0;

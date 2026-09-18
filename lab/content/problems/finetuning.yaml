@@ -1,0 +1,573 @@
+defaults:
+  field: finetuning
+problems:
+  - id: ft-param-count
+    title: Adapter parameter counts
+    topic: finetuning/low-rank-adaptation
+    difficulty: foundation
+    type: numerical
+    estimated_time: 15m
+    tags: [lora, counting]
+    statement: |
+      A model has 32 layers, each with four attention projections of size $4096\times4096$.
+
+      1. Count full fine-tuning parameters for those projections.
+      2. Count LoRA parameters at $r = 8$ and at $r = 64$, applied to all four projections in every layer.
+      3. Give the reduction factors, and the rank at which LoRA stops saving anything.
+    solution: |
+      **1. Full.** $32 \times 4 \times 4096^2 = 2.147\times10^9$ parameters.
+
+      **2. LoRA.** Per matrix, $r(d+k) = r(4096+4096) = 8192r$. Over $32\times4 = 128$ matrices:
+      $128 \times 8192 r = 1.049\times10^6\,r$.
+      - $r = 8$: $\mathbf{8.39\times10^6}$.
+      - $r = 64$: $\mathbf{6.71\times10^7}$.
+
+      **3. Reduction factors.** $d/(2r) = 4096/(2r)$:
+      - $r=8$: $\mathbf{256\times}$.
+      - $r=64$: $\mathbf{32\times}$.
+
+      **Break-even.** LoRA saves nothing when $r(d+k) \ge dk$, i.e. $r \ge dk/(d+k) = 4096/2 = 2048$.
+      At $r = 2048$ the adapter has as many parameters as the matrix it adapts — and since a rank-2048
+      matrix in $\R^{4096\times4096}$ is still a genuine restriction, you would be paying full price
+      for a constrained model. In practice ranks above a few hundred are already hard to justify.
+
+  - id: ft-memory-budget
+    title: Will this fine-tune fit?
+    topic: finetuning/memory-arithmetic-of-training
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [memory, adam, lora, qlora]
+    statement: |
+      You have one 80 GB GPU and a 13B-parameter model.
+
+      1. Compute persistent state for full fine-tuning with mixed-precision Adam. Does it fit?
+      2. Compute it for LoRA with 20M trainable parameters and a BF16 frozen base.
+      3. Compute it for QLoRA with a 4-bit frozen base.
+      4. In case 2, how much is left for activations, and what does that allow at
+         $L=40$, $d=5120$, assuming 20 bytes of activation per layer per token per unit of width?
+    solution: |
+      **1. Full fine-tuning.** $16$ bytes per trainable parameter:
+      $$
+      1.3\times10^{10}\times16 = 208\ \mathrm{GB}.
+      $$
+      **It does not fit** — by a factor of 2.6, and no batch-size reduction helps, because none of
+      this depends on batch size.
+
+      **2. LoRA, BF16 base.**
+      $$
+      \underbrace{1.3\times10^{10}\times2}_{\text{frozen weights}} + \underbrace{2\times10^{7}\times16}_{\text{adapter}}
+      = 26\ \mathrm{GB} + 0.32\ \mathrm{GB} = \mathbf{26.3\ GB}.
+      $$
+
+      **3. QLoRA, 4-bit base.** $1.3\times10^{10}\times0.5 = 6.5$ GB plus the same $0.32$ GB:
+      $\mathbf{6.8\ GB}$.
+
+      **4. Headroom in case 2.** $80 - 26.3 = 53.7$ GB, less framework overhead — say 5 GB — leaves
+      about $48.7$ GB for activations.
+
+      Activation cost per token is $20 \times L \times d = 20\times40\times5120 = 4.1$ MB. So
+      $$
+      \text{tokens} \approx \frac{48.7\times10^9}{4.1\times10^6} \approx 11{,}900 ,
+      $$
+      i.e. batch $\times$ sequence length up to roughly 12k tokens — for example batch 2 at 4096
+      tokens, or batch 5 at 2048. Gradient checkpointing would raise this several-fold.
+
+      **The lesson.** LoRA turned "impossible" into "fits with room for a small batch". QLoRA turns
+      it into "fits comfortably". Neither changed the activation term, which is what now limits
+      sequence length — exactly as the corollary on where LoRA's saving comes from predicts.
+
+  - id: ft-lora-init
+    title: Why exactly one factor starts at zero
+    topic: finetuning/low-rank-adaptation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [initialisation, gradient, stationary point]
+    statement: |
+      For $W = W_0 + \frac{\alpha}{r}BA$:
+
+      1. Derive $\partial\mathcal L/\partial A$ and $\partial\mathcal L/\partial B$ in terms of
+         $G = \partial\mathcal L/\partial W$.
+      2. Show $A = B = 0$ is a stationary point of the adapter parameters, and that it is not a local
+         minimum in general.
+      3. Show that $B=0$ with $A$ random is not stationary, and that the first update makes both
+         gradients non-zero.
+    solution: |
+      **1. Gradients.** With $W = W_0 + \frac\alpha r BA$ and $G = \partial\mathcal L/\partial W$,
+      the chain rule for matrix products gives
+      $$
+      \frac{\partial\mathcal L}{\partial B} = \frac{\alpha}{r}GA^\top,
+      \qquad
+      \frac{\partial\mathcal L}{\partial A} = \frac{\alpha}{r}B^\top G .
+      $$
+
+      **2. $A=B=0$ is stationary, and is a saddle.** Both expressions vanish when $A = B = 0$, so it
+      is a stationary point and gradient descent initialised there never moves.
+
+      It is not a local minimum in general. Consider the perturbation $A = \eps u^\top$,
+      $B = \eps v$ for unit vectors $u,v$ and small $\eps$. Then
+      $\frac\alpha r BA = \frac{\alpha\eps^2}{r}vu^\top$, and to first order in $\eps^2$,
+      $$
+      \mathcal L \approx \mathcal L_0 + \frac{\alpha\eps^2}{r}\,\langle G, vu^\top\rangle
+      = \mathcal L_0 + \frac{\alpha\eps^2}{r}\,v^\top G u .
+      $$
+      Whenever $G \ne 0$ we may choose $v,u$ as its top singular vectors with a sign making
+      $v^\top Gu < 0$, so the loss strictly decreases — the point is a saddle, not a minimum. It is
+      nevertheless useless as an initialisation because the gradient is exactly zero there, and
+      descent cannot find the descending direction.
+
+      **3. $B=0$, $A$ random.** Then $\partial\mathcal L/\partial A = \frac\alpha r B^\top G = 0$ but
+      $$
+      \frac{\partial\mathcal L}{\partial B} = \frac{\alpha}{r}GA^\top \ne 0
+      $$
+      whenever $G\ne0$ and $A$ has full row rank — true with probability one for a continuous
+      initialisation, since $GA^\top = 0$ with $A$ full rank would force $G = 0$.
+
+      After one step $B$ becomes non-zero, so at the next step $\partial\mathcal L/\partial A =
+      \frac\alpha r B^\top G$ is generically non-zero too, and both factors train.
+
+      **Why this is the right choice.** It achieves two things at once that no other simple
+      initialisation does: the model computes exactly the pretrained function at step 0 (so nothing
+      of the pretrained capability is discarded before learning starts), and the gradient is non-zero
+      (so learning starts). Random $A$ *and* random $B$ gives the second but not the first; zero for
+      both gives the first but not the second.
+
+  - id: ft-scaling-invariance
+    title: The α/r scaling
+    topic: finetuning/low-rank-adaptation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [scaling, variance, hyperparameters]
+    statement: |
+      1. Prove $\E\|\frac{\alpha}{r}BA\|_F^2 = \frac{\alpha^2}{r}dk\sigma_B^2\sigma_A^2$ for i.i.d.
+         mean-zero factors.
+      2. Show that without the $1/r$ factor the expected squared magnitude grows linearly in $r$.
+      3. If instead $A$ were initialised with variance $\sigma_A^2 \propto 1/r$, what scaling would
+         make magnitudes rank-invariant, and what does that say about the convention?
+    solution: |
+      **1.** Write $M = BA$, so $M_{ij} = \sum_{t=1}^{r}B_{it}A_{tj}$. The terms are independent with
+      mean zero, so cross terms vanish and
+      $$
+      \E[M_{ij}^2] = \sum_{t=1}^r \E[B_{it}^2]\E[A_{tj}^2] = r\sigma_B^2\sigma_A^2 .
+      $$
+      Summing over $dk$ entries, $\E\|M\|_F^2 = dkr\sigma_B^2\sigma_A^2$, and multiplying by
+      $(\alpha/r)^2$:
+      $$
+      \E\left\|\tfrac{\alpha}{r}M\right\|_F^2 = \frac{\alpha^2}{r^2}\,dkr\,\sigma_B^2\sigma_A^2
+      = \frac{\alpha^2 dk\sigma_B^2\sigma_A^2}{r}.
+      $$
+
+      **2. Without the scaling.** The quantity is $\E\|M\|_F^2 = dkr\sigma_B^2\sigma_A^2$, linear in
+      $r$. So doubling the rank doubles the expected squared magnitude of the update at
+      initialisation, which would require halving the learning rate to compensate — a rank-dependent
+      hyperparameter, exactly what the convention avoids.
+
+      **3. Variance-scaled initialisation.** If $\sigma_A^2 = \sigma_0^2/r$, then
+      $$
+      \E\|M\|_F^2 = dkr\,\sigma_B^2\frac{\sigma_0^2}{r} = dk\sigma_B^2\sigma_0^2,
+      $$
+      already independent of $r$. Then a *constant* scaling $\alpha$ (no $1/r$) would preserve
+      rank-invariance.
+
+      **What this says.** The $\alpha/r$ convention and a $1/r$ initialisation variance are two ways
+      of expressing the same normalisation — the product of the scaling and the initialisation
+      variance is what matters, not either alone. So $\alpha/r$ is not fundamental; it is a
+      bookkeeping choice that pairs with the standard fixed-variance initialisation of $A$.
+
+      A practical corollary: if you change the initialisation scheme for $A$ — for instance to
+      Kaiming with fan-in $r$ — you have implicitly changed the effective scaling, and the reported
+      guidance "set $\alpha = 2r$" no longer transfers.
+
+  - id: ft-eckart-young
+    title: Prove Eckart–Young–Mirsky
+    topic: finetuning/low-rank-adaptation
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [svd, approximation, weyl]
+    statement: |
+      Prove that the best rank-$r$ approximation to $M$ in Frobenius norm is the truncated SVD, with
+      error $\sum_{i>r}\sigma_i^2$. Then compute the relative error for a matrix whose singular values
+      decay as $\sigma_i = \sigma_1 i^{-\beta}$, and determine the rank needed to capture 90% of the
+      squared Frobenius norm for $\beta = 0.5$ and $\beta = 1.5$.
+    hints:
+      - |
+        Use unitary invariance of the Frobenius norm to reduce to a diagonal target.
+      - |
+        Weyl's inequality for singular values gives $\sigma_{i+j-1}(P+Q)\le\sigma_i(P)+\sigma_j(Q)$; apply it with $P = M-N$ and $Q = N$.
+      - |
+        For the decay computation, approximate the sums by integrals.
+    solution: |
+      **Optimality.** Let $N$ have rank at most $r$. Apply Weyl's inequality with $P = M-N$, $Q = N$
+      and $j = r+1$. Since $\operatorname{rank}N\le r$, $\sigma_{r+1}(N) = 0$, giving
+      $$
+      \sigma_{i+r}(M) = \sigma_{i+(r+1)-1}\big((M-N)+N\big) \le \sigma_i(M-N) + \sigma_{r+1}(N) = \sigma_i(M-N)
+      $$
+      for every $i \ge 1$. Therefore
+      $$
+      \|M-N\|_F^2 = \sum_{i\ge1}\sigma_i(M-N)^2 \ \ge\ \sum_{i\ge1}\sigma_{i+r}(M)^2 = \sum_{i>r}\sigma_i(M)^2 .
+      $$
+      The truncation $M_r$ attains it: $M - M_r = \sum_{i>r}\sigma_iu_iv_i^\top$ has singular values
+      exactly $\sigma_{r+1},\sigma_{r+2},\dots$, so $\|M-M_r\|_F^2 = \sum_{i>r}\sigma_i^2$.
+      $\blacksquare$
+
+      **Power-law decay.** With $\sigma_i = \sigma_1 i^{-\beta}$, the captured fraction at rank $r$
+      out of $n$ singular values is
+      $$
+      \eta(r) = \frac{\sum_{i\le r} i^{-2\beta}}{\sum_{i\le n} i^{-2\beta}} .
+      $$
+
+      *Case $\beta = 1.5$ (so $2\beta = 3$).* The series $\sum i^{-3}$ converges rapidly:
+      $\zeta(3) = 1.202$. Partial sums: $r=1$ gives $1.000$ ($83\%$), $r=2$ gives $1.125$ ($93.6\%$).
+      So **rank 2** already captures over 90%.
+
+      *Case $\beta = 0.5$ (so $2\beta = 1$).* Now $\sum i^{-1}$ diverges: the partial sum is
+      $H_r \approx \ln r + \gamma$. For $n = 4096$, $H_n \approx 8.89$. Requiring
+      $\ln r + 0.577 \ge 0.9\times8.89 = 8.00$ gives $\ln r \ge 7.42$, i.e.
+      $$
+      r \ \ge\ e^{7.42} \approx \mathbf{1670}.
+      $$
+
+      **Interpretation.** The whole viability of low-rank adaptation lives in the decay exponent. At
+      $\beta = 1.5$, rank 2 suffices; at $\beta = 0.5$, you need rank 1670 out of 4096 — LoRA saves
+      almost nothing and constrains a great deal.
+
+      This is why Eckart–Young converts the question "is LoRA enough?" into a measurable one without
+      answering it: measure the spectrum of a full fine-tuning update on your task, and the theorem
+      tells you the rank you need. Reported successes of LoRA at $r = 8$ are implicit claims that
+      $\beta$ is large for those tasks.
+
+  - id: ft-checkpoint-sqrt
+    title: Optimal checkpointing frequency
+    topic: finetuning/memory-arithmetic-of-training
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [gradient checkpointing, optimisation]
+    statement: |
+      1. Prove that storing every $k$-th layer gives peak activation storage $L/k + k$ and that
+         $k^\star=\sqrt L$ minimises it.
+      2. Compute the saving for $L = 32$ and $L = 80$.
+      3. Suppose recomputation costs a fraction $\theta$ of a full training step. Write total cost as
+         a function of $k$ under a memory constraint and say when checkpointing is not worth it.
+    solution: |
+      **1. The bound and its minimiser.** With segments of $k$ layers there are $L/k$ boundaries,
+      each holding one layer's activations for the whole backward pass. Segments are recomputed one
+      at a time, and a segment under recomputation holds at most $k$ layers' activations. Peak
+      storage is therefore $m(k) = L/k + k$.
+
+      $m$ is smooth on $(0,\infty)$ with $m'(k) = -L/k^2 + 1$, zero at $k=\sqrt L$, and
+      $m''(k) = 2L/k^3 > 0$, so that stationary point is the unique global minimum, with value
+      $m(\sqrt L) = 2\sqrt L$.
+
+      **2. Savings.**
+      - $L=32$: $2\sqrt{32} = 11.3$ versus $32$ — a $\mathbf{2.8\times}$ reduction, at $k^\star\approx6$.
+      - $L=80$: $2\sqrt{80} = 17.9$ versus $80$ — a $\mathbf{4.5\times}$ reduction, at $k^\star\approx9$.
+
+      The benefit grows like $\sqrt L/2$, so deeper models gain more.
+
+      **3. Cost under a memory constraint.** Let the step cost without checkpointing be 1, and let
+      recomputation add $\theta$ (roughly $1/3$, since a training step is about one forward plus two
+      forward-equivalents of backward, and recomputation adds one forward). Then
+      $$
+      \text{time}(k) = 1 + \theta, \qquad \text{memory}(k) = L/k + k,
+      $$
+      where the time is *independent of $k$* — every non-boundary layer is recomputed exactly once
+      regardless of segment size.
+
+      So the trade is not continuous in $k$: you pay $\theta$ the moment you checkpoint at all, and
+      $k$ only buys memory. The decision is therefore binary:
+
+      - If the model fits without checkpointing, do not checkpoint — you would pay $\theta$ for
+        nothing.
+      - If it does not fit, checkpoint at $k = \sqrt L$, which minimises memory at the same time cost
+        as any other $k$.
+
+      Checkpointing is not worth it when the memory freed does not allow a larger batch, because then
+      you have paid $\theta$ in time and gained no throughput. The break-even is when the batch-size
+      increase enabled by the freed memory exceeds a factor $1+\theta$.
+
+  - id: ft-activation-vs-params
+    title: When activations dominate
+    topic: finetuning/memory-arithmetic-of-training
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [activations, sequence length, memory]
+    statement: |
+      For a model with $L=32$, $d=4096$, using 20 bytes of activation per layer per token per unit
+      width divided by $d$ — that is, $20Ld$ bytes per token:
+
+      1. Compute activation memory for batch 8 at sequence lengths 512, 4096 and 32768.
+      2. Compare each with the 13.4 GB of BF16 weights.
+      3. At which sequence length do activations exceed LoRA's entire persistent state?
+    solution: |
+      Activation bytes per token: $20 \times 32 \times 4096 = 2.62$ MB.
+
+      **1. At batch 8.**
+
+      | $S$ | tokens | activation memory |
+      | --- | --- | --- |
+      | 512 | 4{,}096 | 10.7 GB |
+      | 4{,}096 | 32{,}768 | 85.9 GB |
+      | 32{,}768 | 262{,}144 | 687 GB |
+
+      **2. Versus 13.4 GB of weights.** At $S=512$ activations are already comparable to the weights
+      (0.8×). At $S=4096$ they are $6.4\times$ the weights. At $S=32768$ they are $51\times$.
+
+      **3. Exceeding LoRA's persistent state.** LoRA's state is about $13.4 + 0.3 = 13.7$ GB.
+      Activation memory reaches that at
+      $$
+      8 \times S \times 2.62\ \mathrm{MB} = 13.7\ \mathrm{GB} \quad\Longrightarrow\quad S \approx 654 .
+      $$
+
+      **The conclusion that matters.** Beyond a sequence length of roughly 650 at batch 8,
+      **activations are the larger consumer than everything LoRA saved**. This is the quantitative
+      form of the warning that LoRA does not reduce activation memory: its benefit is decisive for
+      short-sequence fine-tuning and progressively irrelevant as context grows, at which point
+      gradient checkpointing — which does attack activations — becomes the lever that matters.
+
+  - id: ft-fisher-hessian
+    title: The information matrix equality
+    topic: finetuning/forgetting-and-regularisation
+    difficulty: graduate
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [fisher, hessian, regularity, misspecification]
+    statement: |
+      1. Prove $F(\theta) = -\E_{p_\theta}[\nabla^2\log p_\theta]$, stating where each regularity
+         condition is used.
+      2. Give an example where the conclusion fails because the support depends on $\theta$.
+      3. Explain what changes when the expectation is taken under a data distribution different from
+         $p_\theta$, and name the resulting correction.
+    solution: |
+      **1. The proof.** Start from the normalisation $\int p_\theta(x)\,dx = 1$, valid for all
+      $\theta$. Differentiating twice under the integral sign — *this is the first regularity
+      condition, and it requires domination of the integrand to justify exchanging $\nabla$ and
+      $\int$* — gives
+      $$
+      \int \nabla^2_\theta p_\theta(x)\,dx = 0 .
+      $$
+      *The second condition, that the support does not depend on $\theta$, is what makes the domain
+      of integration constant so that no boundary terms appear.*
+
+      Now from $\nabla p_\theta = p_\theta\nabla\log p_\theta$, differentiate again:
+      $$
+      \nabla^2 p_\theta = p_\theta\,\nabla\log p_\theta\,\nabla\log p_\theta^\top + p_\theta\,\nabla^2\log p_\theta .
+      $$
+      Integrating both sides and using the vanishing left-hand side,
+      $$
+      0 = \E_{p_\theta}\big[\nabla\log p_\theta\nabla\log p_\theta^\top\big] + \E_{p_\theta}\big[\nabla^2\log p_\theta\big]
+      = F(\theta) + \E_{p_\theta}\big[\nabla^2\log p_\theta\big] . \qquad\blacksquare
+      $$
+
+      **2. Support-dependent counterexample.** Let $p_\theta = \mathrm{Unif}[0,\theta]$, so
+      $p_\theta(x) = 1/\theta$ on $[0,\theta]$. Then $\log p_\theta = -\log\theta$ on the support,
+      giving $\partial_\theta\log p_\theta = -1/\theta$ and $\partial^2_\theta\log p_\theta = 1/\theta^2$.
+      Naively,
+      $$
+      F = \E\big[(-1/\theta)^2\big] = \frac{1}{\theta^2},
+      \qquad -\E\big[\partial^2\log p_\theta\big] = -\frac{1}{\theta^2},
+      $$
+      which differ in sign — the identity fails completely. The reason is that
+      $\int_0^\theta p_\theta\,dx = 1$ has a $\theta$-dependent limit, so differentiating under the
+      integral drops a boundary term. (The Fisher information is not even well defined in the usual
+      asymptotic sense for this family; the MLE has a non-normal limit.)
+
+      **3. Misspecification.** If the data come from $p^\star \ne p_\theta$, the two sides no longer
+      agree. Define
+      $$
+      J = -\E_{p^\star}\big[\nabla^2\log p_\theta\big] \quad\text{(the Hessian)},
+      \qquad
+      K = \E_{p^\star}\big[\nabla\log p_\theta\nabla\log p_\theta^\top\big] \quad\text{(the outer product)} .
+      $$
+      Under correct specification $J = K = F$; under misspecification they differ, and the asymptotic
+      covariance of the MLE becomes $J^{-1}KJ^{-1}$ rather than $F^{-1}$. This is the **sandwich**,
+      or **Huber–White robust**, covariance estimator.
+
+      **Why this matters for EWC.** The derivation of the quadratic penalty identifies the curvature
+      of the old task's log posterior with the Fisher. For a neural network the model is certainly
+      misspecified relative to the data, so $J \ne K$, and implementations that use the *empirical*
+      Fisher (outer products of gradients on observed data) are computing $K$ while the derivation
+      calls for $J$. The two coincide only at a well-specified optimum — neither of which describes a
+      pretrained network.
+
+  - id: ft-ewc-derivation
+    title: Derive the EWC objective
+    topic: finetuning/forgetting-and-regularisation
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [ewc, laplace, bayes]
+    statement: |
+      Derive the elastic weight consolidation objective from a Laplace approximation, and then
+      identify precisely which step fails for a pretrained neural network. Propose a modification
+      that does not rely on the failing step, and say what it costs.
+    solution: |
+      **Derivation.** By conditional independence of the datasets given $\theta$,
+      $$
+      \log p(\theta\mid\mathcal D_A,\mathcal D_B) = \log p(\mathcal D_B\mid\theta) + \log p(\theta\mid\mathcal D_A) + \text{const}.
+      $$
+      Expand the second term to second order about a mode $\theta^\star_A$:
+      $$
+      \log p(\theta\mid\mathcal D_A) \approx \log p(\theta^\star_A\mid\mathcal D_A)
+      + \underbrace{\nabla\log p(\theta^\star_A\mid\mathcal D_A)^\top(\theta-\theta^\star_A)}_{=\,0\ \text{at a mode}}
+      - \tfrac12(\theta-\theta^\star_A)^\top H_A(\theta-\theta^\star_A).
+      $$
+      Identify $H_A \approx \lambda F$ by the information matrix equality, negate, and minimise:
+      $$
+      \min_\theta\ \mathcal L_B(\theta) + \frac\lambda2\sum_i F_{ii}\big(\theta_i-\theta^\star_{A,i}\big)^2 .
+      $$
+
+      **Which step fails.** The vanishing linear term. It vanishes *because $\theta^\star_A$ is a
+      mode* — a stationary point of $\log p(\theta\mid\mathcal D_A)$. A pretrained network is a point
+      reached by stochastic gradient descent on a non-convex objective, stopped by a compute budget.
+      There is no verification that its gradient is zero, and in general it is not.
+
+      If $g = \nabla\log p(\theta^\star_A\mid\mathcal D_A) \ne 0$, the correct expansion carries an
+      extra linear term $-g^\top(\theta-\theta^\star_A)$, which *rewards* moving along $g$ — the
+      penalty is not a pure pull toward $\theta^\star_A$ but toward
+      $\theta^\star_A + H_A^{-1}g$, a different point.
+
+      Secondary failures: the quadratic expansion is only locally valid while fine-tuning moves
+      weights far; and the diagonal approximation discards the couplings that carry most of the
+      curvature.
+
+      **A modification that avoids the failing step.** Replace the Taylor expansion of the old
+      posterior with *direct evaluation* of the old task's loss on retained data — that is,
+      **rehearsal**:
+      $$
+      \min_\theta\ \mathcal L_B(\theta) + \mu\,\widehat{\mathcal L}_A(\theta),
+      $$
+      where $\widehat{\mathcal L}_A$ is the empirical loss on a retained sample from $\mathcal D_A$.
+      This makes no assumption about stationarity, requires no curvature estimate, and is exact up to
+      sampling error in the retained set.
+
+      **What it costs.** You must keep data from the old task, which may be impossible for licensing,
+      privacy or storage reasons — exactly the situation EWC was invented to handle. You also pay
+      compute on every step for the replayed examples. The trade is a real one: EWC buys
+      data-freedom with approximations that are hard to justify, and rehearsal buys correctness with
+      a data requirement.
+
+      This is the honest reason rehearsal-style data mixing is the most reliable method reported in
+      practice, and Fisher-weighted penalties are used mainly where retaining data is not an option.
+
+  - id: ft-lora-deviation
+    title: Bounding how far the adapted model moves
+    topic: finetuning/forgetting-and-regularisation
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [lipschitz, deviation, weight decay]
+    statement: |
+      1. Prove $\|\frac{\alpha}{r}BAx\|_2 \le \frac{\alpha}{r}\|B\|_2\|A\|_2\|x\|_2$ and state when it
+         is tight.
+      2. Show that weight decay with coefficient $\mu$ on both factors bounds $\|B\|_2\|A\|_2$ in
+         terms of the achieved training objective.
+      3. Explain why this does not bound the change in the *network's* output.
+    solution: |
+      **1. The bound.** Submultiplicativity of the spectral norm gives
+      $\|BAx\|_2\le\|B\|_2\|Ax\|_2\le\|B\|_2\|A\|_2\|x\|_2$, and $\alpha/r>0$ scales through.
+
+      *Tightness.* Equality requires $x$ to be a top right singular vector of $A$, and $Ax$ to be a
+      top right singular vector of $B$ — i.e. the top left singular vector of $A$ must align with the
+      top right singular vector of $B$. Generic $A$ and $B$ do not satisfy this, so the bound is
+      typically loose, by a factor that can be as large as $\sqrt{\operatorname{rank}}$.
+
+      **2. Weight decay.** With penalty $\frac\mu2(\|A\|_F^2 + \|B\|_F^2)$, suppose the training
+      objective reaches value $V$. Since the loss is non-negative,
+      $$
+      \frac\mu2\big(\|A\|_F^2+\|B\|_F^2\big) \le V
+      \quad\Longrightarrow\quad
+      \|A\|_F^2 + \|B\|_F^2 \le \frac{2V}{\mu}.
+      $$
+      Using $\|\cdot\|_2\le\|\cdot\|_F$ and AM–GM,
+      $$
+      \|B\|_2\|A\|_2 \le \|B\|_F\|A\|_F \le \frac{\|A\|_F^2+\|B\|_F^2}{2} \le \frac{V}{\mu}.
+      $$
+      So the deviation budget is $\frac{\alpha V}{r\mu}\|x\|_2$ — explicitly controllable by $\mu$.
+
+      **3. Why it does not bound the network's output change.** The inequality controls the
+      perturbation of **one layer's pre-activation**. The network applies many more layers after it,
+      and the composed map amplifies perturbations by the product of the layers' Lipschitz constants.
+      For a deep transformer that product is enormous and, worse, is not known — bounding it by
+      products of spectral norms gives values so large the bound is vacuous.
+
+      There is also a subtler gap: forgetting is a statement about behaviour on a *distribution*
+      (the old task's inputs), whereas this is a worst-case bound over all $x$ of a fixed norm.
+      A small worst-case layer perturbation is sufficient for small output change but far from
+      necessary, and the quantity that actually matters — how much the output distribution moves on
+      the old task — is not controlled by anything here.
+
+      The honest summary: the bound gives a *mechanism* by which low rank plus weight decay might
+      limit forgetting, and explains why the knob exists. It is not a guarantee.
+
+  - id: ft-implement-lora
+    title: Implement LoRA and measure the spectrum
+    topic: finetuning/low-rank-adaptation
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [lora, implementation, spectrum, eckart-young]
+    statement: |
+      1. Implement a LoRA layer wrapping a frozen linear layer, with correct initialisation and
+         $\alpha/r$ scaling, and verify it computes the base function at step 0.
+      2. Fine-tune a small model fully, and measure the singular value spectrum of the resulting
+         $\Delta W$ per layer.
+      3. Use Eckart–Young to compute, per layer, the rank needed to capture 90% of $\|\Delta W\|_F^2$.
+      4. Train LoRA at that rank and at half of it, and compare against full fine-tuning.
+    solution: |
+      ```python
+      import torch, torch.nn as nn
+
+      class LoRALinear(nn.Module):
+          def __init__(self, base: nn.Linear, r: int, alpha: float):
+              super().__init__()
+              self.base = base
+              for p in self.base.parameters():
+                  p.requires_grad = False
+              d_out, d_in = base.weight.shape
+              self.A = nn.Parameter(torch.randn(r, d_in) * (1.0 / r ** 0.5))
+              self.B = nn.Parameter(torch.zeros(d_out, r))   # zero, deliberately
+              self.scale = alpha / r
+
+          def forward(self, x):
+              return self.base(x) + self.scale * (x @ self.A.T) @ self.B.T
+      ```
+
+      **1. Verification.** Assert `torch.allclose(lora(x), base(x))` before any optimiser step. This
+      catches the most common implementation bug — initialising `B` randomly — which silently
+      degrades the model before training begins and is invisible in the loss curve because it looks
+      like a slightly worse starting point.
+
+      **2–3. The measurement that matters.**
+
+      ```python
+      def rank_for_energy(delta_w, target=0.9):
+          s = torch.linalg.svdvals(delta_w.float())
+          energy = torch.cumsum(s ** 2, 0) / (s ** 2).sum()
+          return int(torch.searchsorted(energy, target).item()) + 1
+      ```
+
+      Run this per layer on the full-fine-tuning $\Delta W$. This is the experiment that tests the
+      low-rank hypothesis *on your task* rather than assuming it. Report the distribution of required
+      ranks across layers — expect it to vary substantially, and note that a single global $r$ is
+      then over-provisioned for some layers and under-provisioned for others.
+
+      **4. The comparison.** Train at the measured rank and at half of it. Three outcomes, all
+      informative:
+      - Both match full fine-tuning → the hypothesis holds comfortably; use the smaller rank.
+      - Measured rank matches, half does not → the measurement is predictive, which is the ideal
+        result and worth reporting.
+      - Neither matches → the spectrum is not the whole story. Likely causes: the adapter is on the
+        wrong matrices, or the task needs capability the base model lacks, which is the documented
+        failure regime for low-rank adaptation.
+
+      **Controls to get right.** Match the number of optimisation steps and tune the learning rate
+      separately for each method — LoRA typically wants a learning rate an order of magnitude higher
+      than full fine-tuning, and comparing at a shared learning rate makes whichever method it suits
+      look better for no real reason.

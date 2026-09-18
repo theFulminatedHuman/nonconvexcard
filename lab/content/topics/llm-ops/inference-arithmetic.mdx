@@ -1,0 +1,255 @@
+---
+title: Inference Arithmetic and the Roofline
+summary: Why prefill is compute-bound and decode is memory-bound, derived from the FLOP and byte counts of a transformer forward pass.
+field: llm-ops
+level: 2
+order: 10
+prerequisites:
+  - deep-learning/transformers
+  - llm/language-modelling-and-cross-entropy
+tags: [roofline, arithmetic intensity, flops, memory bandwidth, prefill, decode]
+estimated_time: 1h
+claims:
+  - id: forward-flops
+    kind: proposition
+    title: Forward-pass cost of a transformer
+    summary: A forward pass over S tokens costs about 2NS + 4LdS² FLOPs, with the quadratic term negligible until S exceeds N/(2Ld).
+    proved: true
+    tags: [flops, counting]
+  - id: roofline-bound
+    kind: proposition
+    title: The roofline bound
+    summary: Attainable throughput is at most the minimum of peak compute and arithmetic intensity times memory bandwidth.
+    proved: true
+    tags: [roofline, bandwidth]
+  - id: decode-intensity
+    kind: proposition
+    title: Decode arithmetic intensity is set by the batch size alone
+    summary: With b bytes per parameter, weight-limited decoding has arithmetic intensity 2B/b, independent of model size.
+    proved: true
+    tags: [decode, batching, intensity]
+  - id: decode-latency-floor
+    kind: corollary
+    title: A hard floor on single-stream decode latency
+    summary: No implementation can emit a token faster than the time to stream the weights once from memory.
+    proved: true
+    tags: [latency, bandwidth, lower bound]
+references:
+  - key: williams-roofline
+    title: 'Roofline: An Insightful Visual Performance Model for Multicore Architectures'
+    authors: S. Williams, A. Waterman, D. Patterson
+    year: 2009
+    kind: paper
+    url: https://doi.org/10.1145/1498765.1498785
+    note: The roofline model is stated here in its original hardware-agnostic form.
+  - key: kaplan-scaling
+    title: Scaling Laws for Neural Language Models
+    authors: J. Kaplan et al.
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/2001.08361
+    note: Source of the 2N-per-token forward cost convention used throughout.
+---
+
+<Intuition>
+A GPU can do arithmetic far faster than it can fetch the numbers to do arithmetic *on*. An H100
+does roughly 10<sup>15</sup> floating-point operations per second but moves only about
+3.4 × 10<sup>12</sup> bytes per second from its own memory. That is a ratio of roughly 300 operations
+per byte. If your computation does fewer than ~300 operations for every byte it loads, the arithmetic
+units sit idle waiting for data, and buying a faster chip buys you nothing.
+
+Generating text with a transformer has two phases with opposite characters. Reading the prompt does a
+lot of arithmetic per byte loaded. Emitting one token at a time does almost none. Nearly every
+surprising fact about LLM serving follows from that single asymmetry.
+</Intuition>
+
+## Counting the work
+
+Fix a decoder-only transformer with $L$ layers, model width $d$, and $N$ non-embedding parameters.
+We count multiply–accumulate as two FLOPs, the standard convention.
+
+<Claim kind="proposition" id="forward-flops" title="Forward-pass cost of a transformer">
+A forward pass over a sequence of $S$ tokens costs
+$$
+C_{\text{fwd}}(S) \ \approx\ \underbrace{2NS}_{\text{weights}} \;+\; \underbrace{4LdS^2}_{\text{attention}}
+\quad\text{FLOPs}.
+$$
+</Claim>
+
+<Assumptions>
+- Every parameter participates in exactly one multiply–accumulate per token. This is exact for dense
+  matrix multiplications and ignores layer norms, activations and residual adds, whose cost is
+  $O(LdS)$ and therefore negligible against both terms.
+- Attention is dense (every query attends to every key). Sparse, sliding-window or linear attention
+  variants change the second term and nothing else.
+- Embedding and unembedding parameters are excluded from $N$, per the usual convention.
+</Assumptions>
+
+<Proof>
+**Weight term.** A matrix multiply $X W$ with $X \in \R^{S \times m}$ and $W \in \R^{m \times n}$
+costs $2Smn$ FLOPs: each of the $Sn$ output entries is a length-$m$ dot product, which is $m$
+multiplies and $m-1$ adds, i.e. $2m$ FLOPs to leading order. The parameter count of that layer is
+$mn$, so its cost is $2S \times (\text{its parameter count})$. Summing over every weight matrix in
+the network gives $2NS$.
+
+**Attention term.** Within one layer, forming the score matrix $QK^\top$ multiplies
+$\R^{S\times d}$ by $\R^{d \times S}$, costing $2S^2d$ FLOPs. Applying the normalised scores to $V$
+multiplies $\R^{S \times S}$ by $\R^{S \times d}$, another $2S^2d$. That is $4S^2d$ per layer, and
+$4LdS^2$ over the network. Note these two products involve no parameters, which is why they are not
+already counted in $2NS$.
+
+The softmax itself is $O(LS^2)$ elementwise work, smaller by a factor of $d$, and is dropped.
+</Proof>
+
+### When does attention actually dominate?
+
+The quadratic term overtakes the linear one when $4LdS^2 > 2NS$, that is when
+$$
+S \;>\; S_\star \;:=\; \frac{N}{2Ld}.
+$$
+
+For a 7B-parameter model with $L = 32$ and $d = 4096$:
+$$
+S_\star = \frac{6.7\times 10^9}{2 \cdot 32 \cdot 4096} \approx 2.6 \times 10^4 .
+$$
+
+<KeyIdea>
+Below roughly 25,000 tokens of context, attention is **not** where the FLOPs go — the feed-forward
+and projection weights are. This is why "attention is quadratic" is a misleading summary of
+short-context inference cost, and why it becomes the correct summary for long-context inference.
+The crossover is a property of the model's shape, not of attention as such.
+</KeyIdea>
+
+## The roofline
+
+<Claim kind="proposition" id="roofline-bound" title="The roofline bound">
+Let a computation perform $F$ FLOPs while moving $Q$ bytes between memory and the processor, and
+define its **arithmetic intensity** $I = F/Q$. On hardware with peak throughput $\pi$ FLOP/s and
+memory bandwidth $\beta$ byte/s, the attainable throughput satisfies
+$$
+P \ \le\ \min\big(\pi,\ I\beta\big).
+$$
+</Claim>
+
+<Proof>
+The computation cannot finish faster than the arithmetic takes: $T \ge F/\pi$. It also cannot finish
+faster than the data movement takes: $T \ge Q/\beta$. Hence
+$$
+T \ \ge\ \max\left(\frac{F}{\pi},\ \frac{Q}{\beta}\right),
+\qquad
+P = \frac{F}{T} \ \le\ \min\left(\pi,\ \frac{F\beta}{Q}\right) = \min(\pi, I\beta). \qquad\blacksquare
+$$
+</Proof>
+
+The two regimes meet at the **ridge point** $I^\star = \pi/\beta$. A kernel with $I < I^\star$ is
+*memory-bound*; one with $I > I^\star$ is *compute-bound*.
+
+<Note>
+For an NVIDIA H100 SXM: $\pi \approx 990$ TFLOP/s in BF16 with dense tensor cores and
+$\beta \approx 3.35$ TB/s of HBM3 bandwidth, giving
+$$
+I^\star = \frac{9.9\times10^{14}}{3.35\times10^{12}} \approx 296 \text{ FLOP/byte}.
+$$
+Treat these as order-of-magnitude figures: vendor peak numbers assume perfect utilisation that real
+kernels do not reach, and the ratio is what matters here, not the absolute values.
+</Note>
+
+## The two phases have opposite intensity
+
+### Prefill
+
+Processing a prompt of $S$ tokens does $\approx 2NS$ FLOPs while loading the $N$ weights once, i.e.
+$Nb$ bytes for $b$ bytes per parameter. Its intensity is
+$$
+I_{\text{prefill}} \approx \frac{2NS}{Nb} = \frac{2S}{b}.
+$$
+At $b = 2$ (BF16), $I_{\text{prefill}} \approx S$. Any prompt longer than a few hundred tokens clears
+the ridge point comfortably: **prefill is compute-bound.**
+
+### Decode
+
+<Claim kind="proposition" id="decode-intensity" title="Decode arithmetic intensity is set by the batch size alone">
+Generating one token for each of $B$ sequences, in the regime where weight traffic dominates,
+has arithmetic intensity
+$$
+I_{\text{decode}} \approx \frac{2B}{b},
+$$
+independent of $N$, $L$ and $d$.
+</Claim>
+
+<Proof>
+One decoding step processes a single new token per sequence, so it performs $2NB$ FLOPs. The weights
+are read once for the whole batch — this is exactly what batching buys — costing $Nb$ bytes. Thus
+$$
+I_{\text{decode}} = \frac{2NB}{Nb} = \frac{2B}{b},
+$$
+and $N$ cancels. $\blacksquare$
+</Proof>
+
+<NotSaid>
+This ignores KV-cache traffic, which also grows with $B$ and with context length and is the other
+half of decode's memory bill. Including it lowers the intensity further, so the conclusion below —
+that small-batch decode is memory-bound — only strengthens. The proposition is an upper bound on
+intensity, not an estimate of it.
+</NotSaid>
+
+At $b = 2$, $I_{\text{decode}} \approx B$. To reach an H100's ridge point you need a batch of roughly
+**300 concurrent sequences**. Below that, the tensor cores are idle most of the time and the only
+thing that matters is how fast weights stream out of HBM.
+
+<Claim kind="corollary" id="decode-latency-floor" title="A hard floor on single-stream decode latency">
+With $N$ parameters at $b$ bytes each and memory bandwidth $\beta$, the time to emit one token
+satisfies
+$$
+t_{\text{step}} \ \ge\ \frac{Nb}{\beta},
+$$
+whatever the implementation.
+</Claim>
+
+<Proof>
+Producing the token requires every parameter to participate in the computation, so every parameter
+must be read from memory at least once: $Q \ge Nb$. By the roofline argument
+$t_{\text{step}} \ge Q/\beta \ge Nb/\beta$. $\blacksquare$
+</Proof>
+
+<Details summary="Worked example: the ceiling on single-stream generation">
+A 7B model in BF16 occupies $Nb = 6.7\times10^9 \times 2 = 13.4$ GB. On one H100 at
+$\beta = 3.35$ TB/s,
+$$
+t_{\text{step}} \ge \frac{1.34\times10^{10}}{3.35\times10^{12}} \approx 4.0\ \text{ms}
+\quad\Longrightarrow\quad
+\text{at most } \approx 250 \text{ tokens/s}
+$$
+for a single sequence. A 70B model in BF16 is 140 GB — it does not fit on one 80 GB card at all, and
+split across two H100s the same argument gives $t_{\text{step}} \gtrsim 21$ ms, i.e. under
+50 tokens/s, before accounting for the interconnect.
+
+Two consequences worth internalising:
+- **Single-stream latency is a bandwidth problem, not a FLOPs problem.** A chip with twice the
+  arithmetic and the same memory system would not move this number at all.
+- **Quantisation is a latency technique.** Halving $b$ from 2 to 1 halves the floor directly. That,
+  not memory capacity, is the main reason low-precision weights speed up decoding.
+</Details>
+
+## What this predicts, and where it fails
+
+<Empirical>
+Measured decode throughput on production stacks rises roughly linearly with batch size in the
+small-batch regime and then flattens, with the knee in the low hundreds of sequences — the qualitative
+shape this analysis predicts.
+</Empirical>
+
+<Warning>
+The roofline is a *bound*, not a forecast. Real kernels fall short of it for reasons it does not
+model: cache hierarchy and reuse, kernel launch overhead, tensor-core tile quantisation, imperfect
+overlap of compute and transfer, and — in multi-GPU settings — interconnect bandwidth, which for
+tensor-parallel decoding is frequently the true constraint rather than HBM. Use the roofline to rule
+things out ("no kernel can beat 4 ms/token here"), not to predict what you will observe.
+</Warning>
+
+<OpenProblem>
+There is no accepted analytical model that predicts *achieved* throughput of a full serving stack
+from model shape and hardware specifications. Practitioners benchmark. The roofline gives a ceiling
+and the gap to it is measured, not derived — a situation that is normal in performance engineering
+and worth stating plainly rather than papering over.
+</OpenProblem>

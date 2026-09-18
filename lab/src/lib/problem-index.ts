@@ -7,6 +7,7 @@
  * enough to filter, sort and display a row, and nothing else.
  */
 import { allProblems, allTopics } from './content';
+import { latexToText } from './latex-text';
 import type { Difficulty, EstimatedTime, FieldSlug, ProblemType } from './taxonomy';
 import { DIFFICULTY_RANK, TIME_MINUTES } from './taxonomy';
 
@@ -28,14 +29,14 @@ export interface ProblemIndexEntry {
   teaser: string;
 }
 
-/** Strips display math and markdown noise so a row preview reads as prose. */
+/** Renders the opening of a statement as plain prose, math resolved to text. */
 function teaserOf(statement: string): string {
-  const flat = statement
-    .replace(/\$\$[\s\S]*?\$\$/g, ' (equation) ')
-    .replace(/```[\s\S]*?```/g, ' (code) ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return flat.length > 220 ? `${flat.slice(0, 217)}…` : flat;
+  const flat = latexToText(
+    statement
+      .replace(/\$\$[\s\S]*?\$\$/g, ' … ')
+      .replace(/```[\s\S]*?```/g, ' (code) '),
+  );
+  return flat.length > 200 ? `${flat.slice(0, 197)}…` : flat;
 }
 
 export function buildProblemIndex(): ProblemIndexEntry[] {

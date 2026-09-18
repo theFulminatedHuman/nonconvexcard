@@ -9,11 +9,16 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 @theme {
-  --font-sans:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, ui-serif, serif;
-  --font-mono:
-    ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /*
+   * Deliberately not the ui-sans-serif/system-ui stack: that renders as the
+   * default of every scaffolded site. Tahoma and Verdana are present on every
+   * desktop platform, are narrow enough to carry dense tabular layouts, and
+   * are the typographic register of a judge site rather than a landing page.
+   */
+  --font-sans: Tahoma, Verdana, 'Segoe UI', 'DejaVu Sans', Arial, sans-serif;
+  /* Screen-optimised serif for mathematical prose: sharper than Palatino at text sizes. */
+  --font-serif: Charter, 'Bitstream Charter', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-mono: Consolas, 'DejaVu Sans Mono', 'SF Mono', Menlo, 'Liberation Mono', monospace;
 
   /* Surfaces */
   --color-canvas: #fcfcfb;
@@ -29,9 +34,9 @@
   --color-ink-faint: #767a80;
 
   /* Accent — a single restrained hue, used for interaction only. */
-  --color-accent: #2f5fd0;
+  --color-accent: #1a4fc4;
   --color-accent-soft: #e8eefb;
-  --color-accent-ink: #1e3f8f;
+  --color-accent-ink: #123a97;
 
   /* Claim palette. Each epistemic status gets its own stable hue so that a
      reader can tell a theorem from an empirical observation at a glance. */
@@ -69,7 +74,7 @@
   --color-heat-3: #5fa372;
   --color-heat-4: #2f7a4f;
 
-  --radius-card: 0.5rem;
+  --radius-card: 2px;
 }
 
 [data-theme='dark'] {
@@ -130,6 +135,12 @@
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 5rem;
+  /*
+   * Everything below is rem-based, so this single value sets the density of the
+   * whole interface. 15px is the register of an information-dense judge site
+   * rather than a marketing page.
+   */
+  font-size: 15px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -441,4 +452,124 @@ body {
     linear-gradient(to bottom, var(--color-line) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 20%, transparent 78%);
+}
+
+
+/* ------------------------------------------------ judge-site components --- */
+
+/*
+ * A bordered panel with a filled title strip — the layout idiom of contest
+ * sites, where every block of information announces what it is.
+ */
+.panel {
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.panel-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--color-elevated);
+  border-bottom: 1px solid var(--color-line-strong);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+
+.panel-body {
+  padding: 0.7rem;
+}
+
+/*
+ * Dense data table: visible gridlines, a header bar and zebra striping, so a
+ * long list of problems reads as a table of results rather than a feed.
+ */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.data-table thead th {
+  background: var(--color-elevated);
+  border-bottom: 1px solid var(--color-line-strong);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  white-space: nowrap;
+}
+
+.data-table tbody td {
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--color-elevated) 45%, transparent);
+}
+
+.data-table tbody tr:hover {
+  background: var(--color-accent-soft);
+}
+
+.data-table td.num,
+.data-table th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+ * Difficulty rendered the way contest sites render rating: saturated, bold,
+ * coloured text. Far more scannable down a column than a pastel badge, and it
+ * carries meaning at a glance once the palette is learned.
+ */
+.rating {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rating-foundation { color: var(--color-diff-foundation); }
+.rating-beginner { color: var(--color-diff-beginner); }
+.rating-intermediate { color: var(--color-diff-intermediate); }
+.rating-advanced { color: var(--color-diff-advanced); }
+.rating-graduate { color: var(--color-diff-graduate); }
+.rating-research { color: var(--color-diff-research); }
+.rating-olympiad { color: var(--color-diff-olympiad); }
+
+/* Top navigation tabs. */
+.navtab {
+  display: inline-block;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+  border-bottom: 2px solid transparent;
+}
+
+.navtab:hover {
+  color: var(--color-ink);
+  background: var(--color-elevated);
+}
+
+.navtab[aria-current='page'] {
+  color: var(--color-accent-ink);
+  border-bottom-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }

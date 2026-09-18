@@ -1,0 +1,561 @@
+defaults:
+  field: llm-ops
+problems:
+  - id: ops-flops-count
+    title: Count the FLOPs of a forward pass
+    topic: llm-ops/inference-arithmetic
+    difficulty: foundation
+    type: numerical
+    estimated_time: 15m
+    tags: [flops, counting, prefill]
+    statement: |
+      A decoder-only transformer has $N = 6.7\times10^9$ non-embedding parameters, $L = 32$ layers and
+      width $d = 4096$.
+
+      1. Compute the FLOPs of a forward pass over a 512-token prompt.
+      2. Compute it over a 32,768-token prompt.
+      3. In each case, give the fraction contributed by the attention score/value products.
+    solution: |
+      Use $C_{\text{fwd}}(S) \approx 2NS + 4LdS^2$.
+
+      **1. $S = 512$.**
+      $$
+      2NS = 2(6.7\times10^9)(512) = 6.86\times10^{12},
+      $$
+      $$
+      4LdS^2 = 4(32)(4096)(512)^2 = 1.37\times10^{11}.
+      $$
+      Total $\approx 7.00\times10^{12}$ FLOPs, of which attention is
+      $1.37/70.0 = \mathbf{2.0\%}$.
+
+      **2. $S = 32{,}768$.**
+      $$
+      2NS = 2(6.7\times10^9)(32768) = 4.39\times10^{14},
+      $$
+      $$
+      4LdS^2 = 4(32)(4096)(32768)^2 = 5.63\times10^{14}.
+      $$
+      Total $\approx 1.00\times10^{15}$ FLOPs, attention share
+      $5.63/10.02 = \mathbf{56\%}$.
+
+      **3. Reading it.** The crossover is at $S_\star = N/(2Ld) \approx 25{,}600$, and the numbers
+      straddle it exactly as predicted: negligible at 512, majority at 32k.
+
+      The practical point is that "attention is quadratic" describes the long-context regime and
+      badly misdescribes the short-context one. A kernel optimisation targeting attention buys 2% at
+      512 tokens. At 32k it buys more than half the prefill.
+
+  - id: ops-attention-crossover
+    title: Derive the attention crossover length
+    topic: llm-ops/inference-arithmetic
+    difficulty: beginner
+    type: proof
+    estimated_time: 15m
+    tags: [crossover, flops, scaling]
+    statement: |
+      Show that the attention term of the forward-pass cost overtakes the weight term at
+      $S_\star = N/(2Ld)$. Then show that for a transformer whose parameters are dominated by the
+      standard per-layer blocks, $S_\star$ is proportional to $d$, and say what that implies about
+      wide versus deep models at long context.
+    hints:
+      - |
+        Set the two terms of $2NS + 4LdS^2$ equal and solve for $S$.
+      - |
+        For the second part, count the parameters of one transformer layer in terms of $d$: four attention projections of size $d\times d$, plus an MLP with hidden width $\approx 4d$.
+    solution: |
+      **Crossover.** Setting $4LdS^2 = 2NS$ and dividing by $S > 0$,
+      $$
+      4LdS = 2N \quad\Longrightarrow\quad S_\star = \frac{N}{2Ld}.
+      $$
+
+      **Scaling with $d$.** A standard layer has:
+      - four attention projections $W_Q, W_K, W_V, W_O$, each $d\times d$: $4d^2$ parameters;
+      - an MLP with hidden width $4d$, i.e. two matrices $d\times 4d$ and $4d \times d$: $8d^2$.
+
+      So $N \approx 12Ld^2$. Substituting,
+      $$
+      S_\star = \frac{12Ld^2}{2Ld} = 6d .
+      $$
+
+      $L$ cancels: **the crossover depends only on the width.** Checking against the 7B model above,
+      $6d = 6\times4096 = 24{,}576$, which matches the $25{,}600$ computed from the exact parameter
+      count.
+
+      **What it implies.** Two models with the same parameter count but different shapes have
+      different crossovers. A wide, shallow model pushes $S_\star$ out and stays weight-dominated to
+      longer contexts; a narrow, deep one hits the quadratic regime sooner. Since $N \approx 12Ld^2$,
+      holding $N$ fixed while doubling $d$ requires $L$ to drop fourfold — and doubles $S_\star$.
+
+      This is worth knowing when choosing an architecture for a long-context workload, and it is
+      invisible if you only track parameter count.
+
+  - id: ops-ridge-point
+    title: Ridge point and the batch size needed to saturate
+    topic: llm-ops/inference-arithmetic
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [roofline, ridge point, batching]
+    statement: |
+      A GPU has peak 990 TFLOP/s in BF16 and 3.35 TB/s of memory bandwidth.
+
+      1. Compute the ridge point in FLOP/byte.
+      2. For weight-limited decoding at 2 bytes per parameter, what batch size is needed to reach it?
+      3. Repeat for 4-bit weights ($b = 0.5$). Explain the direction of the change.
+    solution: |
+      **1.** $I^\star = \pi/\beta = 9.9\times10^{14} / 3.35\times10^{12} = \mathbf{295}$ FLOP/byte.
+
+      **2.** Decode intensity is $I = 2B/b$. Setting $2B/2 = 295$ gives $B = \mathbf{295}$ sequences.
+
+      **3.** At $b = 0.5$, $I = 2B/0.5 = 4B$, so $4B = 295$ gives $B \approx \mathbf{74}$.
+
+      **Direction, and why it is not a contradiction.** Quantizing the weights *lowers* the batch
+      size needed to become compute-bound — you reach the ridge sooner. That is because you move
+      fewer bytes for the same arithmetic, which raises intensity.
+
+      Note what this does and does not say. It does **not** say quantization makes you compute-bound
+      in a good way; it says the memory bottleneck has been relieved, so a smaller batch now suffices
+      to keep the arithmetic units busy. Below $B = 74$ you are still memory-bound, but the floor
+      itself has dropped by $4\times$, which is the actual latency win.
+
+  - id: ops-decode-floor
+    title: Single-stream decode latency floors
+    topic: llm-ops/inference-arithmetic
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [latency, bandwidth, lower bound, quantization]
+    statement: |
+      Using $t_{\text{step}} \ge Nb/\beta$ with $\beta = 3.35$ TB/s per GPU:
+
+      1. Compute the floor and the implied maximum tokens/second for a 7B model at BF16, INT8 and 4-bit.
+      2. Do the same for a 70B model at BF16 across 2 GPUs (assume bandwidth adds and ignore the interconnect).
+      3. A product requires 30 tokens/s per user. Which of these configurations can meet it, ignoring all other overheads?
+    solution: |
+      **1. 7B model, $N = 6.7\times10^9$.**
+
+      | precision | $b$ | bytes | $t_{\text{step}}$ | max tok/s |
+      | --- | --- | --- | --- | --- |
+      | BF16 | 2 | 13.4 GB | 4.00 ms | 250 |
+      | INT8 | 1 | 6.7 GB | 2.00 ms | 500 |
+      | 4-bit | 0.5 | 3.35 GB | 1.00 ms | 1000 |
+
+      **2. 70B model, $N = 7.0\times10^{10}$, BF16, two GPUs.** Weights are 140 GB, split 70 GB per
+      GPU, and each GPU streams its own half in parallel at 3.35 TB/s:
+      $$
+      t_{\text{step}} \ge \frac{7.0\times10^{10}}{3.35\times10^{12}} = 20.9\ \text{ms}
+      \quad\Longrightarrow\quad \le 48 \text{ tok/s}.
+      $$
+
+      **3. Meeting 30 tok/s.** All four configurations clear it *on paper* — the floors are 250, 500,
+      1000 and 48 tok/s against a requirement of 30.
+
+      But read the margins. The three 7B configurations have an order of magnitude of headroom; the
+      70B two-GPU configuration has $48/30 = 1.6\times$, and that is before the interconnect traffic
+      of tensor parallelism, kernel inefficiency, sampling overhead and any batching. A bound with
+      60% headroom is not a design that meets 30 tok/s — it is a design that might. Treat a roofline
+      margin under about $3\times$ as a signal to prototype rather than to commit.
+
+  - id: ops-kv-size
+    title: KV cache sizing with MHA and GQA
+    topic: llm-ops/kv-cache-and-batching
+    difficulty: beginner
+    type: numerical
+    estimated_time: 30m
+    tags: [kv cache, gqa, memory]
+    statement: |
+      Model A is 7B with $L = 32$, $d = 4096$, 32 attention heads, multi-head attention.
+      Model B is 70B with $L = 80$, $d = 8192$, 64 query heads and 8 key/value heads (GQA).
+      Both store the cache in BF16.
+
+      1. Compute bytes of cache per token for each.
+      2. Compute the cache for one 8192-token conversation in each.
+      3. Compute what model B's cache would have been with full MHA, and state the GQA saving.
+    solution: |
+      Use $M_{\mathrm{KV}} = 2Ld_{kv}b$ per token, with $d_{kv} = n_{kv}\cdot d_h$ and
+      $d_h = d/n_{\text{heads}}$.
+
+      **1. Per token.**
+
+      *Model A:* MHA gives $d_{kv} = d = 4096$, so
+      $$
+      2 \cdot 32 \cdot 4096 \cdot 2 = 524{,}288\ \text{B} = \mathbf{0.5\ MiB}.
+      $$
+
+      *Model B:* head dimension $d_h = 8192/64 = 128$, and $n_{kv} = 8$, so
+      $d_{kv} = 8 \times 128 = 1024$. Then
+      $$
+      2 \cdot 80 \cdot 1024 \cdot 2 = 327{,}680\ \text{B} = \mathbf{0.3125\ MiB}.
+      $$
+
+      **2. At $S = 8192$.**
+      - Model A: $0.5\ \mathrm{MiB} \times 8192 = \mathbf{4\ GiB}$.
+      - Model B: $0.3125 \times 8192 = \mathbf{2.5\ GiB}$.
+
+      **3. Model B with full MHA.** Then $d_{kv} = d = 8192$, giving
+      $2\cdot80\cdot8192\cdot2 = 2.62$ MiB/token and $\mathbf{20.5\ GiB}$ at 8192 tokens — an
+      $8\times$ increase, exactly the ratio $n_{\text{heads}}/n_{kv} = 64/8$.
+
+      **The point worth noticing.** The 70B model has ten times the parameters of the 7B one but a
+      *smaller* cache per token. GQA is the reason large models are servable at long context at all:
+      without it, model B's cache at 8192 tokens would exceed a quarter of an 80 GB card for a single
+      user.
+
+  - id: ops-batch-capacity
+    title: How many users fit on one GPU
+    topic: llm-ops/kv-cache-and-batching
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [batching, memory, capacity]
+    statement: |
+      An 80 GB GPU serves the 7B MHA model from the previous problem in BF16 (13.4 GB of weights),
+      with 5 GB of framework and activation overhead.
+
+      1. Compute the maximum concurrent sequences at context lengths 2k, 8k and 32k.
+      2. At each, state whether decoding is compute-bound, taking the ridge-point batch as 295.
+      3. Compute the context length at which capacity falls to a single sequence.
+    solution: |
+      Free memory for cache: $80 - 13.4 - 5 = 61.6$ GB. Per-sequence cache is
+      $0.5\ \mathrm{MiB} \times S$.
+
+      **1. Capacity.**
+
+      | $S$ | cache/seq | $B_{\max}$ |
+      | --- | --- | --- |
+      | 2{,}048 | 1 GiB | 57 |
+      | 8{,}192 | 4 GiB | 14 |
+      | 32{,}768 | 16 GiB | 3 |
+
+      (Using $1\ \mathrm{GiB} \approx 1.074\ \mathrm{GB}$; at 2k, $61.6/1.074 \approx 57$.)
+
+      **2. Compute-bound?** No, at every context length — 57, 14 and 3 are all far below 295. The
+      GPU's arithmetic units are idle for the great majority of every decode step in all three
+      cases, and the gap widens with context.
+
+      **3. Single-sequence context.** Solve $0.5\ \mathrm{MiB} \times S = 61.6\ \mathrm{GB}$:
+      $$
+      S = \frac{61.6\times10^9}{524288} \approx 117{,}000\ \text{tokens}.
+      $$
+      So a single ~117k-token conversation consumes the whole card.
+
+      **Interpretation.** This is the central tension of LLM serving stated in numbers. The hardware
+      wants ~300 concurrent sequences to be efficient; memory allows 14 at a realistic context
+      length. Every technique in production serving — GQA, cache quantization, paging, prefix
+      sharing, offload — exists to close a gap of roughly $20\times$ between what the arithmetic
+      wants and what the memory permits.
+
+  - id: ops-littles-law
+    title: Apply Little's law to a serving target
+    topic: llm-ops/kv-cache-and-batching
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [little's law, capacity, slo]
+    statement: |
+      A service must sustain 40 requests per second. Each request averages 800 output tokens, and the
+      product requires a mean end-to-end latency of 20 seconds.
+
+      1. Use Little's law to find the required mean concurrency.
+      2. Given the capacity table from the previous problem at 8k context, how many GPUs are needed?
+      3. Show that if latency is halved, the required concurrency halves — and explain why this does
+         not halve the GPU count.
+    solution: |
+      **1. Concurrency.** Little's law gives $\bar L = \lambda W = 40 \times 20 = \mathbf{800}$
+      concurrent requests in the system.
+
+      **2. GPU count.** At 8k context one GPU holds 14 sequences, so
+      $$
+      \left\lceil \frac{800}{14} \right\rceil = \mathbf{58\ GPUs}.
+      $$
+
+      **3. Halving latency.** $\bar L = \lambda W$ is linear in $W$, so $W = 10$ s gives
+      $\bar L = 400$ and $\lceil 400/14\rceil = 29$ GPUs — apparently half.
+
+      **Why this is not free.** Latency and concurrency are not independent knobs; they are linked
+      through the hardware. Mean latency is roughly
+      $$
+      W \approx \frac{\text{output tokens}}{\text{per-stream token rate}},
+      $$
+      so halving $W$ at fixed output length means **doubling the per-stream token rate**. But
+      per-stream rate falls as batch size rises, because a larger batch shares the same memory
+      bandwidth. So you cannot hold 14 sequences per GPU *and* double each one's speed.
+
+      Little's law is an identity, not a mechanism: it tells you the three quantities are constrained,
+      not that you may set any two freely. The honest procedure is to measure the achievable
+      (throughput, latency) frontier for your model and hardware, then use Little's law to convert a
+      point on that frontier into a fleet size.
+
+  - id: ops-static-batching
+    title: The cost of waiting for the slowest sequence
+    topic: llm-ops/kv-cache-and-batching
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    tags: [order statistics, batching, utilisation]
+    statement: |
+      Let $S_1,\dots,S_B$ be i.i.d. output lengths.
+
+      1. Prove that static-batching utilisation $U_B = \E[\bar S]/\E[\max_i S_i]$ satisfies
+         $U_B \le 1$, with equality only if the lengths are almost surely equal.
+      2. For $S_i$ i.i.d. exponential, prove $U_B = 1/H_B$.
+      3. For $S_i$ i.i.d. uniform on $[0, M]$, compute $U_B$ and compare the decay with the
+         exponential case.
+    hints:
+      - |
+        For part 1, compare $\max_i S_i$ with the average pointwise, then take expectations.
+      - |
+        For part 2, use the memoryless property to write the maximum as a sum of independent exponential gaps.
+      - |
+        For part 3, the maximum of $B$ i.i.d. uniforms on $[0,M]$ has CDF $(x/M)^B$.
+    solution: |
+      **1. Utilisation is at most one.** Pointwise, $\max_i S_i \ge \frac1B\sum_i S_i$, since the
+      maximum of a finite set is at least its mean. Taking expectations and using linearity,
+      $$
+      \E\big[\max_i S_i\big] \ \ge\ \E\left[\frac1B\sum_i S_i\right] = \E[S_1],
+      $$
+      so $U_B = \E[S_1]/\E[\max_i S_i] \le 1$. Equality forces
+      $\E[\max_i S_i - \bar S] = 0$ with a non-negative integrand, hence
+      $\max_i S_i = \bar S$ almost surely, which happens only when all $S_i$ coincide a.s.
+
+      **2. Exponential case.** Let $S_i \sim \mathrm{Exp}(1/\mu)$. Order them
+      $S_{(1)}\le\cdots\le S_{(B)}$ and write the maximum as a telescoping sum of gaps:
+      $$
+      \max_i S_i = \sum_{k=1}^{B}\big(S_{(k)} - S_{(k-1)}\big), \qquad S_{(0)} := 0 .
+      $$
+      The minimum of $B$ i.i.d. $\mathrm{Exp}(1/\mu)$ variables is $\mathrm{Exp}(B/\mu)$ with mean
+      $\mu/B$. By memorylessness, conditional on the first completion the remaining $B-1$ variables
+      are again i.i.d. exponential started afresh, so $S_{(2)}-S_{(1)}$ is the minimum of $B-1$ of
+      them, with mean $\mu/(B-1)$; inductively $\E[S_{(k)}-S_{(k-1)}] = \mu/(B-k+1)$. Summing,
+      $$
+      \E\big[\max_i S_i\big] = \mu\sum_{k=1}^B \frac{1}{B-k+1} = \mu H_B ,
+      $$
+      hence $U_B = \mu/(\mu H_B) = 1/H_B$.
+
+      **3. Uniform case.** For $S_i \sim \mathrm{Unif}[0,M]$, $\E[S_1] = M/2$ and
+      $\P(\max \le x) = (x/M)^B$, so the density is $Bx^{B-1}/M^B$ and
+      $$
+      \E\big[\max_i S_i\big] = \int_0^M x\,\frac{Bx^{B-1}}{M^B}\,dx = \frac{B}{M^B}\cdot\frac{M^{B+1}}{B+1} = \frac{BM}{B+1}.
+      $$
+      Therefore
+      $$
+      U_B = \frac{M/2}{BM/(B+1)} = \frac{B+1}{2B} \ \longrightarrow\ \frac12 .
+      $$
+
+      **Comparison.** The uniform case plateaus at $1/2$: utilisation degrades but never below half,
+      because the uniform distribution is bounded and the maximum cannot run away. The exponential
+      case decays like $1/\ln B$, unbounded below, because the exponential tail lets the longest
+      sequence keep growing with $B$.
+
+      The general lesson is that **the tail of the length distribution controls the loss**, not its
+      mean. Empirical output-length distributions are heavier-tailed than exponential, which places
+      real systems on the worse side of this comparison and is the quantitative case for continuous
+      batching.
+
+  - id: ops-spec-correctness
+    title: Exactness of speculative sampling with a modified acceptance rule
+    topic: llm-ops/speculative-decoding
+    difficulty: advanced
+    type: proof
+    estimated_time: 1h
+    abyss: true
+    tags: [rejection sampling, exactness, proof]
+    statement: |
+      Suppose an implementer changes the acceptance probability from $\min(1, p(x)/q(x))$ to
+      $\min(1, \kappa\,p(x)/q(x))$ for a constant $\kappa > 1$, hoping to accept more often, and keeps
+      the residual distribution $p'(x)\propto\max(0, p(x)-q(x))$ unchanged.
+
+      1. Prove that the resulting sampler is no longer exact, by computing the output distribution.
+      2. Determine the total variation distance between the output and $p$ for the two-point example
+         $p = (0.6, 0.4)$, $q = (0.5, 0.5)$, $\kappa = 1.5$.
+      3. State the general principle the failure illustrates.
+    hints:
+      - |
+        Recompute the two routes to emitting $x$ — accepted, and rejected-then-resampled — and note that the rejection mass no longer matches the residual's normalisation.
+      - |
+        Careful with the clipping in $\min(1,\cdot)$; at $\kappa=1.5$ check which outcomes have $\kappa p/q \ge 1$.
+    solution: |
+      **1. The output distribution.** With acceptance probability
+      $a(x) = \min(1, \kappa p(x)/q(x))$, the accepted route gives
+      $$
+      \P(\text{emit } x \text{ via acceptance}) = q(x)a(x) = \min\big(q(x),\ \kappa p(x)\big).
+      $$
+      The rejection probability is
+      $$
+      \beta_\kappa = 1 - \sum_y \min\big(q(y), \kappa p(y)\big),
+      $$
+      and on rejection we emit from $p'(x) = \max(0, p(x)-q(x))/\beta_1$ where
+      $\beta_1 = \sum_y\max(0,p(y)-q(y))$ is the *original* normaliser. Total:
+      $$
+      \P(\text{emit } x) = \min\big(q(x),\kappa p(x)\big) + \frac{\beta_\kappa}{\beta_1}\max\big(0, p(x)-q(x)\big).
+      $$
+      For $\kappa = 1$ the two identities $\beta_1 = \beta_\kappa$ and
+      $\min(q,p)+\max(0,p-q) = p$ combine to give $p$. For $\kappa > 1$ both break: the first term is
+      inflated wherever $\kappa p(x) < q(x)$, and the reweighting factor $\beta_\kappa/\beta_1 \ne 1$
+      distorts the residual. The result is not $p$.
+
+      **2. The two-point example.** Here $p = (0.6, 0.4)$, $q = (0.5, 0.5)$, $\kappa = 1.5$.
+
+      Acceptance terms: $\kappa p = (0.9, 0.6)$, so
+      $\min(q, \kappa p) = (\min(0.5,0.9), \min(0.5,0.6)) = (0.5, 0.5)$.
+
+      Then $\beta_\kappa = 1 - (0.5+0.5) = 0$ — the proposal is **always** accepted. The output
+      distribution is therefore just $q = (0.5, 0.5)$, and
+      $$
+      \mathrm{TV}\big(\text{output}, p\big) = \tfrac12\big(|0.5-0.6| + |0.5-0.4|\big) = \mathbf{0.1}.
+      $$
+
+      So the "improvement" produces samples from the *draft* model, not the target — the failure is
+      total, not marginal.
+
+      **3. The principle.** The acceptance probability and the residual distribution are not two free
+      choices; they are one choice made twice. Exactness came from the algebraic identity
+      $$
+      \min(p,q) + \max(0, p-q) = p,
+      $$
+      in which the rejection mass $\beta$ appears once in the numerator and once in the denominator
+      and cancels. Any change to the accept rule must be matched by the corresponding change to the
+      residual, or the cancellation fails.
+
+      More broadly: in rejection sampling the acceptance rule encodes *which part of the target the
+      proposal already covers*, and the residual must supply exactly the rest. Raising acceptance
+      without changing the residual is claiming the proposal covers more than it does.
+
+  - id: ops-spec-optimal-gamma
+    title: Choosing the draft length
+    topic: llm-ops/speculative-decoding
+    difficulty: advanced
+    type: numerical
+    estimated_time: 30m
+    tags: [speculative decoding, optimisation, speedup]
+    statement: |
+      With acceptance rate $\alpha$ and relative draft cost $c$, speedup is
+      $\mathcal S(\gamma) = (1-\alpha^{\gamma+1})/\big((1-\alpha)(\gamma c+1)\big)$.
+
+      1. For $\alpha = 0.7$, $c = 0.15$, tabulate $\mathcal S$ for $\gamma = 1,\dots,8$ and find the optimum.
+      2. Show that as $c \to 0$ the optimal $\gamma$ diverges, and give the limiting speedup for fixed $\gamma \to\infty$.
+      3. A team reports $\alpha = 0.95$ and claims a $10\times$ speedup. Is that consistent?
+    solution: |
+      **1. Tabulating at $\alpha = 0.7$, $c = 0.15$.** Note $1/(1-\alpha) = 3.33$.
+
+      | $\gamma$ | $1-\alpha^{\gamma+1}$ | $\E[\text{tok}]$ | $\gamma c + 1$ | $\mathcal S$ |
+      | --- | --- | --- | --- | --- |
+      | 1 | 0.510 | 1.70 | 1.15 | 1.48 |
+      | 2 | 0.657 | 2.19 | 1.30 | 1.68 |
+      | 3 | 0.760 | 2.53 | 1.45 | 1.75 |
+      | 4 | 0.832 | 2.77 | 1.60 | 1.73 |
+      | 5 | 0.882 | 2.94 | 1.75 | 1.68 |
+      | 6 | 0.918 | 3.06 | 1.90 | 1.61 |
+      | 8 | 0.960 | 3.20 | 2.20 | 1.45 |
+
+      The optimum is $\gamma = 3$ at $\mathcal S \approx 1.75$, and the curve is flat between
+      $\gamma = 2$ and $\gamma = 5$.
+
+      **2. Free drafting.** At $c = 0$ the denominator is $1$ for all $\gamma$, so
+      $\mathcal S(\gamma) = (1-\alpha^{\gamma+1})/(1-\alpha)$ is strictly increasing in $\gamma$ with
+      no finite maximiser, and
+      $$
+      \lim_{\gamma\to\infty}\mathcal S(\gamma) = \frac{1}{1-\alpha}.
+      $$
+      So the *acceptance rate alone* caps the achievable speedup at $1/(1-\alpha)$, no matter how
+      cheap the draft model is or how far ahead it drafts.
+
+      **3. Checking the $10\times$ claim.** At $\alpha = 0.95$ the ceiling is
+      $1/(1-0.95) = 20$. A $10\times$ speedup is therefore **not impossible**, but it requires
+      $c$ to be very small and $\gamma$ large: at $c = 0.05$ and $\gamma = 19$, for instance,
+      $$
+      \mathcal S = \frac{1-0.95^{20}}{0.05\times(19\times0.05+1)} = \frac{0.642}{0.05\times1.95} = 6.6,
+      $$
+      still short. Reaching $10\times$ needs $c \lesssim 0.02$ — a draft model fifty times cheaper —
+      together with a sustained $\alpha = 0.95$.
+
+      The claim is worth probing rather than dismissing: ask how $\alpha$ was measured (averaged over
+      a whole generation, or on easy prefixes only?), what $c$ actually is including the draft's own
+      KV cache traffic, and whether the comparison baseline was itself well optimised.
+
+  - id: ops-implement-roofline
+    title: Build a serving capacity calculator
+    topic: llm-ops/inference-arithmetic
+    difficulty: advanced
+    type: coding
+    estimated_time: 3h
+    tags: [roofline, simulation, capacity planning, implementation]
+    statement: |
+      Implement a capacity planner and validate it against the analysis.
+
+      1. Given model shape, precision and hardware, compute the decode latency floor, the KV cache
+         per token, the maximum batch at a given context, and whether decode is compute- or
+         memory-bound.
+      2. Sweep context length and plot achievable batch size and arithmetic intensity together.
+      3. Simulate static versus continuous batching with a heavy-tailed length distribution and
+         measure the utilisation gap against the $1/H_B$ prediction.
+      4. Add speculative decoding and find the optimal $\gamma$ numerically for measured $\alpha$.
+    solution: |
+      ```python
+      from dataclasses import dataclass
+      import numpy as np
+
+      @dataclass
+      class Model:
+          n_params: float; n_layers: int; d_model: int
+          n_heads: int; n_kv_heads: int
+          def d_kv(self): return self.n_kv_heads * (self.d_model // self.n_heads)
+
+      @dataclass
+      class HW:
+          flops: float; bandwidth: float; memory: float
+
+      def kv_bytes_per_token(m, b): return 2 * m.n_layers * m.d_kv() * b
+
+      def plan(m, hw, b_weight, b_kv, seq_len, overhead=5e9):
+          weights = m.n_params * b_weight
+          floor_s = weights / hw.bandwidth
+          per_seq = kv_bytes_per_token(m, b_kv) * seq_len
+          batch = max(0, int((hw.memory - weights - overhead) // per_seq))
+          ridge = hw.flops / hw.bandwidth
+          return dict(
+              floor_ms=floor_s * 1e3, max_tok_s=1 / floor_s,
+              kv_per_token=kv_bytes_per_token(m, b_kv),
+              max_batch=batch, ridge=ridge,
+              intensity=2 * batch / b_weight,
+              compute_bound=(2 * batch / b_weight) > ridge,
+          )
+      ```
+
+      **2. The sweep is the deliverable.** Plot $B_{\max}(S)$ and $I(S) = 2B_{\max}(S)/b$ on one
+      figure with the ridge point as a horizontal rule. The shape to look for: both curves fall like
+      $1/S$, and the intensity curve sits *below* the ridge across the whole practical range. That
+      gap — not any single number — is the capacity story.
+
+      **3. Batching simulation.**
+
+      ```python
+      def simulate(lengths, B, continuous):
+          lengths = list(lengths); t = 0; slots = []; used = 0; total = 0
+          i = 0
+          while i < len(lengths) or slots:
+              while len(slots) < B and i < len(lengths):
+                  slots.append(lengths[i]); i += 1
+              step = 1 if continuous else max(slots)
+              if continuous:
+                  used += len(slots); total += B
+                  slots = [s - 1 for s in slots if s - 1 > 0]
+              else:
+                  used += sum(slots); total += B * max(slots); slots = []
+              t += step
+          return used / total
+      ```
+
+      Run with `lengths` drawn from a lognormal (heavier-tailed than exponential) and compare static
+      utilisation against $1/H_B$. Expect static to fall *below* the exponential prediction — the
+      heavier tail makes $\E[\max]$ grow faster — while continuous batching stays near 1.
+
+      **4. Optimal $\gamma$.** Estimate $\alpha$ empirically as the fraction of drafted tokens
+      accepted, then evaluate $\mathcal S(\gamma)$ over a range and take the argmax. Report the whole
+      curve, not just the peak: if it is flat, say so, because that means the choice is not critical
+      and need not be re-tuned often.
+
+      **What to check.** Compare your calculator's `max_batch` against a real server's reported
+      capacity at the same context length. If they disagree by more than about $1.5\times$, the
+      missing term is usually activation and workspace memory, which the `overhead` parameter models
+      crudely; measure it rather than guessing.

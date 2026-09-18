@@ -1,0 +1,206 @@
+---
+title: Inference-Time Search and Best-of-n
+summary: What sampling more candidates actually buys — exponentially decaying failure for linear cost, an unbiased pass@k estimator, and the exact KL price of best-of-n.
+field: agents
+level: 3
+order: 20
+prerequisites:
+  - agents/error-compounding-in-trajectories
+  - llm/preference-optimisation
+tags: [best-of-n, pass@k, verifier, kl divergence, test-time compute, reward hacking]
+estimated_time: 1h
+claims:
+  - id: bon-perfect-verifier
+    kind: proposition
+    title: Best-of-n with a perfect verifier
+    summary: Failure probability falls as (1−p)ⁿ, so success improves exponentially in samples while cost grows linearly.
+    proved: true
+    tags: [best of n, verifier]
+  - id: passk-estimator
+    kind: proposition
+    title: The unbiased pass@k estimator
+    summary: From n samples with c correct, 1 − C(n−c, k)/C(n, k) is an unbiased estimate of the probability that k draws contain a correct one.
+    proved: true
+    tags: [pass@k, estimator, unbiased]
+  - id: bon-kl
+    kind: theorem
+    title: The KL divergence of best-of-n
+    summary: Best-of-n sampling against a continuous reward has KL divergence exactly log n − (n−1)/n from the base policy.
+    proved: true
+    tags: [kl divergence, order statistics, alignment tax]
+  - id: imperfect-verifier
+    kind: proposition
+    title: An imperfect verifier caps the gain
+    summary: With false-positive rate φ, selected-answer precision is bounded regardless of n, and for large n the verifier's errors dominate.
+    proved: true
+    tags: [verifier, precision, reward hacking]
+---
+
+<Intuition>
+If one attempt succeeds with probability $p$, then $n$ independent attempts contain a success with
+probability $1 - (1-p)^n$. That is exponential improvement for linear cost — the most favourable
+trade in the whole subject, and the reason "just sample more and pick the best" works.
+
+The catch is in "pick the best". You need something that can tell which attempt succeeded. How good
+that thing is determines whether the exponential is real or an illusion.
+</Intuition>
+
+## With a perfect verifier
+
+<Claim kind="proposition" id="bon-perfect-verifier" title="Best-of-n with a perfect verifier">
+Let each of $n$ independent samples be correct with probability $p$, and suppose a verifier
+identifies a correct sample whenever one is present. Then
+$$
+\P(\text{success}) = 1 - (1-p)^n,
+$$
+and the number of samples needed to reach target $T$ is
+$$
+n \ \ge\ \frac{\log(1-T)}{\log(1-p)} .
+$$
+</Claim>
+
+<Proof>
+Failure requires all $n$ samples to be incorrect, which by independence has probability $(1-p)^n$;
+the success probability is its complement. For the second claim,
+$1-(1-p)^n \ge T \iff (1-p)^n \le 1-T$, and taking logarithms — noting $\log(1-p) &lt; 0$, which
+reverses the inequality — gives $n \ge \log(1-T)/\log(1-p)$. $\blacksquare$
+</Proof>
+
+<Details summary="Reading the exponential honestly">
+At $p = 0.3$: $n=1$ gives 0.30, $n=5$ gives 0.83, $n=10$ gives 0.97, $n=20$ gives 0.999.
+
+But invert it. To go from 0.97 to 0.999 took an extra 10 samples; the next factor of ten in failure
+probability costs another 20. Failure decays like $e^{-n\log\frac{1}{1-p}}$, so **success improves
+logarithmically in compute**: each fixed increment of quality costs a constant *multiple* of the
+samples. That is the same shape as scaling laws for training, and it is why test-time search is
+powerful in the middle of the curve and expensive at the end of it.
+</Details>
+
+## Estimating pass@k honestly
+
+Evaluating $\mathrm{pass}@k$ by drawing exactly $k$ samples is high-variance. The standard estimator
+draws $n \ge k$ and computes a combinatorial correction.
+
+<Claim kind="proposition" id="passk-estimator" title="The unbiased pass@k estimator">
+Draw $n$ i.i.d. samples of which $c$ are correct. Then
+$$
+\widehat{\mathrm{pass}@k} = 1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}
+$$
+is an unbiased estimator of the probability that a uniformly random subset of $k$ of those $n$
+samples contains at least one correct sample.
+</Claim>
+
+<Proof>
+Condition on $c$. Choosing $k$ of the $n$ samples uniformly without replacement, the subset contains
+no correct sample exactly when all $k$ come from the $n-c$ incorrect ones. The number of such subsets
+is $\binom{n-c}{k}$ out of $\binom{n}{k}$ total, so
+$$
+\P(\text{no correct sample in the subset} \mid c) = \frac{\binom{n-c}{k}}{\binom{n}{k}},
+$$
+with the convention $\binom{m}{k} = 0$ for $m &lt; k$. The estimator is one minus this quantity, which
+is therefore exactly the conditional probability of interest — unbiased by construction, being the
+quantity itself rather than an approximation to it. $\blacksquare$
+</Proof>
+
+<Note>
+Computing this directly overflows for realistic $n$. The numerically sound form uses the telescoping
+product
+$$
+\frac{\binom{n-c}{k}}{\binom{n}{k}} = \prod_{i=0}^{k-1}\frac{n-c-i}{n-i},
+$$
+evaluated term by term, which is also immediate from writing out the factorials and cancelling.
+</Note>
+
+## What best-of-n costs in distribution
+
+Selecting the best of $n$ samples changes the distribution you are sampling from. That shift has an
+exact closed form, and it is the quantity that governs reward hacking.
+
+<Claim kind="theorem" id="bon-kl" title="The KL divergence of best-of-n">
+Let $\pi$ be a base policy and $r$ a reward whose distribution under $\pi$ is continuous (so ties have
+probability zero). Let $\pi_n$ be the distribution of the highest-reward sample among $n$ i.i.d.
+draws from $\pi$. Then
+$$
+\mathrm{KL}\big(\pi_n \,\|\, \pi\big) \;=\; \log n - \frac{n-1}{n}.
+$$
+</Claim>
+
+<Proof>
+Let $F$ be the CDF of $r(X)$ for $X\sim\pi$, continuous by assumption. The best-of-$n$ sample is the
+one attaining the maximum reward, so its density with respect to $\pi$ is
+$$
+\frac{d\pi_n}{d\pi}(x) = n\,F\big(r(x)\big)^{\,n-1},
+$$
+because $x$ is selected when it is drawn (density $\pi$), one of $n$ positions ($n$ ways), and the
+other $n-1$ draws all have smaller reward (probability $F(r(x))^{n-1}$ each, independently).
+
+Therefore
+$$
+\mathrm{KL}(\pi_n\|\pi) = \E_{X\sim\pi_n}\left[\log \frac{d\pi_n}{d\pi}(X)\right]
+= \log n + (n-1)\,\E_{X\sim\pi_n}\big[\log F(r(X))\big].
+$$
+
+Set $U = F(r(X))$. Under $\pi$, $U$ is uniform on $[0,1]$ by the probability integral transform
+(valid since $F$ is continuous). Under $\pi_n$, $U$ is the maximum of $n$ i.i.d. uniforms, whose CDF
+is $u^n$ and density $nu^{n-1}$ on $[0,1]$. Hence
+$$
+\E_{\pi_n}[\log U] = \int_0^1 (\log u)\, n u^{n-1}\,du .
+$$
+Integrate by parts with $dv = nu^{n-1}du$, $v = u^n$:
+$$
+\int_0^1 (\log u)\,nu^{n-1}du = \Big[u^n\log u\Big]_0^1 - \int_0^1 u^n\cdot\frac{1}{u}\,du
+= 0 - \int_0^1 u^{n-1}du = -\frac1n,
+$$
+the boundary term vanishing at both ends. Substituting,
+$$
+\mathrm{KL}(\pi_n\|\pi) = \log n + (n-1)\left(-\frac1n\right) = \log n - \frac{n-1}{n}. \qquad\blacksquare
+$$
+</Proof>
+
+<KeyIdea>
+The divergence grows like $\log n$ — slowly, but without bound, and it depends on **nothing about the
+reward except that it is continuous**. So best-of-$n$ gives a principled exchange rate between
+compute and distribution shift, and lets you compare test-time selection against a KL-regularised
+fine-tune on the same axis: $n = 8$ costs about $1.20$ nats, $n = 64$ about $3.17$.
+
+This matters because distribution shift away from the base policy is exactly the regime where a
+learned reward model stops being trustworthy — it was fit on samples from the base policy, and
+best-of-$n$ is deliberately sampling where those were rare.
+</KeyIdea>
+
+## Imperfect verifiers
+
+<Claim kind="proposition" id="imperfect-verifier" title="An imperfect verifier caps the gain">
+Suppose each sample is correct with probability $p$, the verifier accepts a correct sample with
+probability $1$, and accepts an incorrect sample with probability $\varphi &gt; 0$. If the system
+returns a uniformly chosen accepted sample, then as $n\to\infty$ the probability that the returned
+answer is correct tends to
+$$
+\frac{p}{p + (1-p)\varphi} \;&lt;\; 1 .
+$$
+</Claim>
+
+<Proof>
+By the law of large numbers the accepted pool contains approximately $np$ correct samples and
+$n(1-p)\varphi$ incorrect ones. Choosing uniformly from the pool, the probability of a correct answer
+tends to the ratio of correct to total accepted, which is the stated expression. It is strictly below
+$1$ because $(1-p)\varphi &gt; 0$ whenever $p &lt; 1$ and $\varphi &gt; 0$. $\blacksquare$
+</Proof>
+
+<Warning>
+Sampling more does not overcome a verifier's false positives — it *recruits* them. With $p = 0.3$ and
+$\varphi = 0.05$ the ceiling is $0.3/(0.3 + 0.035) = 0.896$, and no amount of extra compute passes it.
+Worse, when the selector is a learned reward model rather than a checker, large $n$ actively searches
+for its errors: the best-of-$n$ distribution concentrates precisely on the inputs the reward model
+scores highest, which include the ones it scores wrongly. This is reward hacking stated as a sampling
+phenomenon, and it is why measured best-of-$n$ curves against learned reward models typically rise,
+peak, and then *decline* with $n$ — while the same curves against an executable checker keep rising.
+</Warning>
+
+<NotSaid>
+Independence across samples is assumed throughout. Samples from one model at one temperature are not
+independent in the relevant sense — they share the model's systematic errors — so $(1-p)^n$
+overstates the benefit exactly as it did for majority voting. And nothing here addresses *which*
+search to run: best-of-$n$ over complete solutions, beam search over steps, or tree search with
+backtracking all spend the same compute differently, and the comparison between them is empirical.
+</NotSaid>

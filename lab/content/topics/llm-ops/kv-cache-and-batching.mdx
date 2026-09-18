@@ -1,0 +1,271 @@
+---
+title: KV Cache, Batching and Little's Law
+summary: The memory equation that decides how many sequences fit, and why static batching wastes a logarithmically growing fraction of the GPU.
+field: llm-ops
+level: 2
+order: 20
+prerequisites:
+  - llm-ops/inference-arithmetic
+  - probability/expectation-and-conditioning
+tags: [kv cache, batching, little's law, gqa, paged attention, throughput]
+estimated_time: 1h
+claims:
+  - id: kv-size
+    kind: proposition
+    title: KV cache size
+    summary: The cache costs 2·L·d_kv·b bytes per token per sequence, linear in context length and independent of batch-wide sharing.
+    proved: true
+    tags: [memory, kv cache]
+  - id: batch-capacity
+    kind: corollary
+    title: Maximum concurrent sequences
+    summary: Available memory after weights, divided by per-sequence cache, bounds the batch size — usually well below the batch needed to be compute-bound.
+    proved: true
+    tags: [memory, batching]
+  - id: littles-law
+    kind: theorem
+    title: Little's law
+    summary: In any stable queueing system the mean number in system equals arrival rate times mean time in system, with no distributional assumptions.
+    proved: true
+    tags: [queueing, little's law, throughput]
+  - id: static-batching-waste
+    kind: proposition
+    title: Static batching utilisation decays like 1/log B
+    summary: With exponentially distributed output lengths, a static batch of size B wastes a fraction 1 − 1/H_B of its decode steps.
+    proved: true
+    tags: [batching, order statistics, utilisation]
+  - id: paging-fragmentation
+    kind: proposition
+    title: Block paging bounds internal fragmentation
+    summary: Allocating the cache in blocks of k tokens wastes fewer than k tokens per sequence, independent of context length.
+    proved: true
+    tags: [paged attention, fragmentation, memory]
+references:
+  - key: little-law
+    title: A Proof for the Queuing Formula L = λW
+    authors: J. D. C. Little
+    year: 1961
+    kind: paper
+    url: https://doi.org/10.1287/opre.9.3.383
+    note: The original distribution-free proof.
+  - key: vllm-paged
+    title: 'Efficient Memory Management for Large Language Model Serving with PagedAttention'
+    authors: W. Kwon et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2309.06180
+    note: Introduces block-paged KV allocation; the fragmentation bound below is stated independently.
+  - key: gqa
+    title: 'GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints'
+    authors: J. Ainslie et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2305.13245
+---
+
+<Intuition>
+Attention needs every previous key and value. Recomputing them each step would make generation
+quadratic, so they are cached — and that cache, not the weights, is what usually runs you out of
+memory. Weights are a fixed cost paid once. The cache is a cost paid *per sequence, per token*, and
+it grows for as long as the conversation does.
+</Intuition>
+
+## The memory equation
+
+<Claim kind="proposition" id="kv-size" title="KV cache size">
+For a model with $L$ layers, key/value width $d_{kv}$ and $b$ bytes per stored element, the cache
+holds
+$$
+M_{\mathrm{KV}} = 2\,L\,d_{kv}\,b \quad \text{bytes per token per sequence},
+$$
+so a batch of $B$ sequences of length $S$ requires $2BSLd_{kv}b$ bytes.
+</Claim>
+
+<Assumptions>
+- One key vector and one value vector are stored per layer per token — hence the leading 2.
+- $d_{kv} = n_{kv} \cdot d_h$, where $n_{kv}$ is the number of key/value heads and $d_h$ the head
+  dimension. Multi-head attention has $n_{kv} = n_{\text{heads}}$ and so $d_{kv} = d$; grouped-query
+  attention shrinks $n_{kv}$; multi-query attention takes $n_{kv} = 1$.
+- No cross-sequence sharing. Prefix sharing changes this and is discussed below.
+</Assumptions>
+
+<Proof>
+Each layer attends over its own keys and values, so nothing is shared between layers. For one token
+in one sequence, layer $\ell$ stores a key in $\R^{d_{kv}}$ and a value in $\R^{d_{kv}}$, occupying
+$2d_{kv}b$ bytes. Summing over $L$ layers gives $2Ld_{kv}b$ per token per sequence; multiplying by
+$S$ tokens and $B$ sequences gives the total. $\blacksquare$
+</Proof>
+
+<Details summary="Worked example: why a 7B model runs out of room at 33 conversations">
+Llama-2-7B uses multi-head attention: $L = 32$, $d = d_{kv} = 4096$, and BF16 gives $b = 2$. So
+$$
+M_{\mathrm{KV}} = 2 \cdot 32 \cdot 4096 \cdot 2 = 524{,}288 \text{ bytes} = 0.5\ \mathrm{MiB}
+\text{ per token}.
+$$
+A single 4096-token conversation therefore carries **2 GiB** of cache — about 15% of the model's own
+13.4 GiB of weights, for one user.
+
+On an 80 GB H100, after weights and roughly 4 GB of framework and activation overhead:
+$$
+B_{\max} = \left\lfloor \frac{80 - 13.4 - 4}{2} \right\rfloor \approx 31 \text{ sequences at 4k context}.
+$$
+
+Now recall from the roofline analysis that decoding becomes compute-bound only around
+$B \approx 300$. **The cache runs out roughly ten times before the arithmetic units are saturated.**
+That single sentence explains most of the engineering effort in LLM serving: grouped-query attention
+(Llama-2-70B uses 8 KV heads instead of 64, an 8× cut), cache quantisation, paging, and eviction all
+exist to move $B_{\max}$ towards the batch size the hardware actually wants.
+</Details>
+
+<Claim kind="corollary" id="batch-capacity" title="Maximum concurrent sequences">
+With total device memory $M$, weights $M_W$ and overhead $M_O$, the number of concurrent
+sequences at context length $S$ is bounded by
+$$
+B_{\max} = \left\lfloor \frac{M - M_W - M_O}{2SLd_{kv}b} \right\rfloor .
+$$
+</Claim>
+
+<Proof>
+Immediate from the previous proposition: the cache must fit in what remains after weights and
+overhead. $\blacksquare$
+</Proof>
+
+## Throughput and concurrency
+
+<Claim kind="theorem" id="littles-law" title="Little's law">
+For a system in which requests arrive, spend time inside, and depart, let $\lambda$ be the long-run
+arrival rate, $W$ the long-run mean time a request spends in the system, and $\bar L$ the long-run
+mean number of requests in the system. If these limits exist and are finite, then
+$$
+\bar L = \lambda W .
+$$
+</Claim>
+
+<Assumptions>
+Stationarity and finiteness of the three limits. **No** assumption on the arrival process, the
+service-time distribution, the number of servers, or the scheduling discipline. This is what makes
+the law usable: it holds for a system as messy as an LLM server.
+</Assumptions>
+
+<Proof>
+Let $n(t)$ be the number in the system at time $t$, $A(T)$ the number of arrivals in $[0,T]$, and
+$W_i$ the time request $i$ spends inside. Consider the area under $n$:
+$$
+\int_0^T n(t)\,dt = \sum_{i} \big(\text{time request } i \text{ spends in the system during } [0,T]\big).
+$$
+This holds because $n(t)$ counts exactly the requests present at $t$, so integrating over time
+accumulates, for each request, its residence time — the identity is just Fubini applied to the
+indicator that request $i$ is present at time $t$.
+
+For large $T$ and ignoring boundary terms from requests straddling the endpoints (a vanishing
+fraction under the stated stationarity),
+$$
+\frac{1}{T}\int_0^T n(t)\,dt \;=\; \frac{A(T)}{T} \cdot \frac{1}{A(T)}\sum_{i=1}^{A(T)} W_i .
+$$
+The left side converges to $\bar L$, the first factor on the right to $\lambda$, and the second to
+$W$. $\blacksquare$
+</Proof>
+
+<KeyIdea>
+For a server, read Little's law as
+$$
+\underbrace{B}_{\text{mean concurrency}} = \underbrace{\lambda}_{\text{requests/s}} \times \underbrace{W}_{\text{mean latency}}.
+$$
+Concurrency is not a free parameter you tune independently of latency and throughput — fixing any two
+fixes the third. Since $B$ is capped by memory, so is the product $\lambda W$: you may serve many
+slow requests or few fast ones, and the trade is arithmetic, not engineering skill.
+</KeyIdea>
+
+## Why static batching wastes the machine
+
+Static batching groups $B$ requests, runs them together, and returns the batch when all have
+finished. Since sequences stop at different lengths, the short ones keep occupying a slot — and
+consuming decode steps — long after they are done.
+
+<Claim kind="proposition" id="static-batching-waste" title="Static batching utilisation decays like 1/log B">
+Let output lengths $S_1,\dots,S_B$ be i.i.d. exponential with mean $\mu$. Define utilisation as the
+expected fraction of computed token-slots that carry useful work,
+$$
+U_B = \frac{\E\big[\sum_i S_i\big]}{B \cdot \E\big[\max_i S_i\big]} .
+$$
+Then
+$$
+U_B = \frac{1}{H_B}, \qquad H_B = \sum_{k=1}^{B}\frac{1}{k} \sim \ln B .
+$$
+</Claim>
+
+<Proof>
+The numerator is $B\mu$ by linearity.
+
+For the denominator we need $\E[\max_i S_i]$ for i.i.d. $\mathrm{Exp}(1/\mu)$. Use the memoryless
+decomposition: order the variables as $S_{(1)} \le \cdots \le S_{(B)}$. The minimum of $B$
+independent $\mathrm{Exp}(1/\mu)$ variables is $\mathrm{Exp}(B/\mu)$, with mean $\mu/B$. By the
+memoryless property, after the first completion the remaining $B-1$ variables are again independent
+exponentials started afresh, so the gap $S_{(2)} - S_{(1)}$ is the minimum of $B-1$ of them, with
+mean $\mu/(B-1)$. Continuing,
+$$
+\E[\max_i S_i] = \sum_{k=1}^{B} \E\big[S_{(k)} - S_{(k-1)}\big] = \sum_{k=1}^{B} \frac{\mu}{B-k+1}
+= \mu \sum_{j=1}^{B} \frac{1}{j} = \mu H_B .
+$$
+Therefore
+$$
+U_B = \frac{B\mu}{B \cdot \mu H_B} = \frac{1}{H_B}. \qquad\blacksquare
+$$
+</Proof>
+
+At $B = 8$ this is $U \approx 0.37$; at $B = 32$, $U \approx 0.25$; at $B = 128$, $U \approx 0.19$.
+**Utilisation gets worse as you batch harder** — the opposite of what batching is supposed to buy.
+
+<KeyIdea>
+Continuous (in-flight) batching removes this loss by construction: a finished sequence is evicted
+and a queued one admitted at the next step, so slots never idle. The gain is not an optimisation of
+a constant factor — it is the removal of an $\Theta(\log B)$ penalty that grows precisely as you
+scale up.
+</KeyIdea>
+
+<NotSaid>
+The exponential assumption is doing real work. It is a reasonable first model for "stop tokens arrive
+at a roughly constant hazard rate", and empirical length distributions are heavier-tailed than
+exponential, which makes the gap *worse*, not better. But the exact constant $1/H_B$ is a property of
+the exponential model, not a measured quantity. The qualitative claim — utilisation decays with $B$
+under any non-degenerate length distribution — follows from $\E[\max] > \E[\text{mean}]$ and needs no
+distributional assumption.
+</NotSaid>
+
+## Paging the cache
+
+Allocating a contiguous buffer sized for the *maximum* possible context wastes everything between the
+actual length and that maximum. Block allocation fixes this.
+
+<Claim kind="proposition" id="paging-fragmentation" title="Block paging bounds internal fragmentation">
+If the cache is allocated in blocks holding $k$ tokens each, then a sequence of length $S$ wastes
+$$
+w(S) = k\left\lceil \frac{S}{k} \right\rceil - S \ <\ k \quad\text{token-slots},
+$$
+independent of $S$ and of any maximum context length.
+</Claim>
+
+<Proof>
+A sequence of length $S$ needs $\lceil S/k \rceil$ blocks, holding $k\lceil S/k\rceil$ token-slots,
+of which $S$ are used. Writing $S = qk + r$ with $0 \le r < k$: if $r = 0$ the waste is $0$, and
+otherwise the waste is $k - r < k$. $\blacksquare$
+</Proof>
+
+So total waste across $B$ sequences is under $Bk$ slots regardless of context length, versus
+$\sum_i (S_{\max} - S_i)$ for contiguous preallocation — a quantity that grows with the *declared*
+maximum rather than the *used* length. Choosing $k$ trades fragmentation (small $k$) against
+per-block indirection overhead in the attention kernel (large $k$); values in the tens are typical.
+
+<Note>
+Paging also makes prefix sharing natural: two sequences with a common prompt can point at the same
+physical blocks with a reference count, so a shared system prompt is stored once rather than $B$
+times. For serving patterns with long fixed prefixes this is often a larger win than the
+fragmentation saving itself.
+</Note>
+
+<Warning>
+Cache size is linear in context length, and context lengths in deployment have grown by orders of
+magnitude. A formula that looks innocuous at $S = 2048$ — half a megabyte per token — becomes
+64 GiB per sequence at $S = 128\text{k}$ for the 7B model above. Long-context serving is a memory
+problem first and an attention-kernel problem second.
+</Warning>

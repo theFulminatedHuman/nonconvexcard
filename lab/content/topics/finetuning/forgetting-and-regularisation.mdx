@@ -1,0 +1,226 @@
+---
+title: Forgetting and Regularisation
+summary: Where the quadratic penalty in elastic weight consolidation comes from, why the Fisher information is the right curvature, and what the derivation assumes that deep networks violate.
+field: finetuning
+level: 3
+order: 30
+prerequisites:
+  - finetuning/low-rank-adaptation
+  - probability/expectation-and-conditioning
+  - learning-theory/erm-and-uniform-convergence
+tags: [catastrophic forgetting, ewc, fisher information, laplace approximation, regularisation]
+estimated_time: 1h
+claims:
+  - id: info-matrix-equality
+    kind: theorem
+    title: Information matrix equality
+    summary: Under regularity, the Fisher information equals the expected Hessian of the negative log-likelihood, so the Fisher is curvature.
+    proved: true
+    tags: [fisher, hessian, regularity]
+  - id: laplace-penalty
+    kind: proposition
+    title: The elastic-weight-consolidation objective
+    summary: A Laplace approximation to the posterior from the first task turns sequential learning into the new task's loss plus a Fisher-weighted quadratic pull toward the old weights.
+    proved: true
+    tags: [ewc, bayes, laplace]
+  - id: lora-deviation-bound
+    kind: proposition
+    title: Low rank bounds how far the function can move
+    summary: A rank-r adapter changes any layer's output by at most the adapter's spectral norm times the input norm, giving an explicit and controllable deviation budget.
+    proved: true
+    tags: [lora, lipschitz, deviation]
+  - id: forgetting-empirical
+    kind: empirical
+    title: Narrow fine-tuning degrades unrelated capability
+    summary: Fine-tuning on a narrow distribution measurably reduces performance on tasks the base model previously handled, with the loss growing with steps and learning rate.
+    proved: false
+    tags: [forgetting, measurement]
+references:
+  - key: kirkpatrick-ewc
+    title: Overcoming Catastrophic Forgetting in Neural Networks
+    authors: J. Kirkpatrick et al.
+    year: 2017
+    kind: paper
+    url: https://arxiv.org/abs/1612.00796
+  - key: mccloskey-forgetting
+    title: 'Catastrophic Interference in Connectionist Networks: The Sequential Learning Problem'
+    authors: M. McCloskey, N. Cohen
+    year: 1989
+    kind: chapter
+    note: The original identification of the phenomenon, three decades before it mattered commercially.
+---
+
+<Intuition>
+Train on task B and the model gets better at B and worse at A. Gradient descent has no reason to
+respect what A needed: it moves whichever weights reduce B's loss fastest, and some of those weights
+were carrying A.
+
+The fix suggested by Bayes is to remember not just *where* the old solution was, but *how sharply*
+the old loss rose in each direction. Weights that A's loss was indifferent to may move freely; ones
+it cared about should be held. The Fisher information is the object that measures "cared about", and
+the derivation below shows why.
+</Intuition>
+
+## Fisher information is curvature
+
+<Claim kind="theorem" id="info-matrix-equality" title="Information matrix equality">
+Let $\lbrace p_\theta \rbrace$ be a family of densities, smooth in $\theta$, with support not
+depending on $\theta$ and with differentiation under the integral sign permitted twice. Define the
+Fisher information
+$$
+F(\theta) = \E_{x\sim p_\theta}\!\left[\nabla_\theta \log p_\theta(x)\,\nabla_\theta\log p_\theta(x)^\top\right].
+$$
+Then
+$$
+F(\theta) = -\,\E_{x \sim p_\theta}\!\left[\nabla^2_\theta \log p_\theta(x)\right].
+$$
+</Claim>
+
+<Assumptions>
+The regularity conditions are doing real work: fixed support, and the exchange of $\nabla$ with
+$\int$. Note also that **both expectations are under the model $p_\theta$**, not under the data
+distribution. When the model is misspecified the two sides differ, and the discrepancy is exactly
+what the sandwich (robust) covariance corrects for.
+</Assumptions>
+
+<Proof>
+Since $p_\theta$ is a density, $\int p_\theta(x)\,dx = 1$ for all $\theta$. Differentiating twice
+under the integral sign gives $\int \nabla^2_\theta p_\theta(x)\,dx = 0$.
+
+Now express $\nabla^2 p_\theta$ via the log. From $\nabla p_\theta = p_\theta \nabla \log p_\theta$,
+differentiate again by the product rule:
+$$
+\nabla^2 p_\theta
+= \nabla\big(p_\theta \nabla\log p_\theta\big)
+= p_\theta\,\nabla\log p_\theta\,\nabla\log p_\theta^\top + p_\theta\,\nabla^2\log p_\theta .
+$$
+Integrating and using $\int\nabla^2 p_\theta = 0$,
+$$
+0 = \E_{p_\theta}\!\left[\nabla\log p_\theta\,\nabla\log p_\theta^\top\right] + \E_{p_\theta}\!\left[\nabla^2\log p_\theta\right]
+= F(\theta) + \E_{p_\theta}\!\left[\nabla^2\log p_\theta\right],
+$$
+which rearranges to the claim. $\blacksquare$
+</Proof>
+
+<KeyIdea>
+The Fisher is the expected curvature of the negative log-likelihood. So $F_{ii}$ large means the old
+task's loss rises steeply when weight $i$ moves — the weight is load-bearing. $F_{ii}\approx 0$ means
+the loss is flat in that direction and the weight can be repurposed at no cost. It is also positive
+semidefinite by construction, being an expectation of outer products, which is what makes the penalty
+below a sensible convex pull.
+</KeyIdea>
+
+## From Bayes to a quadratic penalty
+
+<Claim kind="proposition" id="laplace-penalty" title="The elastic-weight-consolidation objective">
+Let $\theta^\star_A$ be a mode of the posterior $p(\theta \mid \mathcal D_A)$. Approximating that
+posterior by a Gaussian via a second-order expansion at $\theta^\star_A$, the maximum a posteriori
+objective for the combined data $\mathcal D_A \cup \mathcal D_B$ becomes, up to additive constants,
+$$
+\min_{\theta}\; \mathcal L_B(\theta) \;+\; \frac{\lambda}{2}\big(\theta-\theta^\star_A\big)^\top F\big(\theta-\theta^\star_A\big),
+$$
+where $\mathcal L_B$ is the negative log-likelihood of $\mathcal D_B$ and $F$ the Fisher information
+at $\theta^\star_A$.
+</Claim>
+
+<Derivation>
+<Step why="Conditional independence of the two datasets given the parameters.">
+$$
+\log p(\theta \mid \mathcal D_A, \mathcal D_B) = \log p(\mathcal D_B\mid\theta) + \log p(\theta\mid\mathcal D_A) + \text{const}.
+$$
+</Step>
+<Step why="Second-order Taylor expansion of the old-task log posterior at its mode; the linear term vanishes there.">
+$$
+\log p(\theta\mid\mathcal D_A) \approx \log p(\theta^\star_A\mid\mathcal D_A)
+- \tfrac12(\theta-\theta^\star_A)^\top H_A (\theta-\theta^\star_A),
+$$
+with $H_A = -\nabla^2 \log p(\theta\mid\mathcal D_A)\big|_{\theta^\star_A} \succeq 0$.
+</Step>
+<Step why="Identify the curvature with the Fisher using the information matrix equality.">
+For a flat prior and $n_A$ observations, $H_A \approx n_A F(\theta^\star_A)$ by the theorem above.
+Absorbing $n_A$ and the prior strength into a single hyperparameter $\lambda$ gives $H_A = \lambda F$.
+</Step>
+<Step why="Negate to turn maximisation into minimisation.">
+$$
+\min_\theta\ \mathcal L_B(\theta) + \frac{\lambda}{2}(\theta-\theta^\star_A)^\top F (\theta-\theta^\star_A). \qquad\blacksquare
+$$
+</Step>
+</Derivation>
+
+In practice $F$ is replaced by its diagonal, giving the familiar per-weight form
+$$
+\mathcal L_B(\theta) + \frac{\lambda}{2}\sum_i F_{ii}\big(\theta_i - \theta^\star_{A,i}\big)^2 .
+$$
+
+<Warning>
+Three approximations were made and all three are questionable for deep networks:
+
+1. **The quadratic expansion is local.** Fine-tuning moves weights far enough that a second-order
+   model of the old loss is not reliable, and the expansion has no error control here.
+2. **$\theta^\star_A$ is not a mode.** The derivation expands at a posterior mode. A pretrained
+   network sits at some point found by SGD, which is not a stationary point of the objective in any
+   verified sense, so the vanishing linear term is assumed rather than established.
+3. **Diagonal Fisher discards the couplings.** The off-diagonal entries encode exactly the correlated
+   directions that matter most, and dropping them is done for tractability — $F$ is
+   $P \times P$ — not for any reason of accuracy.
+
+EWC is a principled *heuristic*: the Bayesian story motivates the form of the penalty, and the
+penalty's usefulness on deep networks is an empirical finding, not a consequence of the derivation.
+</Warning>
+
+## What low rank buys
+
+<Claim kind="proposition" id="lora-deviation-bound" title="Low rank bounds how far the function can move">
+Let a layer compute $x \mapsto W_0 x$ and be adapted to $x\mapsto (W_0 + \tfrac\alpha r BA)x$. Then
+for every input $x$,
+$$
+\big\|(W_0 + \tfrac{\alpha}{r}BA)x - W_0x\big\|_2 \ \le\ \frac{\alpha}{r}\,\|B\|_2\,\|A\|_2\,\|x\|_2 ,
+$$
+so weight decay on $A$ and $B$ directly limits the layer's deviation from the pretrained function.
+</Claim>
+
+<Proof>
+The difference is $\tfrac\alpha r BAx$. Submultiplicativity of the spectral norm gives
+$\|BAx\|_2 \le \|B\|_2\|A\|_2\|x\|_2$, and $\alpha/r &gt; 0$ scales through. $\blacksquare$
+</Proof>
+
+<Note>
+This is a crude bound — it is tight only when $x$ aligns with the top right singular vector of $BA$ —
+but it makes a structural point. Constraining the update to rank $r$ and penalising the factors gives
+an explicit, tunable budget on how far the adapted model may move from the pretrained one, and
+recovers the pretrained function exactly at $B=0$. Full fine-tuning has no comparable knob: its
+deviation is limited only by the optimiser's trajectory.
+
+This is one reason low-rank adaptation is often reported to forget less than full fine-tuning at
+matched downstream performance. It is a plausible mechanism supported by the inequality, not a proof
+that it does — the bound constrains one layer's output, and forgetting is a property of the composed
+network on a distribution the bound says nothing about.
+</Note>
+
+<Claim kind="empirical" id="forgetting-empirical" title="Narrow fine-tuning degrades unrelated capability">
+Fine-tuning a general model on a narrow distribution reliably reduces measured performance on
+capabilities the base model previously had, with degradation increasing in the number of steps and
+the learning rate, and decreasing when a fraction of general data is mixed into the fine-tuning set.
+</Claim>
+
+<Details summary="What is actually done about it">
+- **Replay / data mixing.** Include a slice of the original or general-purpose distribution in the
+  fine-tuning mixture. This is the most reliable method reported, and it sidesteps the approximations
+  above entirely by simply not forgetting the data.
+- **Smaller learning rates and fewer steps.** Blunt, effective, and consistent with the deviation
+  bound.
+- **Parameter-efficient methods.** Freeze most weights; constrain and penalise the rest, per the
+  proposition.
+- **Fisher-weighted penalties.** EWC and its descendants, with the caveats above.
+- **Model merging.** Train separately and interpolate the weights afterwards, which avoids sequential
+  interference by construction — though *why* weight interpolation preserves both capabilities is
+  itself not understood.
+</Details>
+
+<OpenProblem>
+There is no quantitative theory predicting how much a given fine-tuning run will forget. Inputs to
+such a theory would include the divergence between the fine-tuning and pretraining distributions, the
+optimisation trajectory, and the geometry of the pretrained solution — and no current account
+combines them into a prediction that can be checked before training. Practitioners run the evaluation
+suite before and after, which is the honest method available.
+</OpenProblem>
