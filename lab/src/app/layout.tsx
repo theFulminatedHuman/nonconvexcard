@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: { default: SITE.name, template: `%s · ${SITE.short}` },
   description: SITE.description,
   applicationName: SITE.name,
-  authors: [{ name: 'AI Mathematics Research Lab' }],
+  authors: [{ name: SITE.name }],
   keywords: [
     'high-dimensional probability',
     'concentration inequalities',

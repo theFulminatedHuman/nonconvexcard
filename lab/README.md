@@ -1,4 +1,4 @@
-# AI Mathematics Research Lab
+# nonconvexcard
 
 The mathematical foundations of modern AI — from probability to optimization, learning theory, deep
 learning and LLM systems — as an interactive mathematical laboratory rather than a course.

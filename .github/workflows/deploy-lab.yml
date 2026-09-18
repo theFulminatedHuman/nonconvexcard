@@ -1,4 +1,4 @@
-# Builds the AI Mathematics Research Lab (lab/) and publishes the static export
+# Builds nonconvexcard (lab/) and publishes the static export
 # to GitHub Pages.
 #
 # Nothing here publishes anything until Settings → Pages → Source is set to
@@ -10,7 +10,7 @@
 # `workflow_dispatch` only becomes available once this file is on the default
 # branch: GitHub reads manual triggers from the default branch, not from
 # feature branches.
-name: Deploy lab to GitHub Pages
+name: Deploy nonconvexcard to GitHub Pages
 
 on:
   # Deploy whenever the app changes on the default branch.
