@@ -1,0 +1,124 @@
+problem: eg-simulate-anisotropy
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def cosine_stats(X, pairs=20000, seed=0):
+      """Mean and standard deviation of the cosine between random distinct rows.
+
+      X has shape (n, d) and its rows are embeddings. Sample `pairs` random
+      pairs i != j with a generator seeded with `seed` and return
+      (mean, std) of cos(x_i, x_j) as plain floats.
+
+      For an isotropic cloud these should come out near 0 and 1/sqrt(d). A mean
+      far from 0 is the "cone effect": every embedding shares a direction, so
+      everything looks similar to everything else.
+      """
+      raise NotImplementedError
+
+  def stable_rank(X):
+      """Stable rank of the covariance of the rows of X.
+
+      With Sigma the covariance of the (mean-centred) rows, return
+      ||Sigma||_F^2 / ||Sigma||_op^2. It is d when the spectrum is flat and
+      O(1) when one direction dominates, so it measures how many directions the
+      cloud genuinely uses.
+      """
+      raise NotImplementedError
+
+  def whiten(X):
+      """Mean-centre the rows of X and whiten them.
+
+      Return an array of the same shape whose column means are 0 and whose
+      covariance is the identity to numerical precision.
+      """
+      raise NotImplementedError
+tests:
+  - name: an isotropic cloud has cosine mean 0 and spread 1/sqrt(d)
+    code: |
+      import numpy as np
+      for d in (32, 128, 512):
+          X = np.random.default_rng(d).standard_normal((600, d))
+          m, s = cosine_stats(X, pairs=20000, seed=0)
+          m, s = float(m), float(s)
+          assert abs(m) < 4.0 / np.sqrt(d), f"d={d}: mean cosine {m} should be near 0"
+          assert 0.7 / np.sqrt(d) < s < 1.4 / np.sqrt(d), f"d={d}: std {s} should be near {1/np.sqrt(d)}"
+  - name: cosine is scale invariant
+    code: |
+      import numpy as np
+      X = np.random.default_rng(0).standard_normal((400, 64))
+      m1, s1 = cosine_stats(X, pairs=20000, seed=3)
+      m2, s2 = cosine_stats(X * 17.0, pairs=20000, seed=3)
+      assert abs(float(m1) - float(m2)) < 1e-9 and abs(float(s1) - float(s2)) < 1e-9, \
+          "cosine must not depend on the length of the vectors"
+  - name: a shared direction shows up as a large mean cosine
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      d = 128
+      # E[cos] is about ||mu||^2 / (||mu||^2 + d), so a mean that dominates the
+      # noise needs ||mu||^2 comfortably above d = 128: 12^2 = 144 gives ~0.53.
+      mu = np.zeros(d); mu[0] = 12.0
+      X = mu + rng.standard_normal((600, d))
+      m, _ = cosine_stats(X, pairs=20000, seed=0)
+      assert float(m) > 0.4, f"a strong common direction should push the mean cosine up, got {m}"
+      m_centred, _ = cosine_stats(X - X.mean(axis=0), pairs=20000, seed=0)
+      assert abs(float(m_centred)) < 0.1, f"centring should remove it, got {m_centred}"
+  - name: stable rank is d for a flat spectrum
+    code: |
+      import numpy as np
+      for d in (16, 64):
+          X = np.random.default_rng(d).standard_normal((8000, d))
+          sr = float(stable_rank(X))
+          assert 0.6 * d < sr < 1.4 * d, f"d={d}: expected a stable rank near {d}, got {sr}"
+  - name: stable rank collapses under a power-law spectrum
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(5)
+      d = 128
+      scale = np.array([(i + 1) ** -1.0 for i in range(d)])
+      X = rng.standard_normal((4000, d)) * scale
+      sr = float(stable_rank(X))
+      assert sr < 0.2 * d, f"a 1/i spectrum should use far fewer than {d} directions, got {sr}"
+      assert sr > 1.0, f"stable rank is at least 1, got {sr}"
+  - name: whitening centres the cloud and flattens its covariance
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(9)
+      d, n = 32, 4000
+      scale = np.array([(i + 1) ** -1.0 for i in range(d)])
+      X = 3.0 + rng.standard_normal((n, d)) * scale
+      Z = np.asarray(whiten(X), dtype=float)
+      assert Z.shape == X.shape, f"whiten must preserve the shape, got {Z.shape}"
+      assert np.max(np.abs(Z.mean(axis=0))) < 1e-8, "whitened columns must have zero mean"
+      C = (Z - Z.mean(axis=0)).T @ (Z - Z.mean(axis=0)) / len(Z)
+      assert np.max(np.abs(C - np.eye(d))) < 1e-6, \
+          f"covariance should be the identity, max deviation {np.max(np.abs(C - np.eye(d)))}"
+  - name: whitening restores the isotropic diagnostics
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(13)
+      d, n = 64, 6000
+      scale = np.array([(i + 1) ** -1.0 for i in range(d)])
+      X = 4.0 + rng.standard_normal((n, d)) * scale
+      before = float(stable_rank(X))
+      after = float(stable_rank(whiten(X)))
+      assert after > 5 * before, f"stable rank should jump on whitening: {before} -> {after}"
+      assert after > 0.6 * d, f"after whitening it should approach d = {d}, got {after}"
+      m, s = cosine_stats(np.asarray(whiten(X), dtype=float), pairs=20000, seed=0)
+      assert abs(float(m)) < 4.0 / np.sqrt(d), f"mean cosine after whitening is {m}"
+      assert 0.7 / np.sqrt(d) < float(s) < 1.4 / np.sqrt(d), f"cosine std after whitening is {s}"
+  - name: the diagnostics are translation invariant
+    code: |
+      import numpy as np
+      # Anisotropy is about the shape of the cloud, not where it sits. If the
+      # covariance is formed without subtracting the mean, a shifted cloud
+      # looks rank-one and the stable rank collapses to 1.
+      rng = np.random.default_rng(21)
+      X = rng.standard_normal((4000, 32))
+      base = float(stable_rank(X))
+      for shift in (1.0, 5.0, 50.0):
+          moved = float(stable_rank(X + shift))
+          assert abs(moved - base) < 1e-6 * max(base, 1.0), \
+              f"shifting by {shift} changed the stable rank: {base} -> {moved}"
+      assert base > 10, f"an isotropic cloud in 32 dimensions should use many of them, got {base}"

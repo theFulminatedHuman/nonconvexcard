@@ -1,0 +1,108 @@
+problem: rm-simulate-spectrum
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def wigner_eigenvalues(d, seed=0, dist='gaussian'):
+      """Eigenvalues of a Wigner matrix, scaled so the bulk has a limit.
+
+      Build a symmetric d x d matrix W whose entries on and above the diagonal
+      are iid with mean 0 and variance 1, drawn from a generator seeded with
+      `seed`, then return the eigenvalues of W / sqrt(d).
+
+      `dist` selects the entry law and must support at least:
+        'gaussian'    standard normal entries
+        'rademacher'  entries uniform on {-1, +1}
+        'heavy'       any heavier-tailed law you like, rescaled to unit variance
+
+      The point of the last two is that the limiting bulk does not care which
+      one you picked.
+      """
+      raise NotImplementedError
+
+  def semicircle_cdf(x):
+      """CDF of the semicircle law on [-2, 2], in closed form.
+
+      Its density is sqrt(4 - x**2) / (2*pi). Accept a scalar or an array and
+      return the same shape; clamp outside [-2, 2] to 0 and 1.
+      """
+      raise NotImplementedError
+
+  def wishart_eigenvalues(n, p, seed=0):
+      """Eigenvalues of the sample covariance (1/n) X^T X for X ~ n x p standard
+      normal. For p/n -> gamma these fill the Marchenko-Pastur bulk with edges
+      (1 -+ sqrt(gamma))**2.
+      """
+      raise NotImplementedError
+tests:
+  - name: the semicircle CDF is a CDF
+    code: |
+      import numpy as np
+      assert abs(float(semicircle_cdf(-2.0)) - 0.0) < 1e-9, "F(-2) must be 0"
+      assert abs(float(semicircle_cdf(0.0)) - 0.5) < 1e-9, "F(0) must be 1/2 by symmetry"
+      assert abs(float(semicircle_cdf(2.0)) - 1.0) < 1e-9, "F(2) must be 1"
+      assert abs(float(semicircle_cdf(-5.0))) < 1e-12 and abs(float(semicircle_cdf(5.0)) - 1) < 1e-12
+      xs = np.linspace(-2, 2, 101)
+      F = np.asarray(semicircle_cdf(xs), dtype=float).ravel()
+      assert F.shape == (101,), f"expected an array of 101 values, got {F.shape}"
+      assert np.all(np.diff(F) >= -1e-12), "a CDF cannot decrease"
+  - name: the semicircle CDF matches its density
+    code: |
+      import numpy as np
+      # Compare against a fine Riemann integral of sqrt(4-x^2)/(2 pi).
+      xs = np.linspace(-2.0, 2.0, 200001)
+      dens = np.sqrt(np.clip(4 - xs * xs, 0, None)) / (2 * np.pi)
+      cum = np.concatenate([[0.0], np.cumsum((dens[1:] + dens[:-1]) * 0.5 * np.diff(xs))])
+      probe = np.linspace(-1.9, 1.9, 39)
+      got = np.asarray(semicircle_cdf(probe), dtype=float).ravel()
+      ref = np.interp(probe, xs, cum)
+      assert np.max(np.abs(got - ref)) < 2e-3, f"max deviation {np.max(np.abs(got-ref))}"
+  - name: the spectrum is real, of the right size and correctly scaled
+    code: |
+      import numpy as np
+      ev = np.asarray(wigner_eigenvalues(300, seed=0)).ravel()
+      assert ev.shape == (300,), f"expected 300 eigenvalues, got {ev.shape}"
+      assert np.isrealobj(ev) or np.allclose(ev.imag, 0), "a symmetric matrix has real eigenvalues"
+      ev = ev.real.astype(float)
+      assert abs(float(np.mean(ev))) < 0.12, f"the bulk is symmetric about 0, got mean {np.mean(ev)}"
+      # Semicircle of radius 2 has variance exactly 1; this is what pins the
+      # 1/sqrt(d) scaling. Dropping it makes the variance grow like d.
+      assert 0.85 < float(np.var(ev)) < 1.15, f"expected variance 1, got {np.var(ev)}"
+  - name: the empirical spectrum follows the semicircle law
+    code: |
+      import numpy as np
+      ev = np.sort(np.asarray(wigner_eigenvalues(400, seed=1)).real.astype(float).ravel())
+      n = len(ev)
+      F = np.asarray(semicircle_cdf(ev), dtype=float).ravel()
+      ks = max(np.max(np.abs(np.arange(1, n + 1) / n - F)), np.max(np.abs(np.arange(n) / n - F)))
+      assert ks < 0.05, f"Kolmogorov-Smirnov distance to the semicircle is {ks}"
+  - name: the edge sits at 2
+    code: |
+      import numpy as np
+      tops = [float(np.max(np.asarray(wigner_eigenvalues(400, seed=s)).real)) for s in range(3)]
+      assert all(1.8 < t < 2.2 for t in tops), f"lambda_max should hover around 2, got {tops}"
+      small = float(np.max(np.asarray(wigner_eigenvalues(100, seed=0)).real))
+      big = float(np.max(np.asarray(wigner_eigenvalues(600, seed=0)).real))
+      assert abs(big - 2.0) < abs(small - 2.0) + 0.1, f"edge should tighten with d: {small} -> {big}"
+  - name: the bulk is universal across entry distributions
+    code: |
+      import numpy as np
+      def ks_of(dist, seed):
+          ev = np.sort(np.asarray(wigner_eigenvalues(400, seed=seed, dist=dist)).real.astype(float).ravel())
+          n = len(ev)
+          F = np.asarray(semicircle_cdf(ev), dtype=float).ravel()
+          return max(np.max(np.abs(np.arange(1, n + 1) / n - F)), np.max(np.abs(np.arange(n) / n - F)))
+      for dist, tol in (('rademacher', 0.05), ('heavy', 0.09)):
+          d = [ks_of(dist, s) for s in range(2)]
+          assert max(d) < tol, f"{dist}: KS distance {d} — the bulk should not notice the entry law"
+  - name: Wishart eigenvalues fill the Marchenko-Pastur bulk
+    code: |
+      import numpy as np
+      for n, p in ((2000, 200), (1000, 200)):
+          g = p / n
+          ev = np.asarray(wishart_eigenvalues(n, p, seed=0)).real.astype(float).ravel()
+          assert ev.shape == (p,), f"expected {p} eigenvalues, got {ev.shape}"
+          hi, lo = (1 + np.sqrt(g)) ** 2, (1 - np.sqrt(g)) ** 2
+          assert abs(float(ev.max()) - hi) < 0.12 * hi, f"gamma={g}: top edge {ev.max()} vs {hi}"
+          assert abs(float(ev.min()) - lo) < 0.25 * max(lo, 0.05), f"gamma={g}: bottom edge {ev.min()} vs {lo}"
+          assert abs(float(ev.mean()) - 1.0) < 0.05, f"the mean eigenvalue should be 1, got {ev.mean()}"

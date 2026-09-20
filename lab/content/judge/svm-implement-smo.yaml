@@ -1,0 +1,161 @@
+problem: svm-implement-smo
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  def dual_objective(K, y, alpha):
+      """The soft-margin SVM dual objective
+
+          sum_i alpha_i - 0.5 * sum_ij alpha_i alpha_j y_i y_j K_ij
+
+      for a precomputed kernel matrix K, labels y in {-1, +1} and multipliers
+      alpha. Return a float.
+      """
+      raise NotImplementedError
+
+  def smo(K, y, C, tol=1e-3, max_passes=100):
+      """Maximise that dual subject to 0 <= alpha_i <= C and sum_i alpha_i y_i = 0.
+
+      Return (alpha, b) with alpha an array of length n and b the intercept of
+
+          f(x) = sum_i alpha_i y_i K(x_i, x) + b.
+
+      The equality constraint means you can only move two multipliers at a
+      time, which is what makes the two-variable subproblem solvable in closed
+      form: alpha_j is confined to a segment [L, H] cut out by the box, so the
+      unconstrained optimum along the line is clipped to it.
+
+      Choose the working set by KKT violation, and stop when no pair violates
+      the conditions by more than `tol`. At the optimum, for every i:
+
+          alpha_i = 0       =>  y_i f(x_i) >= 1
+          0 < alpha_i < C   =>  y_i f(x_i)  = 1
+          alpha_i = C       =>  y_i f(x_i) <= 1
+      """
+      raise NotImplementedError
+
+  def decision_function(K_test_train, alpha, y, b):
+      """f evaluated on new points, given the kernel between them and the
+      training set: an array of shape (m,) from a (m, n) kernel block."""
+      raise NotImplementedError
+tests:
+  - name: the dual objective is the stated quadratic
+    code: |
+      import numpy as np
+      K = np.eye(2)
+      assert abs(dual_objective(K, np.array([1.0, -1.0]), np.array([1.0, 1.0])) - 1.0) < 1e-12
+      assert abs(dual_objective(K, np.array([1.0, -1.0]), np.array([0.0, 0.0])) - 0.0) < 1e-12
+      K2 = np.array([[2.0, 1.0], [1.0, 3.0]])
+      y2 = np.array([1.0, -1.0]); a2 = np.array([0.5, 0.25])
+      ay = a2 * y2
+      want = float(np.sum(a2) - 0.5 * ay @ K2 @ ay)
+      assert abs(dual_objective(K2, y2, a2) - want) < 1e-12, f"expected {want}"
+  - name: the solution respects the box and the equality constraint
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      n = 60
+      X = np.vstack([rng.standard_normal((n // 2, 2)) + 1.0, rng.standard_normal((n // 2, 2)) - 1.0])
+      y = np.array([1.0] * (n // 2) + [-1.0] * (n // 2))
+      K = X @ X.T
+      for C in (0.1, 1.0, 5.0):
+          alpha, b = smo(K, y, C)
+          alpha = np.asarray(alpha, dtype=float).ravel()
+          assert alpha.shape == (n,), f"expected {n} multipliers, got {alpha.shape}"
+          assert np.all(alpha >= -1e-8), f"C={C}: negative multiplier {alpha.min()}"
+          assert np.all(alpha <= C + 1e-8), f"C={C}: multiplier {alpha.max()} exceeds C"
+          assert abs(float(alpha @ y)) < 1e-6, f"C={C}: sum alpha_i y_i = {float(alpha @ y)}"
+  - name: the three KKT regimes hold at the solution
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      n = 60
+      X = np.vstack([rng.standard_normal((n // 2, 2)) + 0.8, rng.standard_normal((n // 2, 2)) - 0.8])
+      y = np.array([1.0] * (n // 2) + [-1.0] * (n // 2))
+      K = X @ X.T
+      for C in (0.2, 1.0):
+          alpha, b = smo(K, y, C)
+          alpha = np.asarray(alpha, dtype=float).ravel()
+          m = y * np.asarray(decision_function(K, alpha, y, b), dtype=float).ravel()
+          zero, free, at_C = alpha <= 1e-6, (alpha > 1e-6) & (alpha < C - 1e-6), alpha >= C - 1e-6
+          if zero.any():
+              assert float(m[zero].min()) > 1 - 0.05, f"C={C}: an inactive point sits at margin {m[zero].min()}"
+          if free.any():
+              assert float(np.max(np.abs(m[free] - 1))) < 0.05, \
+                  f"C={C}: free support vectors must sit on the margin, worst {np.max(np.abs(m[free]-1))}"
+          if at_C.any():
+              assert float(m[at_C].max()) < 1 + 0.05, f"C={C}: a bounded point sits at margin {m[at_C].max()}"
+  - name: separable data is separated
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(2)
+      n = 60
+      X = np.vstack([rng.standard_normal((n // 2, 2)) + 3.0, rng.standard_normal((n // 2, 2)) - 3.0])
+      y = np.array([1.0] * (n // 2) + [-1.0] * (n // 2))
+      K = X @ X.T
+      alpha, b = smo(K, y, 1.0)
+      f = np.asarray(decision_function(K, alpha, y, b), dtype=float).ravel()
+      assert float(np.mean(np.sign(f) == y)) == 1.0, f"accuracy {np.mean(np.sign(f) == y)} on separable data"
+      assert int(np.sum(np.asarray(alpha) > 1e-6)) < n // 2, "the solution should be sparse in the multipliers"
+  - name: the decision function generalises to unseen points
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(3)
+      n = 60
+      X = np.vstack([rng.standard_normal((n // 2, 2)) + 2.5, rng.standard_normal((n // 2, 2)) - 2.5])
+      y = np.array([1.0] * (n // 2) + [-1.0] * (n // 2))
+      Xt = np.vstack([rng.standard_normal((30, 2)) + 2.5, rng.standard_normal((30, 2)) - 2.5])
+      yt = np.array([1.0] * 30 + [-1.0] * 30)
+      alpha, b = smo(X @ X.T, y, 1.0)
+      ft = np.asarray(decision_function(Xt @ X.T, alpha, y, b), dtype=float).ravel()
+      assert ft.shape == (60,), f"expected 60 scores, got {ft.shape}"
+      assert float(np.mean(np.sign(ft) == yt)) > 0.9, f"test accuracy {np.mean(np.sign(ft) == yt)}"
+  - name: a larger budget cannot lower the optimum
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(4)
+      n = 60
+      X = np.vstack([rng.standard_normal((n // 2, 2)) + 0.6, rng.standard_normal((n // 2, 2)) - 0.6])
+      y = np.array([1.0] * (n // 2) + [-1.0] * (n // 2))
+      K = X @ X.T
+      objs = []
+      for C in (0.05, 0.5, 5.0):
+          alpha, b = smo(K, y, C)
+          objs.append(float(dual_objective(K, y, alpha)))
+      # The feasible set grows with C and the dual is a maximisation, so the
+      # optimum is non-decreasing. A solver that ignores C would return a flat
+      # sequence; one that mishandles clipping can go down.
+      assert all(a <= b + 1e-6 for a, b in zip(objs, objs[1:])), f"objective fell as C grew: {objs}"
+      assert objs[-1] > objs[0] + 1e-3, f"C should matter on overlapping data: {objs}"
+  - name: C controls how many points sit against the bound
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(5)
+      n = 60
+      X = np.vstack([rng.standard_normal((n // 2, 2)) + 0.5, rng.standard_normal((n // 2, 2)) - 0.5])
+      y = np.array([1.0] * (n // 2) + [-1.0] * (n // 2))
+      K = X @ X.T
+      tight = np.asarray(smo(K, y, 0.02)[0], dtype=float)
+      loose = np.asarray(smo(K, y, 5.0)[0], dtype=float)
+      assert int(np.sum(tight >= 0.02 - 1e-8)) > int(np.sum(loose >= 5.0 - 1e-8)), \
+          "a small C should pin many multipliers to the bound and a large C few"
+  - name: it works with a nonlinear kernel
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(6)
+      # Concentric rings: no linear separator exists, an RBF kernel has one.
+      n = 40
+      t = rng.uniform(0, 2 * np.pi, 2 * n)
+      r = np.concatenate([rng.normal(1.0, 0.1, n), rng.normal(3.0, 0.1, n)])
+      X = np.stack([r * np.cos(t), r * np.sin(t)], axis=1)
+      y = np.array([1.0] * n + [-1.0] * n)
+      D = ((X[:, None, :] - X[None, :, :]) ** 2).sum(-1)
+      K = np.exp(-0.5 * D)
+      alpha, b = smo(K, y, 1.0)
+      alpha = np.asarray(alpha, dtype=float).ravel()
+      assert abs(float(alpha @ y)) < 1e-6, "the equality constraint must still hold"
+      f = np.asarray(decision_function(K, alpha, y, b), dtype=float).ravel()
+      assert float(np.mean(np.sign(f) == y)) > 0.95, f"RBF accuracy on rings is {np.mean(np.sign(f) == y)}"
+      lin = smo(X @ X.T, y, 1.0)
+      fl = np.asarray(decision_function(X @ X.T, lin[0], y, lin[1]), dtype=float).ravel()
+      assert float(np.mean(np.sign(fl) == y)) < 0.8, "a linear kernel should fail on concentric rings"

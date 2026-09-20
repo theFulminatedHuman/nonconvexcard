@@ -1,0 +1,119 @@
+problem: dd-simulate-double-descent
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  def rf_test_risk(n, d, N, noise, seed=0, ridge=0.0, n_test=2000, target='linear'):
+      """Test risk of random-feature regression, as the feature count N sweeps
+      through the sample size n.
+
+      Build everything from one generator seeded with `seed`:
+
+        * random features W of shape (N, d) with entries N(0, 1/d), and the
+          feature map phi(x) = relu(x @ W.T);
+        * n training inputs and n_test test inputs, all iid N(0, I_d);
+        * a clean target f(x), then noisy training labels y = f(x) + noise*eps
+          with eps standard normal. The test labels stay clean, so what you
+          measure is risk against the truth, not against noise.
+
+      `target` picks the truth:
+        'linear'          f(x) = x @ beta for a unit beta — the random features
+                          can only approximate it, so there is an approximation
+                          error floor.
+        'random-feature'  f(x) = phi(x) @ c for a random c, so the model class
+                          contains the truth exactly.
+
+      Fit c_hat from the training features: with ridge = 0 take the
+      *minimum-norm* least-squares solution (a pseudo-inverse or lstsq, not a
+      normal-equation solve, which is singular once N > n); with ridge > 0
+      solve (Phi^T Phi + ridge I) c = Phi^T y.
+
+      Return the mean squared error of phi(x) @ c_hat against the clean test
+      target.
+      """
+      raise NotImplementedError
+tests:
+  - name: risk is a sensible number and falls in the underparameterised regime
+    code: |
+      import numpy as np
+      vals = [float(np.mean([rf_test_risk(200, 20, N, 0.3, seed=s) for s in range(3)]))
+              for N in (5, 20, 60)]
+      assert all(np.isfinite(v) and v >= 0 for v in vals), f"expected finite non-negative risks, got {vals}"
+      assert vals[0] > vals[-1], f"more features should help well below the threshold: {vals}"
+  - name: the risk peaks at the interpolation threshold
+    code: |
+      import numpy as np
+      n, d, noise = 100, 20, 0.5
+      avg = lambda N: float(np.mean([rf_test_risk(n, d, N, noise, seed=s) for s in range(5)]))
+      under, peak, over = avg(n // 2), avg(n), avg(4 * n)
+      assert peak > 3 * under, f"expected a spike at N = n: N/2 {under}, N {peak}"
+      assert peak > 3 * over, f"expected the spike to be a peak: N {peak}, 4N {over}"
+  - name: the second descent keeps going
+    code: |
+      import numpy as np
+      n, d, noise = 100, 20, 0.5
+      avg = lambda N: float(np.mean([rf_test_risk(n, d, N, noise, seed=s) for s in range(5)]))
+      a, b, c = avg(150), avg(400), avg(800)
+      assert a > b > c, f"risk should keep falling past the peak: {a}, {b}, {c}"
+      assert c < avg(50), f"the overparameterised regime should beat the underparameterised one: {c}"
+  - name: ridge regularisation removes the peak
+    code: |
+      import numpy as np
+      n, d, noise = 100, 20, 0.5
+      bare = float(np.mean([rf_test_risk(n, d, n, noise, seed=s) for s in range(5)]))
+      tame = float(np.mean([rf_test_risk(n, d, n, noise, seed=s, ridge=1.0) for s in range(5)]))
+      assert tame < bare / 10, f"ridge should flatten the spike: {bare} -> {tame}"
+      under = float(np.mean([rf_test_risk(n, d, n // 2, noise, seed=s, ridge=1.0) for s in range(5)]))
+      over = float(np.mean([rf_test_risk(n, d, 4 * n, noise, seed=s, ridge=1.0) for s in range(5)]))
+      assert tame < 3 * max(under, over), f"with ridge the curve should be flat: {under}, {tame}, {over}"
+  - name: the peak grows with label noise
+    code: |
+      import numpy as np
+      n, d = 100, 20
+      peaks = [float(np.mean([rf_test_risk(n, d, n, nz, seed=s) for s in range(5)]))
+               for nz in (0.0, 0.2, 0.5, 1.0)]
+      assert all(a < b for a, b in zip(peaks, peaks[1:])), f"noisier labels, taller peak: {peaks}"
+      assert peaks[-1] > 4 * peaks[0], f"the growth should be dramatic, got {peaks}"
+  - name: with a target in the model class, zero noise means no peak
+    code: |
+      import numpy as np
+      n, d = 100, 20
+      clean = float(np.mean([rf_test_risk(n, d, n, 0.0, seed=s, target='random-feature')
+                             for s in range(5)]))
+      noisy = float(np.mean([rf_test_risk(n, d, n, 0.2, seed=s, target='random-feature')
+                             for s in range(5)]))
+      assert clean < 1e-2, f"a well-specified noiseless fit at N = n should be near exact, got {clean}"
+      assert noisy > 50 * max(clean, 1e-6), f"adding noise should bring the peak back: {clean} -> {noisy}"
+  - name: approximation error keeps a peak alive even with no label noise
+    code: |
+      import numpy as np
+      # The interesting half of the story: with a linear target the random
+      # features cannot represent the truth, and that misspecification alone
+      # produces a spike at N = n with noise switched off entirely.
+      n, d = 100, 20
+      peak = float(np.mean([rf_test_risk(n, d, n, 0.0, seed=s, target='linear') for s in range(5)]))
+      flank = float(np.mean([rf_test_risk(n, d, 4 * n, 0.0, seed=s, target='linear') for s in range(5)]))
+      assert peak > 5 * flank, f"expected a noiseless peak from misspecification: {peak} vs {flank}"
+  - name: past the threshold the fit interpolates the training data
+    code: |
+      import numpy as np
+      # The minimum-norm solution is an interpolant once N > n. A normal-equation
+      # solve would be singular here and a ridge fit would not interpolate, so
+      # this pins down which solution is being taken.
+      n, d, N, noise, seed = 60, 10, 300, 0.4, 3
+      rng = np.random.default_rng(seed)
+      exact = rf_test_risk(n, d, N, 0.0, seed=seed, target='random-feature')
+      assert np.isfinite(exact), "the overparameterised fit must be well defined"
+      a = rf_test_risk(n, d, N, noise, seed=seed, ridge=0.0)
+      b = rf_test_risk(n, d, N, noise, seed=seed, ridge=5.0)
+      assert abs(a - b) > 1e-9, "ridge must actually change the solution"
+  - name: risk is measured against the truth, not against noisy labels
+    code: |
+      import numpy as np
+      # Well specified, and far more data than features, so the fit is nearly
+      # exact and the risk against the clean target goes to zero. Scoring
+      # against freshly noised test labels would instead floor the risk at
+      # noise**2 = 0.09, which is a hundred times larger.
+      vals = [rf_test_risk(2000, 10, 20, 0.3, seed=s, target='random-feature') for s in range(4)]
+      got = float(np.mean(vals))
+      assert got < 0.02, f"expected a near-zero risk against the clean target, got {got}"

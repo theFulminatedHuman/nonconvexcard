@@ -1,0 +1,123 @@
+problem: ac-simulate-rates
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  # The test problem, fixed so that measured rates can be compared with theory:
+  #   f(x) = 0.5 * x^T A x,  A = diag(np.linspace(1, kappa, d)),  x0 = ones(d).
+  # So mu = 1, L = kappa, the condition number is kappa and f* = 0.
+
+  def quadratic_descent(kappa, method, iters=400, d=20, eta=None, beta=None):
+      """Run one first-order method on that quadratic and return the f values.
+
+      Return an array of length iters + 1 holding f(x_0) ... f(x_iters).
+
+      `method` is one of, with these default parameters:
+
+        'gd'          x_{t+1} = x_t - eta grad,           eta = 2 / (L + mu)
+        'heavy-ball'  x_{t+1} = x_t - eta grad + beta (x_t - x_{t-1}),
+                      eta = 4 / (sqrt(L) + sqrt(mu))**2,
+                      beta = ((sqrt(kappa) - 1) / (sqrt(kappa) + 1))**2
+        'nesterov'    y_t = x_t + beta (x_t - x_{t-1}) with the gradient taken
+                      at y_t,  eta = 1 / L,
+                      beta = (sqrt(kappa) - 1) / (sqrt(kappa) + 1)
+
+      `eta` and `beta`, when given, override those defaults — that is how you
+      push heavy ball past its stability threshold.
+      """
+      raise NotImplementedError
+
+  def asymptotic_rate(values):
+      """The geometric factor by which f shrinks per step, once transients die.
+
+      Fit a straight line to log(f_t) over the second half of `values`, ignoring
+      any entries that have underflowed to zero, and return exp(slope).
+      """
+      raise NotImplementedError
+tests:
+  - name: asymptotic_rate reads off a known geometric decay
+    code: |
+      import numpy as np
+      for r in (0.5, 0.9, 0.99):
+          seq = r ** np.arange(200)
+          got = float(asymptotic_rate(seq))
+          assert abs(got - r) < 1e-6, f"expected {r}, got {got}"
+  - name: the quadratic and its starting point are the ones specified
+    code: |
+      import numpy as np
+      d, kappa = 20, 100
+      f = np.asarray(quadratic_descent(kappa, 'gd', iters=50, d=d), dtype=float).ravel()
+      assert f.shape == (51,), f"expected iters+1 = 51 values, got {f.shape}"
+      lam = np.linspace(1.0, kappa, d)
+      f0 = 0.5 * float(np.sum(lam))       # x0 = ones, so f(x0) = 0.5 * sum(lam)
+      assert abs(f[0] - f0) < 1e-8, f"f(x0) should be {f0}, got {f[0]}"
+      assert np.all(np.diff(f) <= 1e-12), "gradient descent at eta = 2/(L+mu) is monotone here"
+      assert f[-1] < f[0], "f must actually decrease"
+  - name: gradient descent converges at ((kappa-1)/(kappa+1))^2
+    code: |
+      import numpy as np
+      for kappa in (10, 100, 1000):
+          f = quadratic_descent(kappa, 'gd', iters=600)
+          got = float(asymptotic_rate(f))
+          want = ((kappa - 1) / (kappa + 1)) ** 2
+          assert abs(got - want) < 0.01 * want, f"kappa={kappa}: measured {got}, predicted {want}"
+  - name: heavy ball converges at ((sqrt(kappa)-1)/(sqrt(kappa)+1))^2
+    code: |
+      import numpy as np
+      for kappa in (10, 100, 1000):
+          f = quadratic_descent(kappa, 'heavy-ball', iters=600)
+          got = float(asymptotic_rate(f))
+          want = ((np.sqrt(kappa) - 1) / (np.sqrt(kappa) + 1)) ** 2
+          assert abs(got - want) < 0.03 * want, f"kappa={kappa}: measured {got}, predicted {want}"
+  - name: both momentum methods beat plain gradient descent
+    code: |
+      import numpy as np
+      for kappa in (100, 1000):
+          g = float(asymptotic_rate(quadratic_descent(kappa, 'gd', iters=600)))
+          h = float(asymptotic_rate(quadratic_descent(kappa, 'heavy-ball', iters=600)))
+          n = float(asymptotic_rate(quadratic_descent(kappa, 'nesterov', iters=600)))
+          assert h < g, f"kappa={kappa}: heavy ball {h} should beat gd {g}"
+          assert n < g, f"kappa={kappa}: nesterov {n} should beat gd {g}"
+  - name: the momentum advantage grows like sqrt(kappa), not kappa
+    code: |
+      import numpy as np
+      def iters_to(kappa, method, tol=1e-8, cap=20000):
+          f = np.asarray(quadratic_descent(kappa, method, iters=cap), dtype=float).ravel()
+          hit = np.nonzero(f <= tol * f[0])[0]
+          assert len(hit), f"{method} did not reach {tol} for kappa={kappa} in {cap} steps"
+          return int(hit[0])
+      r100 = iters_to(100, 'gd') / iters_to(100, 'heavy-ball')
+      r1000 = iters_to(1000, 'gd') / iters_to(1000, 'heavy-ball')
+      assert r100 > 3, f"heavy ball should already be several times faster at kappa=100, got {r100}"
+      growth = r1000 / r100
+      # Ten times the condition number buys sqrt(10) = 3.16 times the advantage.
+      # If momentum bought nothing the ratio would stay flat at 1.
+      assert 1.8 < growth < 5.0, f"advantage grew by {growth}, expected about sqrt(10) = 3.16"
+  - name: heavy ball diverges past eta = 2(1 + beta) / L
+    code: |
+      import numpy as np
+      kappa = 100
+      beta = ((np.sqrt(kappa) - 1) / (np.sqrt(kappa) + 1)) ** 2
+      threshold = 2 * (1 + beta) / kappa
+      below = np.asarray(quadratic_descent(kappa, 'heavy-ball', iters=300,
+                                           eta=0.95 * threshold, beta=beta), dtype=float)
+      above = np.asarray(quadratic_descent(kappa, 'heavy-ball', iters=300,
+                                           eta=1.05 * threshold, beta=beta), dtype=float)
+      assert below[-1] < 1e-12 * below[0], f"just below the threshold it should converge, ended at {below[-1]/below[0]}"
+      assert above[-1] > 1e6 * above[0], f"just above it should blow up, ended at {above[-1]/above[0]}"
+  - name: heavy ball with no momentum is gradient descent
+    code: |
+      import numpy as np
+      # Setting beta = 0 and the gd step size must reproduce gd exactly — the
+      # cleanest check that eta and beta are really being used where they look
+      # like they are. (Keeping heavy ball's own eta here would diverge: it
+      # gives eta*L = 3.31 > 2, which is what the momentum term is paying for.)
+      kappa, d = 100, 20
+      lam = np.linspace(1.0, kappa, d)
+      eta_gd = 2.0 / (lam.max() + lam.min())
+      gd = np.asarray(quadratic_descent(kappa, 'gd', iters=400), dtype=float)
+      hb = np.asarray(quadratic_descent(kappa, 'heavy-ball', iters=400, eta=eta_gd, beta=0.0), dtype=float)
+      assert np.max(np.abs(gd - hb)) < 1e-9 * max(1.0, float(gd[0])), \
+          "heavy ball with beta=0 and gd's step size should trace gd exactly"
+      fast = float(asymptotic_rate(quadratic_descent(kappa, 'heavy-ball', iters=600)))
+      assert fast < float(asymptotic_rate(gd)), "with its own parameters it must be faster than gd"

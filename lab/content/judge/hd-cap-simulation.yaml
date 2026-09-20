@@ -1,0 +1,78 @@
+problem: hd-cap-simulation
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def cap_fraction_mc(d, t, n=200000, seed=0):
+      """Monte Carlo estimate of the measure of the cap {u : <u, theta> >= t}
+      under the uniform measure on the sphere S^{d-1}.
+
+      Draw n points uniformly from S^{d-1} and return the fraction whose inner
+      product with a fixed unit theta is at least t. The answer does not depend
+      on which theta you take, so e_0 is fine. Use `seed` so the result is
+      reproducible.
+      """
+      raise NotImplementedError
+
+  def cap_fraction_exact(d, t, grid=200001):
+      """The same quantity, from the exact marginal density.
+
+      The first coordinate of a uniform point on S^{d-1} has density
+      proportional to (1 - s**2)**((d - 3) / 2) on [-1, 1]. Integrate that from
+      t to 1 and divide by the integral over [-1, 1].
+
+      This has to stay accurate in the regime where the Monte Carlo estimate
+      returns 0 because it never once landed in the cap.
+      """
+      raise NotImplementedError
+tests:
+  - name: exact measure is normalised
+    code: |
+      for d in (3, 10, 100):
+          total = cap_fraction_exact(d, -1.0)
+          assert abs(total - 1.0) < 1e-6, f"d={d}: measure of the whole sphere is {total}, not 1"
+  - name: d=3 reduces to the closed form (1-t)/2
+    code: |
+      # On S^2 the first coordinate is uniform on [-1, 1] (Archimedes), so the
+      # cap fraction is exactly (1 - t) / 2 with no special functions involved.
+      for t in (0.1, 0.3, 0.5, 0.9):
+          got = cap_fraction_exact(3, t)
+          assert abs(got - (1 - t) / 2) < 1e-6, f"t={t}: expected {(1-t)/2}, got {got}"
+  - name: Monte Carlo agrees with the exact value in low dimension
+    code: |
+      for d, t in ((3, 0.3), (10, 0.3), (10, 0.5)):
+          mc = cap_fraction_mc(d, t, n=200000, seed=1)
+          ex = cap_fraction_exact(d, t)
+          assert abs(mc - ex) < 0.01, f"d={d}, t={t}: MC {mc} vs exact {ex}"
+  - name: the sample really is uniform on the sphere
+    code: |
+      import numpy as np
+      # A wrong sampler (uniform in the cube, or normalised uniform entries)
+      # concentrates away from the axes and gets this badly wrong.
+      mc = cap_fraction_mc(2, 0.0, n=200000, seed=3)
+      assert abs(mc - 0.5) < 0.01, f"half the circle should lie in the t=0 cap, got {mc}"
+      mc3 = cap_fraction_mc(3, 0.5, n=200000, seed=4)
+      assert abs(mc3 - 0.25) < 0.01, f"expected 0.25 on S^2 at t=0.5, got {mc3}"
+  - name: the cap measure obeys the exp(-d t^2 / 2) bound
+    code: |
+      import math
+      for d in (3, 10, 100, 1000):
+          for t in (0.1, 0.3, 0.5):
+              ex = cap_fraction_exact(d, t)
+              bound = math.exp(-d * t * t / 2)
+              assert ex <= bound + 1e-12, f"d={d}, t={t}: {ex} exceeds the bound {bound}"
+  - name: measure concentrates as d grows
+    code: |
+      vals = [cap_fraction_exact(d, 0.3) for d in (3, 10, 100, 1000)]
+      assert all(a > b for a, b in zip(vals, vals[1:])), f"should be decreasing in d: {vals}"
+      assert vals[-1] < 1e-15, f"the d=1000 cap should be astronomically small, got {vals[-1]}"
+  - name: exact survives where naive Monte Carlo reports nothing
+    code: |
+      # This is the point of the exercise: at d=1000, t=0.3 the cap is around
+      # 1e-20 of the sphere, so 2*10^5 samples land in it with probability
+      # ~1e-15. Monte Carlo reports 0 and the exact computation still works.
+      mc = cap_fraction_mc(1000, 0.3, n=4000, seed=5)
+      ex = cap_fraction_exact(1000, 0.3)
+      assert mc == 0.0, f"expected no samples in the cap, got {mc}"
+      assert ex > 0.0, "the exact value must not underflow to 0"
+      assert ex < 1e-15, f"expected a tiny positive number, got {ex}"

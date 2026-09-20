@@ -1,0 +1,134 @@
+problem: rg-implement-rag
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def chunk_spans(n_tokens, size, overlap):
+      """Split [0, n_tokens) into overlapping chunks.
+
+      Return a list of (start, end) pairs. Chunks start at 0, size - overlap,
+      2*(size - overlap), ... for as long as the start is below n_tokens, and
+      each one ends at min(start + size, n_tokens). `overlap` is strictly less
+      than `size`.
+      """
+      raise NotImplementedError
+
+  def chunk_recall(spans, answer):
+      """1.0 if some chunk contains the whole answer span, else 0.0.
+
+      `answer` is a (start, end) pair. An answer split across two chunks is
+      unreachable no matter how good the retriever is, which is why this is the
+      first ceiling on the pipeline.
+      """
+      raise NotImplementedError
+
+  def top_k(query, index, k, normalise=True):
+      """Indices of the k best matches in `index` (shape (n, d)), best first.
+
+      With normalise=True rank by cosine similarity; with normalise=False rank
+      by the raw dot product. The two orderings are not the same, and which one
+      you get is decided by whether you remembered to normalise.
+      """
+      raise NotImplementedError
+
+  def recall_at_k(retrieved, relevant):
+      """Fraction of `relevant` ids that appear in `retrieved`."""
+      raise NotImplementedError
+
+  def pipeline_recall(*stage_recalls):
+      """The end-to-end ceiling: the product of the stage recalls.
+
+      Every stage can only lose documents, so the best the pipeline can do is
+      the product — which is why three "95% good" stages give 86%.
+      """
+      raise NotImplementedError
+tests:
+  - name: chunking covers the document exactly
+    code: |
+      spans = chunk_spans(10, 4, 1)
+      assert spans == [(0, 4), (3, 7), (6, 10), (9, 10)], f"got {spans}"
+      spans = chunk_spans(12, 4, 0)
+      assert spans == [(0, 4), (4, 8), (8, 12)], f"got {spans}"
+      # With no overlap the chunks partition the document.
+      covered = [i for a, b in spans for i in range(a, b)]
+      assert covered == list(range(12)), f"chunks must tile the document, got {covered}"
+  - name: every token lands in some chunk
+    code: |
+      for n, size, overlap in ((10, 4, 1), (100, 16, 4), (7, 3, 2), (5, 8, 0)):
+          spans = chunk_spans(n, size, overlap)
+          seen = set()
+          for a, b in spans:
+              assert 0 <= a < b <= n, f"bad span ({a}, {b}) for n={n}"
+              seen.update(range(a, b))
+          assert seen == set(range(n)), f"n={n}, size={size}, overlap={overlap} missed {set(range(n)) - seen}"
+  - name: an answer longer than a chunk is unreachable
+    code: |
+      # The answer spans 5 tokens, the chunks hold 4. No retriever can fix this.
+      assert chunk_recall(chunk_spans(20, 4, 0), (2, 7)) == 0.0
+      assert chunk_recall(chunk_spans(20, 8, 0), (2, 7)) == 1.0
+  - name: overlap rescues an answer that straddles a boundary
+    code: |
+      # Tokens 6..10 cross the 8-token boundary, so contiguous chunks lose it
+      # and a half-chunk overlap recovers it.
+      assert chunk_recall(chunk_spans(16, 8, 0), (6, 10)) == 0.0, "should straddle the boundary"
+      assert chunk_recall(chunk_spans(16, 8, 4), (6, 10)) == 1.0, "overlap should catch it"
+  - name: top_k ranks by cosine and returns the best first
+    code: |
+      import numpy as np
+      index = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [-1.0, 0.0]])
+      got = list(top_k(np.array([1.0, 0.1]), index, 3))
+      assert len(got) == 3, f"expected 3 indices, got {got}"
+      assert got[0] == 0, f"the closest direction to (1, 0.1) is row 0, got {got}"
+      assert got[-1] != 3, f"the opposite direction should not be in the top 3, got {got}"
+      sims = []
+      for i in got:
+          v = index[i]
+          sims.append(float(v @ np.array([1.0, 0.1]) / (np.linalg.norm(v) * np.linalg.norm([1.0, 0.1]))))
+      assert all(a >= b - 1e-12 for a, b in zip(sims, sims[1:])), f"not sorted by similarity: {sims}"
+  - name: normalisation changes the ranking
+    code: |
+      import numpy as np
+      # Row 0 is long but badly aligned; row 1 is short and perfectly aligned.
+      # Dot product prefers the long one, cosine prefers the aligned one.
+      index = np.array([[10.0, 0.0], [1.0, 1.0]])
+      q = np.array([1.0, 1.0])
+      raw = list(top_k(q, index, 1, normalise=False))
+      cos = list(top_k(q, index, 1, normalise=True))
+      assert raw[0] == 0, f"dot product should pick the long vector, got {raw}"
+      assert cos[0] == 1, f"cosine should pick the aligned vector, got {cos}"
+  - name: top_k agrees with brute force on random data
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      index = rng.standard_normal((200, 16))
+      q = rng.standard_normal(16)
+      got = list(top_k(q, index, 5))
+      sims = index @ q / (np.linalg.norm(index, axis=1) * np.linalg.norm(q))
+      want = list(np.argsort(-sims)[:5])
+      assert got == want, f"expected {want}, got {got}"
+  - name: recall_at_k counts what survived
+    code: |
+      assert abs(recall_at_k([1, 2, 3], [2, 5]) - 0.5) < 1e-12
+      assert abs(recall_at_k([1, 2, 3], [1, 2, 3]) - 1.0) < 1e-12
+      assert abs(recall_at_k([], [1, 2]) - 0.0) < 1e-12
+      assert abs(recall_at_k([4, 5, 6], [1]) - 0.0) < 1e-12
+      assert abs(recall_at_k([1, 1, 2], [1, 2]) - 1.0) < 1e-12, "duplicates must not inflate recall"
+  - name: the pipeline cannot beat the product of its stages
+    code: |
+      assert abs(pipeline_recall(0.9, 0.95, 0.8) - 0.684) < 1e-9
+      assert abs(pipeline_recall(1.0, 1.0) - 1.0) < 1e-12
+      assert abs(pipeline_recall(0.95, 0.95, 0.95) - 0.857375) < 1e-9
+      # Each stage is individually excellent and the pipeline still loses 14%.
+      assert pipeline_recall(0.95, 0.95, 0.95) < 0.95
+      for r in (0.99, 0.9, 0.5):
+          assert pipeline_recall(r) == r, "a single stage is its own ceiling"
+  - name: the ceiling binds end to end
+    code: |
+      import numpy as np
+      # A document whose answer straddles a chunk boundary cannot be recovered,
+      # whatever the retriever does — so the measured end-to-end recall equals
+      # the product with a zero in it.
+      spans = chunk_spans(16, 8, 0)
+      cr = chunk_recall(spans, (6, 10))
+      assert cr == 0.0
+      assert pipeline_recall(cr, 1.0, 1.0) == 0.0, "one dead stage kills the pipeline"

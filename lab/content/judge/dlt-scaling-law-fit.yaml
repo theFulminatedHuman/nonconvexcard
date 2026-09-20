@@ -1,0 +1,159 @@
+problem: dlt-scaling-law-fit
+timeout_seconds: 120
+starter: |
+  import numpy as np
+
+  def scaling_loss(N, D, E, A, alpha, B, beta):
+      """L(N, D) = E + A * N**(-alpha) + B * D**(-beta).
+
+      Accept scalars or arrays for N and D and return the same shape.
+      """
+      raise NotImplementedError
+
+  def fit_scaling_law(N, D, L):
+      """Recover the five parameters from observed losses.
+
+      Return a dict with keys 'E', 'A', 'alpha', 'B', 'beta'.
+
+      You do not need a general nonlinear optimiser. Hold (alpha, beta) fixed
+      and the model is *linear* in (E, A, B) — one least-squares solve gives
+      the best three, exactly. So the search is only ever two-dimensional:
+      sweep (alpha, beta), keep the pair with the smallest residual, then
+      refine around it.
+      """
+      raise NotImplementedError
+
+  def allocation_exponents(alpha, beta):
+      """The compute-optimal scaling exponents (a, b), with N* ~ C**a and
+      D* ~ C**b. They must sum to 1, because C is proportional to N*D."""
+      raise NotImplementedError
+
+  def compute_optimal(params, C, flops_per_token=6):
+      """Minimise the fitted loss subject to the compute budget C = k*N*D,
+      with k = flops_per_token. Return (N_star, D_star).
+
+      Substituting D = C/(k*N) leaves a one-dimensional convex problem whose
+      stationary point has a closed form.
+      """
+      raise NotImplementedError
+tests:
+  - name: the loss is the stated three-term form
+    code: |
+      import numpy as np
+      got = scaling_loss(100.0, 1000.0, 2.0, 10.0, 0.5, 20.0, 0.25)
+      want = 2.0 + 10.0 * 100.0 ** -0.5 + 20.0 * 1000.0 ** -0.25
+      assert abs(got - want) < 1e-12, f"expected {want}, got {got}"
+      N = np.array([10.0, 100.0]); D = np.array([100.0, 1000.0])
+      arr = np.asarray(scaling_loss(N, D, 1.0, 3.0, 0.3, 4.0, 0.2), dtype=float)
+      assert arr.shape == (2,), f"should vectorise, got shape {arr.shape}"
+      assert abs(arr[0] - (1.0 + 3.0 * 10.0 ** -0.3 + 4.0 * 100.0 ** -0.2)) < 1e-12
+      # The irreducible term is the floor: infinite N and D still leaves E.
+      # Both power terms contribute 5 * (10**30)**-0.3 = 5e-9 here, so the
+      # floor is approached to 1e-8, not to machine precision.
+      assert abs(scaling_loss(1e30, 1e30, 1.7, 5.0, 0.3, 5.0, 0.3) - 1.7) < 1e-6
+  - name: allocation exponents split the budget
+    code: |
+      for alpha, beta in ((0.34, 0.28), (0.5, 0.5), (0.2, 0.8)):
+          a, b = allocation_exponents(alpha, beta)
+          assert abs(a - beta / (alpha + beta)) < 1e-12, f"a should be beta/(alpha+beta), got {a}"
+          assert abs(b - alpha / (alpha + beta)) < 1e-12, f"b should be alpha/(alpha+beta), got {b}"
+          assert abs(a + b - 1.0) < 1e-12, f"exponents must sum to 1, got {a + b}"
+      a, b = allocation_exponents(0.5, 0.5)
+      assert abs(a - 0.5) < 1e-12 and abs(b - 0.5) < 1e-12, "equal exponents split the budget evenly"
+  - name: the optimal allocation spends exactly the budget
+    code: |
+      p = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      for C in (1e19, 1e21, 1e23):
+          N, D = compute_optimal(p, C)
+          assert N > 0 and D > 0, f"C={C}: got N={N}, D={D}"
+          assert abs(6 * N * D - C) < 1e-6 * C, f"C={C}: 6ND = {6 * N * D}"
+      N, D = compute_optimal(p, 1e21, flops_per_token=2)
+      assert abs(2 * N * D - 1e21) < 1e-6 * 1e21, "flops_per_token must be honoured"
+  - name: the optimum balances the two marginal gains
+    code: |
+      p = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      for C in (1e20, 1e22):
+          N, D = compute_optimal(p, C)
+          left = p['alpha'] * p['A'] * N ** (-p['alpha'])
+          right = p['beta'] * p['B'] * D ** (-p['beta'])
+          assert abs(left - right) < 1e-6 * max(left, right), \
+              f"C={C}: stationarity needs alpha*A*N^-alpha = beta*B*D^-beta, got {left} vs {right}"
+  - name: the optimum really is a minimum along the budget line
+    code: |
+      p = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      C = 1e21
+      N, D = compute_optimal(p, C)
+      best = scaling_loss(N, D, **p)
+      for f in (0.5, 0.8, 1.25, 2.0):
+          Nb = N * f
+          Db = C / (6 * Nb)
+          assert scaling_loss(Nb, Db, **p) >= best - 1e-12, \
+              f"moving to N*{f} along the budget line should not improve on the optimum"
+  - name: the allocation follows C to the power of its exponent
+    code: |
+      p = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      a, b = allocation_exponents(p['alpha'], p['beta'])
+      N1, D1 = compute_optimal(p, 1e21)
+      N2, D2 = compute_optimal(p, 1e22)
+      assert abs(N2 / N1 - 10 ** a) < 1e-6 * 10 ** a, f"N* should scale by 10^{a}, got {N2 / N1}"
+      assert abs(D2 / D1 - 10 ** b) < 1e-6 * 10 ** b, f"D* should scale by 10^{b}, got {D2 / D1}"
+  - name: the fit recovers noiseless parameters
+    code: |
+      import numpy as np
+      truth = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      Ng, Dg = np.meshgrid(np.logspace(7, 10, 12), np.logspace(9, 11.5, 12))
+      N, D = Ng.ravel(), Dg.ravel()
+      fit = fit_scaling_law(N, D, scaling_loss(N, D, **truth))
+      for k in ('alpha', 'beta'):
+          assert abs(fit[k] - truth[k]) < 0.02, f"{k}: expected {truth[k]}, fitted {fit[k]}"
+      assert abs(fit['E'] - truth['E']) < 0.05 * truth['E'], f"E: expected {truth['E']}, fitted {fit['E']}"
+      pred = np.asarray(scaling_loss(N, D, **fit), dtype=float)
+      true_L = np.asarray(scaling_loss(N, D, **truth), dtype=float)
+      assert float(np.max(np.abs(pred - true_L) / true_L)) < 0.01, "the fitted surface should match"
+  - name: the fit survives noisy observations
+    code: |
+      import numpy as np
+      truth = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      rng = np.random.default_rng(0)
+      Ng, Dg = np.meshgrid(np.logspace(7, 10, 12), np.logspace(9, 11.5, 12))
+      N, D = Ng.ravel(), Dg.ravel()
+      L = np.asarray(scaling_loss(N, D, **truth), dtype=float)
+      fit = fit_scaling_law(N, D, L * (1 + 0.01 * rng.standard_normal(L.shape)))
+      # The exponents are far better determined than the prefactors, which is
+      # why papers report alpha and beta and treat A and B as nuisance.
+      assert abs(fit['alpha'] - truth['alpha']) < 0.05, f"alpha {fit['alpha']} vs {truth['alpha']}"
+      assert abs(fit['beta'] - truth['beta']) < 0.05, f"beta {fit['beta']} vs {truth['beta']}"
+      pred = np.asarray(scaling_loss(N, D, **fit), dtype=float)
+      assert float(np.max(np.abs(pred - L) / L)) < 0.03, "the fitted surface should still track the truth"
+  - name: small shifts in the exponents move the allocation
+    code: |
+      base = allocation_exponents(0.34, 0.28)[0]
+      moved = allocation_exponents(0.39, 0.28)[0]
+      assert abs(moved - base) > 0.02, \
+          f"a 0.05 shift in alpha should visibly move the allocation: {base} -> {moved}"
+      assert moved < base, "a larger alpha means parameters buy more, so tilt spending towards data"
+  - name: fitting on a narrow range misleads outside it
+    code: |
+      import numpy as np
+      truth = dict(E=1.69, A=406.4, alpha=0.34, B=410.7, beta=0.28)
+      rng = np.random.default_rng(1)
+      def grid(nlo, nhi, dlo, dhi, k):
+          Ng, Dg = np.meshgrid(np.logspace(nlo, nhi, k), np.logspace(dlo, dhi, k))
+          return Ng.ravel(), Dg.ravel()
+      Nn, Dn = grid(7, 8.2, 9, 10, 10)              # only the small-model corner
+      No, Do = grid(9.2, 10, 11, 11.5, 8)           # far outside it
+      Ln = np.asarray(scaling_loss(Nn, Dn, **truth), dtype=float)
+      Lo = np.asarray(scaling_loss(No, Do, **truth), dtype=float)
+      # Averaged over noise draws, because how badly a given narrow fit
+      # extrapolates varies a lot from one realisation to the next — which is
+      # itself the point: you cannot tell from the in-range residual.
+      ins, outs = [], []
+      for s in range(4):
+          rng = np.random.default_rng(s)
+          narrow = fit_scaling_law(Nn, Dn, Ln * (1 + 0.01 * rng.standard_normal(Ln.shape)))
+          ins.append(float(np.max(np.abs(np.asarray(scaling_loss(Nn, Dn, **narrow), dtype=float) - Ln) / Ln)))
+          outs.append(float(np.max(np.abs(np.asarray(scaling_loss(No, Do, **narrow), dtype=float) - Lo) / Lo)))
+      err_in, err_out = float(np.mean(ins)), float(np.mean(outs))
+      assert err_in < 0.03, f"the narrow fit should look good on its own range, got {err_in}"
+      assert err_out > 2 * err_in, \
+          f"and much worse outside it: in-range {err_in:.4f}, out-of-range {err_out:.4f}"

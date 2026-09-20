@@ -1,0 +1,139 @@
+problem: ft-implement-lora
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  # Conventions, so the tests and your code agree:
+  #   W has shape (d_out, d_in) and a batch x has shape (batch, d_in),
+  #   so the base layer computes x @ W.T.
+  #   A has shape (r, d_in) and B has shape (d_out, r).
+
+  def init_lora(d_in, d_out, r, seed=0):
+      """Return the adapter pair (A, B) at initialisation.
+
+      A is random with entries of scale about 1/sqrt(d_in); B is exactly zero.
+      That asymmetry is the whole trick: the product B @ A vanishes at step 0,
+      so the adapted layer starts as the base layer, but the gradient with
+      respect to B does not vanish, so training can leave that point.
+      """
+      raise NotImplementedError
+
+  def lora_delta(A, B, alpha, r):
+      """The effective weight update, (alpha / r) * B @ A, shape (d_out, d_in).
+
+      The alpha/r factor is what lets you change r without re-tuning the
+      learning rate: it keeps the size of the update roughly independent of r.
+      """
+      raise NotImplementedError
+
+  def lora_forward(x, W, A, B, alpha, r):
+      """The adapted layer: the frozen base plus the adapter, x @ (W + delta).T."""
+      raise NotImplementedError
+
+  def rank_for_energy(delta_w, fraction=0.9):
+      """Smallest k whose top-k singular values carry `fraction` of ||delta_w||_F^2.
+
+      By Eckart-Young the best rank-k approximation keeps exactly the top k
+      singular values, so the squared error of the best rank-k fit is the tail
+      sum of squared singular values. Return the smallest k with
+
+          sum_{i<k} s_i^2  >=  fraction * sum_i s_i^2.
+      """
+      raise NotImplementedError
+tests:
+  - name: B starts at zero and A does not
+    code: |
+      import numpy as np
+      A, B = init_lora(64, 32, 8, seed=0)
+      A, B = np.asarray(A, dtype=float), np.asarray(B, dtype=float)
+      assert A.shape == (8, 64), f"A should be (r, d_in) = (8, 64), got {A.shape}"
+      assert B.shape == (32, 8), f"B should be (d_out, r) = (32, 8), got {B.shape}"
+      assert np.all(B == 0), "B must be exactly zero at initialisation"
+      assert np.any(A != 0) and np.all(np.isfinite(A)), "A must be random and finite"
+      s = float(np.std(A))
+      assert 0.2 / np.sqrt(64) < s < 5.0 / np.sqrt(64), f"A entries should scale like 1/sqrt(d_in), std is {s}"
+  - name: the adapted layer is the base layer at step 0
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      d_in, d_out, r = 64, 32, 8
+      W = rng.standard_normal((d_out, d_in))
+      x = rng.standard_normal((5, d_in))
+      A, B = init_lora(d_in, d_out, r, seed=1)
+      base = x @ np.asarray(W).T
+      got = np.asarray(lora_forward(x, W, A, B, alpha=16, r=r), dtype=float)
+      assert got.shape == base.shape, f"expected {base.shape}, got {got.shape}"
+      assert np.max(np.abs(got - base)) < 1e-12, "with B = 0 the adapter must contribute nothing"
+      d0 = np.asarray(lora_delta(A, B, 16, r), dtype=float)
+      assert np.max(np.abs(d0)) == 0.0, "delta must be identically zero at initialisation"
+  - name: the update is (alpha / r) B A
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(2)
+      A = rng.standard_normal((4, 10))
+      B = rng.standard_normal((6, 4))
+      got = np.asarray(lora_delta(A, B, alpha=8, r=4), dtype=float)
+      want = (8 / 4) * (B @ A)
+      assert got.shape == (6, 10), f"delta should be (d_out, d_in) = (6, 10), got {got.shape}"
+      assert np.max(np.abs(got - want)) < 1e-10, f"max deviation {np.max(np.abs(got - want))}"
+  - name: alpha over r scales the update, and the rank is capped by r
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(3)
+      A = rng.standard_normal((3, 12))
+      B = rng.standard_normal((9, 3))
+      d1 = np.asarray(lora_delta(A, B, alpha=3, r=3), dtype=float)
+      d2 = np.asarray(lora_delta(A, B, alpha=6, r=3), dtype=float)
+      assert np.max(np.abs(d2 - 2 * d1)) < 1e-10, "doubling alpha must double the update"
+      assert np.linalg.matrix_rank(d1, tol=1e-8) <= 3, "the update cannot exceed rank r"
+  - name: the forward pass adds the adapter to the frozen base
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(4)
+      d_in, d_out, r = 20, 7, 3
+      W = rng.standard_normal((d_out, d_in))
+      A = rng.standard_normal((r, d_in))
+      B = rng.standard_normal((d_out, r))
+      x = rng.standard_normal((11, d_in))
+      got = np.asarray(lora_forward(x, W, A, B, alpha=6, r=r), dtype=float)
+      want = x @ (W + (6 / r) * (B @ A)).T
+      assert got.shape == (11, d_out), f"expected (11, {d_out}), got {got.shape}"
+      assert np.max(np.abs(got - want)) < 1e-9, f"max deviation {np.max(np.abs(got - want))}"
+  - name: rank_for_energy reads a known spectrum correctly
+    code: |
+      import numpy as np
+      # Squared singular values 16, 9, 4, 1 — total 30. Cumulative fractions:
+      # 0.533, 0.833, 0.967, 1.0. So 90% first happens at k = 3.
+      U = np.linalg.qr(np.random.default_rng(0).standard_normal((6, 4)))[0]
+      V = np.linalg.qr(np.random.default_rng(1).standard_normal((5, 4)))[0]
+      M = U @ np.diag([4.0, 3.0, 2.0, 1.0]) @ V.T
+      assert rank_for_energy(M, 0.9) == 3, f"expected 3, got {rank_for_energy(M, 0.9)}"
+      assert rank_for_energy(M, 0.5) == 1, f"expected 1, got {rank_for_energy(M, 0.5)}"
+      assert rank_for_energy(M, 0.8) == 2, f"expected 2, got {rank_for_energy(M, 0.8)}"
+      assert rank_for_energy(M, 1.0) == 4, f"expected 4, got {rank_for_energy(M, 1.0)}"
+  - name: rank_for_energy is consistent with Eckart-Young
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(7)
+      # A matrix with a decaying spectrum, like a real fine-tuning update.
+      U = np.linalg.qr(rng.standard_normal((40, 20)))[0]
+      V = np.linalg.qr(rng.standard_normal((30, 20)))[0]
+      s = np.array([1.5 ** (-i) for i in range(20)])
+      M = U @ np.diag(s) @ V.T
+      k = int(rank_for_energy(M, 0.9))
+      sv = np.linalg.svd(M, compute_uv=False)
+      total = float(np.sum(sv ** 2))
+      kept = float(np.sum(sv[:k] ** 2))
+      assert kept >= 0.9 * total - 1e-9, f"rank {k} keeps only {kept/total:.4f} of the energy"
+      if k > 1:
+          less = float(np.sum(sv[:k - 1] ** 2))
+          assert less < 0.9 * total, f"rank {k-1} already keeps {less/total:.4f}, so {k} is not minimal"
+  - name: a genuinely low-rank update needs exactly its own rank
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(11)
+      A = rng.standard_normal((5, 32))
+      B = rng.standard_normal((16, 5))
+      delta = np.asarray(lora_delta(A, B, alpha=10, r=5), dtype=float)
+      assert rank_for_energy(delta, 0.999999) == 5, \
+          f"a rank-5 update should need 5 directions, got {rank_for_energy(delta, 0.999999)}"

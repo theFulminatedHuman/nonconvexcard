@@ -1,0 +1,75 @@
+problem: cov-simulate-operator-error
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def operator_error(n, p, seed=0):
+      """Operator-norm error of the sample covariance when the truth is I_p.
+
+      Draw n iid rows from N(0, I_p) using a generator seeded with `seed`, form
+      the sample covariance Sigma_hat = X^T X / n (no centring, no 1/(n-1)),
+      and return the spectral norm ||Sigma_hat - I_p||.
+      """
+      raise NotImplementedError
+
+  def mp_prediction(n, p):
+      """The Marchenko-Pastur prediction for that error.
+
+      The sample eigenvalues fill [(1 - sqrt(gamma))**2, (1 + sqrt(gamma))**2]
+      with gamma = p/n, so the largest deviation from 1 is the upper edge:
+      (1 + sqrt(gamma))**2 - 1 = 2*sqrt(gamma) + gamma. Return it — no
+      simulation, just the formula.
+      """
+      raise NotImplementedError
+tests:
+  - name: the prediction is the Marchenko-Pastur upper edge
+    code: |
+      import math
+      for n, p in ((1000, 10), (1000, 100), (400, 200), (100, 100)):
+          g = p / n
+          want = 2 * math.sqrt(g) + g
+          got = float(mp_prediction(n, p))
+          assert abs(got - want) < 1e-9, f"n={n}, p={p}: expected {want}, got {got}"
+  - name: the error is a positive finite number
+    code: |
+      import math
+      e = float(operator_error(500, 50, seed=0))
+      assert math.isfinite(e) and e > 0, f"expected a positive error, got {e}"
+      assert e < 2.0, f"at p/n = 0.1 the error should be well under 1, got {e}"
+  - name: the error shrinks as n grows at fixed p
+    code: |
+      import numpy as np
+      errs = [float(np.mean([operator_error(n, 100, seed=s) for s in range(3)]))
+              for n in (400, 1600, 6400)]
+      assert all(a > b for a, b in zip(errs, errs[1:])), f"expected a decreasing sequence, got {errs}"
+  - name: the error tracks sqrt(p/n) in the small-ratio regime
+    code: |
+      import numpy as np
+      # Quadrupling n at fixed p should roughly halve the error, because the
+      # 2*sqrt(gamma) term dominates once gamma is small.
+      a = float(np.mean([operator_error(1000, 50, seed=s) for s in range(4)]))
+      b = float(np.mean([operator_error(4000, 50, seed=s) for s in range(4)]))
+      assert 1.6 < a / b < 2.5, f"expected roughly a factor 2, got {a}/{b} = {a/b}"
+  - name: the error depends on p/n only through the ratio
+    code: |
+      import numpy as np
+      avg = lambda n, p: float(np.mean([operator_error(n, p, seed=s) for s in range(3)]))
+      a, b, c = avg(500, 50), avg(1000, 100), avg(2000, 200)
+      spread = (max(a, b, c) - min(a, b, c)) / min(a, b, c)
+      assert spread < 0.2, f"gamma=0.1 gave {a}, {b}, {c} — should be one number"
+  - name: simulation agrees with the Marchenko-Pastur edge
+    code: |
+      import numpy as np
+      for n, p in ((2000, 50), (1000, 100), (1000, 200)):
+          got = float(np.mean([operator_error(n, p, seed=s) for s in range(4)]))
+          pred = float(mp_prediction(n, p))
+          assert 0.8 < got / pred < 1.15, f"n={n}, p={p}: measured {got}, predicted {pred}"
+  - name: the estimator is the uncentred sample covariance
+    code: |
+      import numpy as np
+      # A wrong normalisation (1/(n-1), or dividing by p) shifts the error by a
+      # constant factor that this ratio is tight enough to see.
+      n, p = 200, 200
+      got = float(np.mean([operator_error(n, p, seed=s) for s in range(4)]))
+      pred = float(mp_prediction(n, p))
+      assert 0.75 < got / pred < 1.2, f"at gamma=1 measured {got} against predicted {pred}"

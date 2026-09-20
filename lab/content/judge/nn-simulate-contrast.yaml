@@ -1,0 +1,86 @@
+problem: nn-simulate-contrast
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def contrast(N, d, seed=0):
+      """Distance contrast for N Gaussian points around an independent query.
+
+      Draw N points x_1..x_N iid N(0, I_d) and one query q ~ N(0, I_d),
+      independent of them, from a generator seeded with `seed`. Return
+
+          (max_i ||x_i - q|| - min_i ||x_i - q||) / min_i ||x_i - q||.
+
+      This is the quantity that decides whether "nearest neighbour" means
+      anything: when it goes to zero the nearest and furthest points are the
+      same distance away to within measurement error.
+      """
+      raise NotImplementedError
+
+  def contrast_subspace(N, d, d0, seed=0):
+      """The same measurement for data that only spans d0 of the d dimensions.
+
+      Draw a random d0-dimensional subspace of R^d, draw the N points and the
+      query inside it with standard Gaussian coordinates in an orthonormal
+      basis of that subspace, and return the same contrast. The ambient
+      dimension d should not matter; d0 should.
+      """
+      raise NotImplementedError
+tests:
+  - name: contrast is a positive, finite number
+    code: |
+      import math
+      c = contrast(200, 8, seed=0)
+      assert isinstance(c, float) or hasattr(c, '__float__'), f"expected a number, got {type(c)}"
+      c = float(c)
+      assert math.isfinite(c) and c > 0, f"expected a positive finite contrast, got {c}"
+  - name: contrast falls as the dimension grows
+    code: |
+      import numpy as np
+      avg = lambda d: float(np.mean([contrast(200, d, seed=s) for s in range(8)]))
+      vals = [avg(d) for d in (8, 64, 512, 4096)]
+      assert all(a > b for a, b in zip(vals, vals[1:])), f"expected a decreasing sequence, got {vals}"
+      assert vals[-1] < 0.25 * vals[0], f"expected a large drop, got {vals}"
+  - name: the decay rate is d^(-1/2)
+    code: |
+      import numpy as np
+      ds = [64, 256, 1024, 4096]
+      vals = [float(np.mean([contrast(200, d, seed=s) for s in range(8)])) for d in ds]
+      slope = float(np.polyfit(np.log(ds), np.log(vals), 1)[0])
+      # The measured slope sits near -0.53 for N=200: the max-min of N samples
+      # drags it slightly past -1/2, and that gap closes as N/d falls.
+      assert -0.75 < slope < -0.35, f"expected a slope near -0.5, measured {slope}"
+  - name: query is drawn independently of the points
+    code: |
+      import numpy as np
+      # If the query is one of the sampled points, min distance is 0 and the
+      # contrast is infinite; if it is the origin, distances concentrate
+      # differently and the contrast comes out measurably smaller.
+      vals = [contrast(200, 64, seed=s) for s in range(8)]
+      assert all(np.isfinite(v) and v > 0 for v in vals), f"non-finite contrast: {vals}"
+      assert 0.2 < float(np.mean(vals)) < 1.2, f"contrast at d=64 should be around 0.5, got {np.mean(vals)}"
+  - name: on a subspace the contrast follows d0, not d
+    code: |
+      import numpy as np
+      avg_sub = float(np.mean([contrast_subspace(200, 1000, 20, seed=s) for s in range(8)]))
+      avg_d0 = float(np.mean([contrast(200, 20, seed=s) for s in range(8)]))
+      avg_d = float(np.mean([contrast(200, 1000, seed=s) for s in range(8)]))
+      assert avg_sub > 3 * avg_d, f"subspace contrast {avg_sub} should dwarf ambient {avg_d}"
+      assert 0.5 < avg_sub / avg_d0 < 2.0, f"expected roughly the d0=20 contrast {avg_d0}, got {avg_sub}"
+  - name: ambient dimension does not move the subspace contrast
+    code: |
+      import numpy as np
+      avg = lambda d: float(np.mean([contrast_subspace(200, d, 10, seed=s) for s in range(8)]))
+      a, b = avg(100), avg(2000)
+      assert 0.5 < a / b < 2.0, f"d0=10 contrast changed with the ambient dimension: {a} vs {b}"
+  - name: the subspace really is d0-dimensional
+    code: |
+      import numpy as np
+      # Points confined to a d0-dimensional subspace span exactly d0 directions.
+      rows = []
+      for s in range(3):
+          c = contrast_subspace(60, 200, 4, seed=s)
+          assert np.isfinite(c) and c > 0, f"seed {s}: got {c}"
+      small = float(np.mean([contrast_subspace(200, 500, 3, seed=s) for s in range(8)]))
+      large = float(np.mean([contrast_subspace(200, 500, 300, seed=s) for s in range(8)]))
+      assert small > 4 * large, f"d0=3 should be far noisier than d0=300: {small} vs {large}"

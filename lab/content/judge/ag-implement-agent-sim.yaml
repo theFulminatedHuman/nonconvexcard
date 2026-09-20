@@ -1,0 +1,125 @@
+problem: ag-implement-agent-sim
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  def independent_success(n_steps, p, trials=20000, seed=0):
+      """Fraction of trajectories in which all n_steps succeed.
+
+      Each step succeeds independently with probability p. Simulate `trials`
+      trajectories with a generator seeded with `seed` and return the observed
+      fraction. This is the baseline the theory predicts at p**n_steps.
+      """
+      raise NotImplementedError
+
+  def correlated_success(n_steps, p_easy, p_hard, prob_hard, trials=20000, seed=0):
+      """The same measurement when failures share a cause.
+
+      Each trajectory first draws a latent difficulty: hard with probability
+      prob_hard, easy otherwise. Every step of that trajectory then succeeds
+      independently with p_hard or p_easy accordingly. Return the fraction of
+      trajectories that complete.
+
+      The per-step marginal is still p_bar = prob_hard*p_hard +
+      (1 - prob_hard)*p_easy, but the trajectory rate is not p_bar**n_steps.
+      """
+      raise NotImplementedError
+
+  def p_effective(p, detect, retries):
+      """Per-step success once failures can be caught and retried.
+
+      A step succeeds with probability p. If it fails it is detected with
+      probability `detect`, and a detected failure is retried — up to `retries`
+      extra attempts, each an independent fresh attempt with success p. An
+      undetected failure ends the step as a failure.
+
+      Return the resulting probability that the step ultimately succeeds, in
+      closed form rather than by simulation.
+      """
+      raise NotImplementedError
+
+  def majority_vote_accuracy(p, k, trials=20000, seed=0):
+      """Accuracy of a majority vote over k independent attempts.
+
+      Each of the k attempts is correct independently with probability p; the
+      vote is correct when strictly more than k/2 of them are. Take k odd.
+      """
+      raise NotImplementedError
+tests:
+  - name: independent steps multiply to p^n
+    code: |
+      import numpy as np
+      for n, p in ((3, 0.9), (5, 0.8), (10, 0.95), (20, 0.9)):
+          got = float(independent_success(n, p, trials=40000, seed=0))
+          want = p ** n
+          assert abs(got - want) < 0.015 + 0.05 * want, f"n={n}, p={p}: got {got}, expected {want}"
+  - name: the decay really is geometric in the number of steps
+    code: |
+      import numpy as np
+      p = 0.9
+      a = float(independent_success(10, p, trials=60000, seed=1))
+      b = float(independent_success(20, p, trials=60000, seed=2))
+      assert abs(b - a * a) < 0.02 * a * a + 0.005, f"P(20) should be P(10)^2: {b} vs {a*a}"
+  - name: with no latent difficulty the correlated model reduces to the independent one
+    code: |
+      import numpy as np
+      for n, p in ((5, 0.9), (10, 0.85)):
+          same = float(correlated_success(n, p, p, 0.5, trials=40000, seed=3))
+          assert abs(same - p ** n) < 0.015 + 0.05 * p ** n, \
+              f"equal difficulties must give p^n: got {same}, expected {p**n}"
+  - name: correlated failures beat the independent prediction
+    code: |
+      import numpy as np
+      # x -> x^n is convex, so E[P^n] >= (E P)^n: mixing difficulties can only
+      # help the trajectory rate relative to the matched independent model.
+      n, p_easy, p_hard, prob_hard = 10, 0.99, 0.6, 0.3
+      p_bar = prob_hard * p_hard + (1 - prob_hard) * p_easy
+      got = float(correlated_success(n, p_easy, p_hard, prob_hard, trials=40000, seed=4))
+      exact = prob_hard * p_hard ** n + (1 - prob_hard) * p_easy ** n
+      assert abs(got - exact) < 0.015, f"expected {exact}, got {got}"
+      assert got > p_bar ** n + 0.02, f"{got} should exceed the independent prediction {p_bar**n}"
+  - name: p_effective is exact in the cases that can be checked by hand
+    code: |
+      for p in (0.5, 0.7, 0.9):
+          assert abs(p_effective(p, 0.0, 5) - p) < 1e-12, "undetectable failures cannot be retried"
+          assert abs(p_effective(p, 1.0, 0) - p) < 1e-12, "no retries means no improvement"
+          one = p + (1 - p) * 1.0 * p
+          assert abs(p_effective(p, 1.0, 1) - one) < 1e-12, f"one perfect retry gives {one}"
+          half = p + (1 - p) * 0.5 * p
+          assert abs(p_effective(p, 0.5, 1) - half) < 1e-12, f"detection 0.5, one retry gives {half}"
+  - name: p_effective follows the geometric-series formula
+    code: |
+      for p in (0.4, 0.75):
+          for detect in (0.3, 0.8):
+              for retries in (0, 1, 2, 5):
+                  q = (1 - p) * detect
+                  want = p * (1 - q ** (retries + 1)) / (1 - q)
+                  got = float(p_effective(p, detect, retries))
+                  assert abs(got - want) < 1e-12, \
+                      f"p={p}, detect={detect}, retries={retries}: got {got}, expected {want}"
+                  assert 0.0 <= got <= 1.0, f"{got} is not a probability"
+  - name: retries and detection both help, and perfect detection saturates
+    code: |
+      vals = [p_effective(0.6, 0.9, r) for r in range(6)]
+      assert all(a < b for a, b in zip(vals, vals[1:])), f"more retries must help: {vals}"
+      vals2 = [p_effective(0.6, dq, 3) for dq in (0.0, 0.3, 0.6, 1.0)]
+      assert all(a < b for a, b in zip(vals2, vals2[1:])), f"better detection must help: {vals2}"
+      assert p_effective(0.6, 1.0, 60) > 0.999, "perfect detection with many retries approaches 1"
+  - name: majority voting amplifies an edge and destroys a deficit
+    code: |
+      import numpy as np
+      up = [float(majority_vote_accuracy(0.65, k, trials=40000, seed=7)) for k in (1, 3, 9, 25)]
+      assert all(a < b + 0.01 for a, b in zip(up, up[1:])), f"p>1/2 should improve with k: {up}"
+      assert up[-1] > up[0] + 0.1, f"25 votes should clearly beat 1: {up}"
+      down = [float(majority_vote_accuracy(0.35, k, trials=40000, seed=8)) for k in (1, 9, 25)]
+      assert down[-1] < down[0] - 0.1, f"p<1/2 should get worse with k: {down}"
+      fair = float(majority_vote_accuracy(0.5, 9, trials=40000, seed=9))
+      assert abs(fair - 0.5) < 0.02, f"p=1/2 is a coin however many votes: {fair}"
+  - name: majority accuracy matches the binomial tail
+    code: |
+      import numpy as np
+      from math import comb
+      for p, k in ((0.7, 5), (0.6, 9), (0.8, 3)):
+          want = sum(comb(k, i) * p ** i * (1 - p) ** (k - i) for i in range(k // 2 + 1, k + 1))
+          got = float(majority_vote_accuracy(p, k, trials=60000, seed=11))
+          assert abs(got - want) < 0.015, f"p={p}, k={k}: got {got}, expected {want}"
