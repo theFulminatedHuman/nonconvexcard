@@ -14,8 +14,15 @@ name: Deploy nonconvexcard to GitHub Pages
 
 on:
   # Deploy whenever the app changes on the default branch.
+  #
+  # `master` was deleted and the default branch moved, so both the current
+  # default and `main` are listed: a rename to `main` then needs no edit here,
+  # and a trigger naming a branch that does not exist fails silently — the
+  # workflow simply never runs, which is how a deploy goes missing unnoticed.
   push:
-    branches: [master]
+    branches:
+      - claude/youthful-newton-232td9
+      - main
     paths:
       - 'lab/**'
       - '.github/workflows/deploy-lab.yml'
