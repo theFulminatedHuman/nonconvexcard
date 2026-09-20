@@ -43,7 +43,11 @@ deploy from GitHub Actions** (Settings → Pages → Source → GitHub Actions).
 "Deploy from a branch" source, GitHub builds the repository root with Jekyll and ignores the
 workflow's artifact entirely.
 
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
 ## History
 
 This repository previously held an [Academic Pages](https://github.com/academicpages/academicpages.github.io)
-personal site. That template has been removed; `LICENSE` is retained from it.
+personal site. That template and its licence have been removed; none of its code remains.
