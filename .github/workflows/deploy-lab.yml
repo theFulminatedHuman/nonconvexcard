@@ -81,7 +81,17 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.path }}
 
+      # `enablement: true` lets the workflow turn Pages on and point it at
+      # GitHub Actions itself. Without it the job fails with "Get Pages site
+      # failed … Not Found" whenever Pages is disabled or still set to the
+      # legacy "Deploy from a branch" source — which is what happened when the
+      # branch Pages was serving from was deleted. Under the branch source
+      # GitHub builds the repository root with Jekyll and ignores this
+      # workflow's artifact entirely, so this also prevents the wrong site
+      # being served.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
