@@ -16,19 +16,53 @@
 
 /* global loadPyodide */
 
-// Bump both together. If the CDN 404s, the UI reports the failure with this
-// version so the mismatch is obvious rather than silent.
 const PYODIDE_VERSION = '0.26.4';
-const PYODIDE_BASE = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+
+/*
+ * Sources are tried in order. Three of them, with genuinely different failure
+ * modes, because a single hard-coded URL makes the whole judge depend on one
+ * path being exactly right on one CDN:
+ *
+ *   1. Pyodide's own CDN layout on jsDelivr.
+ *   2. The same release as an npm package — a different path on the same CDN,
+ *      so it survives a wrong `/pyodide/vX/full/` path.
+ *   3. unpkg — a different CDN entirely, so it survives a jsDelivr outage.
+ *
+ * `importScripts` throws synchronously on a failed load, so a bad source is
+ * detected immediately and the next is tried. If all fail the reported error
+ * lists every URL attempted, which is what makes a wrong pin a one-line fix
+ * rather than a hunt.
+ */
+const PYODIDE_SOURCES = [
+  `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`,
+  `https://cdn.jsdelivr.net/npm/pyodide@${PYODIDE_VERSION}/`,
+  `https://unpkg.com/pyodide@${PYODIDE_VERSION}/`,
+];
 
 let pyodidePromise = null;
 
 function getPyodide() {
   if (!pyodidePromise) {
     pyodidePromise = (async () => {
-      importScripts(`${PYODIDE_BASE}pyodide.js`);
-      return loadPyodide({ indexURL: PYODIDE_BASE });
+      const failures = [];
+      for (const base of PYODIDE_SOURCES) {
+        try {
+          importScripts(`${base}pyodide.js`);
+          return await loadPyodide({ indexURL: base });
+        } catch (err) {
+          failures.push(`${base}pyodide.js — ${err}`);
+        }
+      }
+      throw new Error(
+        `none of the ${PYODIDE_SOURCES.length} sources for Pyodide ${PYODIDE_VERSION} could be loaded:\n` +
+          failures.join('\n'),
+      );
     })();
+    // A failed load must not be cached, or every later attempt reuses the
+    // rejection and the reader can never retry without a page reload.
+    pyodidePromise.catch(() => {
+      pyodidePromise = null;
+    });
   }
   return pyodidePromise;
 }
