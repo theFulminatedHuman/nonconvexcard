@@ -11,6 +11,7 @@ import { useCallback, useSyncExternalStore } from 'react';
  * export produces valid HTML and hydration does not mismatch.
  */
 type Listener = () => void;
+type Parse<T> = (raw: string | null) => T;
 
 const listeners = new Map<string, Set<Listener>>();
 const cache = new Map<string, string | null>();
@@ -42,6 +43,49 @@ export function writeRaw(key: string, value: string | null): void {
   emit(key);
 }
 
+/* ------------------------------------------------------- snapshot caching */
+
+/**
+ * Parsed snapshots, memoised on the raw string they came from.
+ *
+ * `useSyncExternalStore` compares successive snapshots with `Object.is` and
+ * re-renders whenever they differ. A `parse` that builds a fresh object each
+ * call therefore reports a change on *every* render, and React re-renders
+ * until it gives up with "Maximum update depth exceeded" — which unmounts the
+ * whole tree. Returning the identical reference while the stored string is
+ * unchanged is part of the hook's contract, not an optimisation.
+ *
+ * This bit: `parseState` returns the shared `EMPTY_STATE` constant for empty
+ * storage but a new object once anything is stored, so the site was stable
+ * until a reader's first completed item and crashed on every page after it.
+ *
+ * Keyed on the `parse` function first so that two stores sharing a storage key
+ * but parsing it differently cannot evict each other (which would recreate the
+ * loop). The outer map is weak: a `parse` closed over a component's props dies
+ * with the component.
+ */
+const snapshots = new WeakMap<Parse<never>, Map<string, { raw: string | null; value: unknown }>>();
+
+export function cachedParse<T>(key: string, parse: Parse<T>, raw: string | null): T {
+  const fn = parse as unknown as Parse<never>;
+  let byKey = snapshots.get(fn);
+  if (!byKey) {
+    byKey = new Map();
+    snapshots.set(fn, byKey);
+  }
+  const hit = byKey.get(key);
+  if (hit && hit.raw === raw) return hit.value as T;
+  const value = parse(raw);
+  byKey.set(key, { raw, value });
+  return value;
+}
+
+/** Cache slot for the pre-render value, kept apart from the live one so that
+ *  hydration cannot thrash the two against each other. */
+const serverSlot = (key: string) => `${key}\u0000server`;
+
+/* ---------------------------------------------------------- subscriptions */
+
 function subscribe(key: string, listener: Listener): () => void {
   let set = listeners.get(key);
   if (!set) {
@@ -71,22 +115,24 @@ function subscribe(key: string, listener: Listener): () => void {
  * Reads and writes a parsed value at `key`.
  *
  * `parse` must be total: it receives whatever is in storage (possibly garbage
- * written by an older version of the site) and must return a usable value.
+ * written by an older version of the site) and must return a usable value. It
+ * must also be referentially stable across renders — declare it at module
+ * scope or wrap it in `useCallback` — because it identifies the snapshot cache.
  */
 export function useLocalStore<T>(
   key: string,
-  parse: (raw: string | null) => T,
+  parse: Parse<T>,
   serialize: (value: T) => string,
 ): [T, (updater: T | ((prev: T) => T)) => void] {
   const value = useSyncExternalStore(
     useCallback((l: Listener) => subscribe(key, l), [key]),
-    useCallback(() => parse(readRaw(key)), [key, parse]),
-    useCallback(() => parse(null), [parse]),
+    useCallback(() => cachedParse(key, parse, readRaw(key)), [key, parse]),
+    useCallback(() => cachedParse(serverSlot(key), parse, null), [key, parse]),
   );
 
   const set = useCallback(
     (updater: T | ((prev: T) => T)) => {
-      const prev = parse(readRaw(key));
+      const prev = cachedParse(key, parse, readRaw(key));
       const next = typeof updater === 'function' ? (updater as (p: T) => T)(prev) : updater;
       writeRaw(key, serialize(next));
     },
@@ -96,11 +142,14 @@ export function useLocalStore<T>(
   return [value, set];
 }
 
+// Hoisted so that `useHasMounted` passes the same three functions on every
+// render; an inline `subscribe` makes React tear down and re-establish the
+// subscription after each commit.
+const noopSubscribe = () => () => {};
+const alwaysTrue = () => true;
+const alwaysFalse = () => false;
+
 /** True once the component has mounted on the client. */
 export function useHasMounted(): boolean {
-  return useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  );
+  return useSyncExternalStore(noopSubscribe, alwaysTrue, alwaysFalse);
 }
