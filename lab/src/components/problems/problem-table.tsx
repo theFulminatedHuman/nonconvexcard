@@ -84,17 +84,23 @@ export function ProblemTable({
                     {p.title}
                   </Link>
                   {p.runnable ? (
-                    <span
-                      className="ml-1.5 font-mono text-[10px] tracking-wide text-[var(--color-diff-foundation)] uppercase"
-                      title="Has tests you can run in the browser"
-                    >
-                      run
-                    </span>
+                    <>
+                      {' '}
+                      <span
+                        className="ml-1.5 font-mono text-[10px] tracking-wide text-[var(--color-diff-foundation)] uppercase"
+                        title="Has tests you can run in the browser"
+                      >
+                        run
+                      </span>
+                    </>
                   ) : null}
                   {p.abyss ? (
-                    <span className="ml-1.5 font-mono text-[10px] tracking-wide text-[var(--color-diff-olympiad)] uppercase">
-                      abyss
-                    </span>
+                    <>
+                      {' '}
+                      <span className="ml-1.5 font-mono text-[10px] tracking-wide text-[var(--color-diff-olympiad)] uppercase">
+                        abyss
+                      </span>
+                    </>
                   ) : null}
                   {showTeaser ? (
                     <span className="mt-0.5 block max-w-prose text-[0.78rem] leading-snug text-[var(--color-ink-faint)]">

@@ -30,9 +30,13 @@ export default function ProblemsPage() {
           <>
             {problems.length} problems across {byType.map((t) => `${t.count} ${PROBLEM_TYPE_LABEL[t.type].toLowerCase()}`).join(', ')}.
             Every problem has a complete worked solution, and most have a hint ladder you can climb
-            one rung at a time. {judgeCount()} of the coding problems run in your browser against
-            test cases — marked <strong className="font-normal text-[var(--color-diff-foundation)]">run</strong>{' '}
-            in the table. The hardest sit in{' '}
+            one rung at a time.{' '}
+            <Link href="/problems/?runnable=1" className="text-[var(--color-accent)] hover:underline">
+              {judgeCount()} come with a code editor
+            </Link>{' '}
+            and run in your browser against test cases — marked{' '}
+            <strong className="font-normal text-[var(--color-diff-foundation)]">run</strong> in the
+            table. The hardest sit in{' '}
             <Link href="/abyss" className="text-[var(--color-accent)] hover:underline">
               The Abyss
             </Link>

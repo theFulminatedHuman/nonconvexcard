@@ -67,6 +67,10 @@ export function ProblemBrowser({
       : [],
   );
   const [types, setTypes] = useState<ProblemType[]>([]);
+  // Only a minority of coding problems ship tests, and without this they are
+  // essentially unfindable: a reader looking for the editor has no way to ask
+  // for the problems that have one.
+  const [runnableOnly, setRunnableOnly] = useState(params.get('runnable') === '1');
   const [status, setStatus] = useState<Status>('all');
   const [sort, setSort] = useState<Sort>('difficulty');
   const [limit, setLimit] = useState(PAGE);
@@ -100,6 +104,7 @@ export function ProblemBrowser({
         return false;
       if (difficulties.length > 0 && !difficulties.includes(p.difficulty)) return false;
       if (types.length > 0 && !types.includes(p.type)) return false;
+      if (runnableOnly && !p.runnable) return false;
       if (mounted && status === 'todo' && solved.has(p.id)) return false;
       if (mounted && status === 'done' && !solved.has(p.id)) return false;
       if (tokens.length > 0) {
@@ -120,7 +125,7 @@ export function ProblemBrowser({
       );
     });
     return out;
-  }, [scoped, fields, difficulties, types, status, tokens, sort, solved, mounted]);
+  }, [scoped, fields, difficulties, types, runnableOnly, status, tokens, sort, solved, mounted]);
 
   const counts = useMemo(() => {
     const byDifficulty = new Map<Difficulty, number>();
@@ -131,11 +136,14 @@ export function ProblemBrowser({
       byType.set(p.type, (byType.get(p.type) ?? 0) + 1);
       byField.set(p.field, (byField.get(p.field) ?? 0) + 1);
     }
-    return { byDifficulty, byType, byField };
+    return { byDifficulty, byType, byField, runnable: scoped.filter((p) => p.runnable).length };
   }, [scoped]);
 
   const active =
-    fields.length + difficulties.length + types.length > 0 || status !== 'all' || query !== '';
+    fields.length + difficulties.length + types.length > 0 ||
+    runnableOnly ||
+    status !== 'all' ||
+    query !== '';
   const doneCount = mounted ? scoped.filter((p) => solved.has(p.id)).length : 0;
 
   return (
@@ -154,6 +162,21 @@ export function ProblemBrowser({
             className="w-full bg-transparent text-sm outline-none placeholder:text-[var(--color-ink-faint)]"
           />
         </label>
+
+        {counts.runnable > 0 ? (
+          <FilterGroup label="Code editor">
+            <FilterChip
+              active={runnableOnly}
+              count={counts.runnable}
+              onClick={() => {
+                setRunnableOnly((prev) => !prev);
+                setLimit(PAGE);
+              }}
+            >
+              Runnable in browser
+            </FilterChip>
+          </FilterGroup>
+        ) : null}
 
         <FilterGroup label="Status">
           {(['all', 'todo', 'done'] as Status[]).map((s) => (
@@ -230,6 +253,7 @@ export function ProblemBrowser({
               setFields([]);
               setDifficulties([]);
               setTypes([]);
+              setRunnableOnly(false);
               setStatus('all');
               setLimit(PAGE);
             }}
