@@ -1,0 +1,233 @@
+---
+title: Gateways, Authentication and Quota
+summary: What belongs in the gateway and what does not, how tenancy is resolved, and why quota and rate limiting are different mechanisms with different failure modes.
+field: ai-engineering
+level: 2
+order: 30
+prerequisites:
+  - ai-engineering/api-design-for-model-endpoints
+tags: [api gateway, authentication, multi-tenancy, quota, authorization, keys]
+estimated_time: 1h
+claims:
+  - id: gateway-responsibilities
+    kind: definition
+    title: What a gateway owns
+    summary: Transport, identity, schema, routing and metering — and explicitly not business logic or model selection policy.
+    proved: false
+    tags: [gateway]
+  - id: quota-vs-rate
+    kind: definition
+    title: Quota and rate limit are different mechanisms
+    summary: A rate limit protects the service from a moment of excess; a quota protects a commercial boundary over a billing period, and they fail in opposite directions.
+    proved: false
+    tags: [quota, rate limiting]
+  - id: tenant-resolution
+    kind: definition
+    title: The identity chain
+    summary: A credential resolves to a principal, a principal to a tenant, and a tenant to a policy — and each arrow can fail in a way the caller must be able to distinguish.
+    proved: false
+    tags: [authentication, multi-tenancy]
+  - id: fail-open-closed
+    kind: heuristic
+    title: Choose a failure direction per check, in advance
+    summary: Authentication fails closed and metering fails open, because the cost of the wrong answer is asymmetric in opposite directions.
+    proved: false
+    tags: [failure modes, availability]
+references:
+  - key: rfc6750
+    title: 'RFC 6750: The OAuth 2.0 Authorization Framework — Bearer Token Usage'
+    authors: M. Jones, D. Hardt
+    year: 2012
+    kind: lecture-notes
+    url: https://www.rfc-editor.org/rfc/rfc6750.html
+    note: The bearer-token conventions the credential formats below follow.
+  - key: rfc8725
+    title: 'RFC 8725: JSON Web Token Best Current Practices'
+    authors: Y. Sheffer, D. Hardt, M. Jones
+    year: 2020
+    kind: lecture-notes
+    url: https://www.rfc-editor.org/rfc/rfc8725.html
+    note: Source of the algorithm-confusion and validation pitfalls noted here.
+---
+
+<Intuition>
+A gateway is the one component every request passes through, which makes it the obvious place to
+put anything that applies to every request — and that is exactly why gateways rot. Each individual
+addition is defensible; the accumulated result is a component nobody can deploy without fear, on
+the critical path of everything.
+
+The discipline is a boundary you can state in a sentence: *the gateway decides who you are and
+whether your request is well formed. It does not decide what your request means.*
+</Intuition>
+
+## The boundary
+
+<Definition id="gateway-responsibilities" title="What a gateway owns">
+**In scope**
+
+- TLS termination, HTTP/2 or HTTP/3, compression, connection limits
+- Credential verification and principal resolution
+- Request schema validation and size limits
+- Coarse routing — which service, which API version
+- Metering: emitting the usage records the limiter and billing consume
+- Cross-cutting headers: request id, deadline, trace context
+
+**Out of scope**
+
+- Model selection, prompt construction, retrieval — these are product decisions
+- Anything requiring a database read beyond the identity cache
+- Response transformation beyond framing
+- Per-feature business rules
+</Definition>
+
+<Warning title="The two-hour outage that starts here">
+Gateways accrete. The symptom is a config file with per-customer special cases, and the outcome is
+that a change for one tenant can break every tenant. Two structural defences work: keep tenant
+policy as *data* the gateway reads, never as code it runs; and make the gateway's own deploy
+independent of the services behind it, so a model rollout never requires a gateway push.
+</Warning>
+
+## Identity
+
+<Definition id="tenant-resolution" title="The identity chain">
+```
+credential  ──►  principal  ──►  tenant  ──►  policy
+(API key,       (user or       (billing    (quota, limits,
+ JWT, mTLS)      service acct)  account)    model allowlist,
+                                            data residency)
+```
+
+Each arrow fails differently, and the caller must be able to tell them apart:
+
+| Failure | Status | Meaning |
+|---|---|---|
+| credential absent or malformed | `401` | you have not identified yourself |
+| credential valid, expired or revoked | `401` | identify yourself again |
+| principal resolved, lacks permission | `403` | you are known and not allowed |
+| tenant resolved, model not in allowlist | `403` | allowed here, not for that |
+| tenant resolved, quota exhausted | `429` | allowed, but not right now |
+</Definition>
+
+<KeyIdea>
+Collapsing `401`, `403` and `429` into one "denied" response is a common simplification and it is
+expensive: the three call for completely different client behaviour — re-authenticate, stop, and
+back off respectively. A client that cannot distinguish them will retry all three, which turns a
+permission bug into a load problem.
+</KeyIdea>
+
+### Credential formats, and what each costs
+
+```
+Authorization: Bearer sk-ant-api03-...        opaque key   → requires a lookup
+Authorization: Bearer eyJhbGciOi...           signed JWT   → verifiable locally
+                                              mTLS         → verified at the TLS layer
+```
+
+An **opaque key** must be looked up on every request, so it needs a cache with a staleness bound —
+and that bound is your revocation latency. A **signed token** verifies locally with no lookup, so
+revocation before expiry needs a separate denylist, and short expiries with refresh are the usual
+answer. There is no option with instant revocation and no lookup; pick which property you need.
+
+<Warning title="JWT validation is where the bugs are">
+Three specific mistakes, all of which have produced real breaches: accepting the `alg` header from
+the token (including `none`, or `HS256` verified against an RSA public key treated as an HMAC
+secret); not validating `aud` and `iss`, so a token minted for another service is accepted; and not
+checking `exp` with clock skew tolerance in the right direction. Pin the expected algorithm in the
+verifier, do not read it from the token.
+</Warning>
+
+## Quota is not rate limiting
+
+<Definition id="quota-vs-rate" title="Quota and rate limit are different mechanisms">
+| | **Rate limit** | **Quota** |
+|---|---|---|
+| Protects | the service, from a moment of excess | a commercial boundary, over a period |
+| Horizon | seconds | a day, a month, a billing cycle |
+| State | small counters, may be approximate | an accounting ledger, must be exact |
+| On breach | `429` with `Retry-After`, retry later | `429` that retrying will not fix |
+| Storage | in-memory or Redis, lossy is acceptable | durable, auditable, reconcilable |
+| If it fails | fail **open** — serve the request | fail **closed** for spend, open for reads |
+</Definition>
+
+<KeyIdea>
+They fail in opposite directions and that is the whole reason to separate them. A rate limiter that
+is unavailable should let traffic through — the service can shed load by other means, and refusing
+everything converts a limiter outage into a total outage. A quota system that is unavailable must
+not let a customer spend without limit, because that loss is unrecoverable.
+
+Building one mechanism for both forces a single failure direction, and whichever you pick is wrong
+half the time.
+</KeyIdea>
+
+## Choosing failure directions deliberately
+
+<Claim kind="heuristic" id="fail-open-closed" title="Choose a failure direction per check, in advance">
+For each check on the request path, decide what happens when the check itself is unavailable, and
+write it down next to the check:
+
+| Check | On failure | Why |
+|---|---|---|
+| authentication | **closed** | serving unauthenticated traffic is a breach |
+| authorization | **closed** | same |
+| rate limit | **open**, with a conservative local fallback | a limiter outage must not be a service outage |
+| quota / spend | **closed** for paid actions | unbounded spend is unrecoverable |
+| semantic cache | **open** (treat as a miss) | the model is the source of truth anyway |
+| guardrail / safety filter | **closed** | the check exists precisely for the bad case |
+| telemetry | **open**, buffer and drop | never fail a request to record it |
+</Claim>
+
+<Assumptions>
+"Fail open" for the rate limiter assumes a **local** fallback is in place — a per-instance limiter
+with a conservative bound — not that limiting simply stops. Without the fallback, a limiter outage
+during a traffic spike removes the only thing holding the spike back at the moment it matters most.
+</Assumptions>
+
+## A worked gateway path
+
+```python
+async def gateway(req: Request) -> Response:
+    trace = tracing.start(req.headers.get("x-request-id") or new_id())
+
+    # identity: fails closed, with a bounded-staleness cache
+    try:
+        principal = await identity.verify(req.credential)   # local JWT verify, or cached lookup
+    except IdentityUnavailable:
+        raise ServiceUnavailable("auth unavailable")        # closed: no principal, no service
+    tenant = principal.tenant
+    policy = policies.snapshot(tenant)        # control-plane snapshot, never a live read
+
+    body = validate(req.body, schema=ChatRequest, max_bytes=policy.max_request_bytes)
+    if body.model not in policy.allowed_models:
+        raise Forbidden(f"model {body.model} not enabled for this account")
+
+    # quota: fails closed for spend
+    if not await quota.has_headroom(tenant, estimate_cost(body)):
+        raise TooManyRequests("monthly quota exhausted", retryable=False)
+
+    # rate limit: fails open onto a local limiter
+    try:
+        lease = await limiter.acquire(tenant, cost=estimate_tokens(body))
+    except LimiterUnavailable:
+        lease = local_limiter.acquire(tenant)               # conservative, per-instance
+    if lease is None:
+        raise TooManyRequests(retry_after=limiter.retry_after(tenant), retryable=True)
+
+    req.deadline = min(req.deadline, now() + policy.max_duration)
+    return await upstream.handle(req, tenant=tenant, trace=trace, lease=lease)
+```
+
+<Note title="Estimating cost before you know it">
+`estimate_tokens(body)` is doing something load-bearing and imperfect: the input tokens are
+countable, but the output length is unknown until generation ends. Limiters therefore **reserve**
+an estimate and **reconcile** on completion, which is the subject of
+<TopicRef id="ai-engineering/rate-limiting-algorithms" />. A limiter that meters only requests
+cannot distinguish a 20-token reply from a 4000-token one, and for an LLM service that is a factor
+of two hundred in the thing you are trying to limit.
+</Note>
+
+<NotSaid>
+Nothing here covers the data-residency arrow in the identity chain. A tenant whose policy requires
+that requests be processed in a given jurisdiction turns routing into a correctness constraint
+rather than a performance one, and it has to be enforced somewhere no fallback path can bypass —
+which usually means above the gateway, at the DNS or edge layer, rather than inside it.
+</NotSaid>

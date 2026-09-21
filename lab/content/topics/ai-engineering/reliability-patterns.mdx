@@ -1,0 +1,239 @@
+---
+title: Reliability Patterns
+summary: 'Timeouts, retries, jitter, circuit breakers, bulkheads and graceful degradation — and the arithmetic showing why an unbudgeted retry policy amplifies an outage.'
+field: ai-engineering
+level: 2
+order: 140
+prerequisites:
+  - ai-engineering/api-design-for-model-endpoints
+  - ai-systems/availability-and-redundancy
+tags: [retries, jitter, circuit breaker, bulkhead, degradation, load shedding, backoff]
+estimated_time: 3h
+claims:
+  - id: retry-amplification
+    kind: proposition
+    title: Retries multiply load by 1/(1-f) at failure rate f
+    summary: With unbounded retries and an independent failure probability f, each logical request generates 1/(1-f) attempts, which diverges as the service degrades.
+    proved: true
+    tags: [retry storm, amplification]
+  - id: retry-budget
+    kind: heuristic
+    title: Budget retries as a fraction of traffic
+    summary: Capping retries at a few percent of successful requests bounds amplification regardless of the failure rate.
+    proved: false
+    tags: [retry budget]
+  - id: jitter
+    kind: proposition
+    title: Synchronised backoff reproduces the spike it was avoiding
+    summary: Without randomisation, clients that failed together retry together, so the retry traffic arrives as a spike rather than spread over the backoff interval.
+    proved: true
+    tags: [jitter, synchronisation]
+  - id: circuit-breaker
+    kind: definition
+    title: The circuit breaker
+    summary: A three-state machine that stops sending traffic to a failing dependency and probes it periodically rather than continuously.
+    proved: false
+    tags: [circuit breaker]
+  - id: bulkhead
+    kind: definition
+    title: Bulkheads
+    summary: Partitioning a shared resource per dependency or per tenant so that exhaustion by one cannot starve the others.
+    proved: false
+    tags: [isolation, bulkhead]
+references:
+  - key: google-sre-book
+    title: 'Site Reliability Engineering: How Google Runs Production Systems'
+    authors: B. Beyer, C. Jones, J. Petoff, N. R. Murphy
+    year: 2016
+    kind: book
+    url: https://sre.google/sre-book/table-of-contents/
+    note: Retry budgets, load shedding and the cascading-failure analysis referenced here.
+  - key: aws-jitter
+    title: Exponential Backoff and Jitter
+    authors: M. Brooker
+    year: 2015
+    kind: lecture-notes
+    url: https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/
+    note: The measurement showing full jitter outperforms plain exponential backoff.
+---
+
+<Intuition>
+Every reliability mechanism on this page is a way of spending a small amount of capacity to avoid
+losing all of it. The uncomfortable part is that the naive version of each one — retry on failure,
+back off exponentially, time out after thirty seconds — makes things *worse* precisely when the
+system is already struggling, because every client does the same thing at the same moment.
+
+The pattern to internalise: a mechanism that behaves independently per client is a mechanism that
+synchronises across clients under load.
+</Intuition>
+
+## Retries
+
+<Claim kind="proposition" id="retry-amplification" title="Retries multiply load by 1/(1-f) at failure rate f">
+Suppose each attempt fails independently with probability $f$ and is retried until it succeeds.
+The expected number of attempts per logical request is
+$$
+\E[\text{attempts}] \;=\; \sum_{k\ge1} k\,(1-f)f^{\,k-1} \;=\; \frac{1}{1-f} ,
+$$
+so the load offered to the service is $\lambda/(1-f)$ rather than $\lambda$. At $f = 0.5$ that is
+$2\times$; at $f = 0.9$ it is $10\times$.
+</Claim>
+
+<Proof>
+The attempt count is geometric with success probability $1-f$, whose mean is $1/(1-f)$. Each
+logical request therefore contributes that many attempts, and by linearity the aggregate offered
+rate is $\lambda/(1-f)$.
+</Proof>
+
+<Warning title="The failure rate depends on the load, which depends on the retries">
+The proposition treats $f$ as fixed, and it is not: more load causes more failures, which causes
+more retries. Writing $f$ as an increasing function of offered load, the fixed point
+$\lambda' = \lambda/(1-f(\lambda'))$ can fail to exist — the system has no stable operating point
+and collapses. This is the retry storm, and it is why a service that briefly returns 10% errors can
+end up returning 100%: the retries alone exceed capacity.
+</Warning>
+
+<Claim kind="heuristic" id="retry-budget" title="Budget retries as a fraction of traffic">
+Cap retries globally rather than per request. Maintain a rolling ratio of retries to successful
+requests and refuse to retry beyond it:
+
+```python
+class RetryBudget:
+    def __init__(self, ratio=0.1, window=60):
+        self.ratio, self.successes, self.retries = ratio, Rolling(window), Rolling(window)
+
+    def allow(self) -> bool:
+        if self.retries.sum() >= self.ratio * max(self.successes.sum(), 1):
+            metrics.incr("retry.budget_exhausted")
+            return False                     # the dependency is broken; retrying will not fix it
+        self.retries.add(1)
+        return True
+```
+
+With ratio $r$, amplification is bounded by $1 + r$ regardless of $f$ — a 10% budget means load
+never exceeds $1.1\lambda$, where the unbounded policy would have reached $10\lambda$.
+</Claim>
+
+<Assumptions>
+A budget converts some retryable failures into user-visible errors, which is the point: when 90% of
+requests are failing, the marginal retry has a 10% chance of succeeding and a certainty of adding
+load. The budget encodes the judgement that at some failure rate the correct action is to stop and
+report, not to try harder.
+</Assumptions>
+
+## Jitter
+
+<Claim kind="proposition" id="jitter" title="Synchronised backoff reproduces the spike it was avoiding">
+Suppose $n$ clients fail simultaneously — a dependency blip at time $0$ — and each retries after a
+deterministic backoff $b$. All $n$ retries arrive in the instant $b$, an offered rate of $n/\eps$
+over any window of width $\eps$. With **full jitter**, each client waits $U \sim \mathrm{Unif}(0,b)$
+instead, and the expected number arriving in any window of width $w \le b$ is $nw/b$ — spread
+uniformly, with no spike.
+</Claim>
+
+<Proof>
+Deterministic backoff maps every client's retry to the same instant $b$, giving a point mass of $n$
+there. With $U$ uniform on $[0,b]$, the probability a given client retries in a window of width $w$
+is $w/b$, so the expected count is $nw/b$ by linearity, uniform in the window's position.
+</Proof>
+
+```python
+# full jitter: pick uniformly below the exponential ceiling, not at it
+def backoff(attempt, base=0.1, cap=20.0):
+    ceiling = min(cap, base * 2 ** attempt)
+    return random.uniform(0, ceiling)
+```
+
+<KeyIdea>
+Exponential backoff without jitter solves the wrong half of the problem. It spreads one client's
+retries over time; it does nothing about many clients being synchronised with each other. Since
+what threatens the service is the aggregate, the randomisation is the part that matters — and
+"full jitter", sampling uniformly below the ceiling rather than jittering around it, is what
+measurement supports.
+</KeyIdea>
+
+## Circuit breakers
+
+<Definition id="circuit-breaker" title="The circuit breaker">
+```
+            failures exceed threshold
+   ┌────────┐ ──────────────────────► ┌────────┐
+   │ CLOSED │                         │  OPEN  │  fail fast, no calls
+   │ normal │ ◄────────────────────── └────────┘  
+   └────────┘      probe succeeded        │ after a cooldown
+        ▲                                 ▼
+        │                          ┌────────────┐
+        └──────────────────────────│ HALF-OPEN  │ allow a few probes
+                probe succeeded    └────────────┘
+                                          │ probe failed
+                                          └──► back to OPEN
+```
+
+**Closed** — calls pass; failures are counted over a rolling window. **Open** — calls fail
+immediately without touching the dependency, which both protects the caller's own resources and
+lets the dependency recover. **Half-open** — after a cooldown, a limited number of probes are
+allowed; success closes the circuit, failure reopens it.
+</Definition>
+
+<Warning title="Half-open must be rate-limited or it is not half-open">
+If every request is allowed through in half-open, a recovering dependency receives the entire
+backlog the instant the cooldown expires, fails again, and the circuit reopens — a cycle that can
+persist indefinitely. Half-open must admit a small fixed number of concurrent probes, and the
+recovery should ramp rather than switch.
+</Warning>
+
+## Bulkheads
+
+<Definition id="bulkhead" title="Bulkheads">
+Partition every shared resource so that exhaustion in one place cannot starve another. The usual
+shared resources on an AI request path are connection pools, thread pools, GPU concurrency slots
+and — least obviously — the retry budget.
+
+```python
+POOLS = {
+    "model":     Semaphore(200),      # GPU-bound work
+    "retrieval": Semaphore(50),
+    "tools":     Semaphore(100),      # third-party, least trustworthy
+}
+```
+
+Without separation, a slow third-party tool holds every worker, and requests that never touch that
+tool fail too. With it, tool calls queue and time out while the rest of the service is unaffected.
+</Definition>
+
+<KeyIdea>
+Bulkheads are the implementation of the pooling trade from
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />, chosen deliberately in the other
+direction. Pooling minimises delay; partitioning minimises blast radius. You pay queueing delay to
+buy isolation, and the exchange rate is the pooling result — which tells you the partitioning is
+cheap when each partition still has several servers and expensive when partitions are small.
+</KeyIdea>
+
+## Degrading rather than failing
+
+Under overload the goal is not to serve everything, it is to serve *something* to as many people as
+possible. The ladder, in the order it should be descended:
+
+| Step | Action | Lost |
+|---|---|---|
+| 1 | serve from cache more aggressively (raise TTL, lower the semantic threshold) | freshness, some precision |
+| 2 | reduce `max_tokens`, disable optional tool calls | answer completeness |
+| 3 | route to a smaller, faster model | answer quality |
+| 4 | drop retrieval, answer from the model alone | grounding |
+| 5 | shed by priority — free tier first, paid last | availability for some |
+| 6 | queue with a visible wait rather than failing | latency |
+
+<Warning title="Degradation must be tested, and shedding must be by priority">
+A degradation path exercised for the first time during an incident is a code path nobody has run.
+Trigger each level deliberately in a game day. And load shedding must have an explicit priority
+order — health checks and paying customers before free traffic — or the shedding is random, which
+means it takes out the requests you most needed to serve.
+</Warning>
+
+<NotSaid>
+Every mechanism here is client-side or single-service. None of it addresses the correlated failure
+that <TopicRef id="ai-systems/availability-and-redundancy" /> shows puts a floor under redundancy:
+a circuit breaker protects you from a dependency, not from a bad configuration pushed to every
+replica of your own service simultaneously. That is a deployment problem, and it is covered in
+<TopicRef id="ai-engineering/deployment-and-rollout" />.
+</NotSaid>

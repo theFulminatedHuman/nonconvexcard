@@ -1,0 +1,233 @@
+---
+title: Tool Loops in Production
+summary: 'The agent loop as a piece of software: schema design, validation, parallelism, truncation, side effects and the termination conditions that stop it running forever.'
+field: ai-engineering
+level: 3
+order: 70
+prerequisites:
+  - ai-engineering/model-context-protocol
+  - agents/error-compounding-in-trajectories
+tags: [agents, tool calling, schemas, idempotency, retries, termination, context window]
+estimated_time: 3h
+claims:
+  - id: agent-loop
+    kind: definition
+    title: The loop
+    summary: Append the user turn, call the model, execute any requested tools, append their results, repeat until the model stops asking or a budget is exhausted.
+    proved: false
+    tags: [loop]
+  - id: termination
+    kind: definition
+    title: Four independent stopping conditions
+    summary: A production loop terminates on model completion, step budget, token budget or wall-clock deadline, and all four must exist.
+    proved: false
+    tags: [termination, budgets]
+  - id: context-growth
+    kind: proposition
+    title: Tool results grow the context quadratically in cost
+    summary: Because every step resends the whole transcript, appending r tokens per step costs O(r n squared) prefill tokens over n steps.
+    proved: true
+    tags: [context window, cost]
+  - id: side-effect-safety
+    kind: heuristic
+    title: Make tools idempotent or make them confirmable
+    summary: A retried or replayed tool call must either be safe to run twice or require an explicit confirmation step that the model cannot forge.
+    proved: false
+    tags: [idempotency, side effects]
+  - id: tool-count
+    kind: empirical
+    title: Selection accuracy degrades with tool count
+    summary: Reported evaluations find tool-selection accuracy falls as the number of simultaneously exposed tools grows, motivating retrieval over the tool list itself.
+    proved: false
+    tags: [tool selection, scaling]
+references:
+  - key: mcp-spec
+    title: Model Context Protocol — Specification
+    authors: Anthropic
+    year: 2024
+    kind: lecture-notes
+    url: https://modelcontextprotocol.io/specification
+    note: Tool schema and result shapes assumed throughout.
+  - key: yao-react
+    title: 'ReAct: Synergizing Reasoning and Acting in Language Models'
+    authors: S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, Y. Cao
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2210.03629
+    note: The interleaved reason-act loop this page treats as the implementation baseline.
+---
+
+<Intuition>
+An agent loop is five lines of pseudocode and about two thousand lines of production software. The
+five lines are: ask the model, run what it asks for, give it the results, repeat. Everything else
+is the answer to a question the five lines do not raise — what if the tool takes ninety seconds,
+what if it returns four megabytes, what if the model asks for the same thing eleven times, what if
+the process dies between the call and the result.
+
+None of that is about the model. It is ordinary distributed-systems work on an unusual control
+flow: the program counter is a language model, and it is not obliged to terminate.
+</Intuition>
+
+## The loop
+
+<Definition id="agent-loop" title="The loop">
+```python
+async def run(conversation, tools, budget: Budget) -> Result:
+    while True:
+        budget.check()                                  # raises on any exhausted dimension
+        reply = await model.generate(conversation, tools=tools, deadline=budget.deadline)
+        conversation.append(reply)
+
+        calls = reply.tool_calls
+        if not calls:
+            return Result(reply, budget.spent())        # the model is done
+
+        results = await asyncio.gather(*[
+            execute(c, deadline=budget.remaining()) for c in calls
+        ], return_exceptions=True)
+
+        for call, result in zip(calls, results):
+            conversation.append(tool_result(call.id, render(result)))
+        budget.charge(reply.usage, results)
+```
+
+Three properties are load-bearing and easy to lose. Tool results are appended **in the same order
+as the calls and tagged with the call id**, or the model cannot tell which result belongs to which
+request. Failures are appended as results with an error flag rather than raised, so the model can
+react to them. And the budget is checked at the top of every iteration, not only at entry.
+</Definition>
+
+## Making it stop
+
+<Definition id="termination" title="Four independent stopping conditions">
+| Condition | Guards against | Typical value |
+|---|---|---|
+| model returns no tool calls | the normal case | — |
+| **step budget** | a loop that alternates between two tools forever | 10–50 |
+| **token budget** | a loop that makes progress but costs unboundedly | a hard ceiling |
+| **wall-clock deadline** | a slow tool chain that will outlive the caller | inherited from the request |
+
+All four are required and none subsumes another: a loop can be cheap and endless, expensive in few
+steps, or fast and unbounded. Exhausting any of them should return a *partial* result with a reason
+the caller can see, not an exception that discards the work already done.
+</Definition>
+
+<Warning title="Repetition is the common non-termination mode">
+The characteristic failure is not an infinite variety of actions but the same call repeating — the
+model asks for a file, the tool errors, the model asks again identically. Detect it directly:
+hash `(tool name, arguments)` and if the same hash appears three times, stop calling the tool and
+inject a message saying so. Left alone it will consume the entire step budget doing nothing.
+</Warning>
+
+## Context growth
+
+<Claim kind="proposition" id="context-growth" title="Tool results grow the context quadratically in cost">
+Each step resends the entire transcript. If step $i$ appends $r$ tokens of tool output and the
+conversation starts at $c_0$ tokens, the prefill cost over $n$ steps is
+$$
+\sum_{i=1}^{n}\bigl(c_0 + (i-1)r\bigr) \;=\; n c_0 + r\,\frac{n(n-1)}{2} \;=\; O(r n^2) .
+$$
+</Claim>
+
+<Proof>
+The transcript before step $i$ has $c_0 + (i-1)r$ tokens, all of which are prefilled. Summing the
+arithmetic series gives the display.
+</Proof>
+
+<KeyIdea>
+Twenty steps each returning a 5,000-token tool result is $5000 \times 190 = 950{,}000$ prefill
+tokens of *accumulated re-reading* on top of the conversation itself. Prefix caching
+(<TopicRef id="ai-systems/caching" />) removes most of it — the transcript is an exact prefix that
+only grows — which is why prefix caching is not optional for agents. Where it is unavailable, the
+quadratic is the dominant cost of the whole system.
+</KeyIdea>
+
+### Truncation that does not destroy the trace
+
+Large results must be reduced before they enter the transcript, and *how* matters:
+
+```python
+def render(result, limit=2000) -> str:
+    if result.tokens <= limit:
+        return result.text
+    # Keep the head and the tail: schemas and headers live at the top, errors and
+    # totals at the bottom. Cutting only the tail loses exactly the useful half.
+    head, tail = result.head(limit // 2), result.tail(limit // 2 - 40)
+    return (f"{head}\n\n[... {result.tokens - limit} tokens elided; "
+            f"full output at {result.artifact_uri} ...]\n\n{tail}")
+```
+
+Storing the full output somewhere addressable and giving the model a handle preserves the option of
+fetching more, which naive truncation removes.
+
+## Side effects
+
+<Claim kind="heuristic" id="side-effect-safety" title="Make tools idempotent or make them confirmable">
+Tool calls get retried — by the loop on timeout, by the caller on a dropped connection, by the
+model because it did not see the result. Every tool must therefore be in one of two categories:
+
+**Idempotent** — running twice is the same as running once. Achieved the same way as in
+<TopicRef id="ai-engineering/api-design-for-model-endpoints" />: the loop generates a key per
+logical call and passes it through.
+
+```python
+await execute(call, idempotency_key=f"{run_id}:{step}:{hash(call.arguments)}")
+```
+
+**Confirmable** — the tool is split into a proposal and a commit, with the commit requiring a token
+the model cannot produce:
+
+```
+create_transfer(...)  → {"status": "pending", "confirm_token": "ct_9f2b...",
+                         "summary": "Transfer £4,200 to account ****8891"}
+                        ← host shows the summary to the user, who approves
+confirm(ct_9f2b...)   → executed once, token consumed
+```
+
+A tool that is neither is a latent duplicate-side-effect bug, and it will fire during an incident
+rather than during testing.
+</Claim>
+
+## How many tools
+
+<Claim kind="empirical" id="tool-count" title="Selection accuracy degrades with tool count">
+Published tool-use evaluations report that a model's ability to select the right tool falls as the
+number of simultaneously exposed tools grows, with overlapping or similarly-described tools
+degrading it fastest.
+</Claim>
+
+<Assumptions>
+This is an empirical observation about current models, not a property of the protocol, and the
+numbers vary by model and by how distinct the tool descriptions are. It is stated as an observation
+because that is what it is; the engineering response below does not depend on the exact figures.
+</Assumptions>
+
+The response is to treat the tool list as a retrieval problem rather than a fixed manifest:
+
+1. **Filter by context** — expose only tools relevant to the current task or the user's
+   permissions. A read-only user does not need the write tools in their context at all.
+2. **Group behind a router** — one `database` tool with an operation argument rather than fifteen
+   flat tools, when the fifteen share a domain.
+3. **Retrieve tools by embedding** — for large catalogues, select the top-$k$ tools by similarity
+   to the task before the model sees them, which is the same mechanism as document retrieval
+   pointed at the manifest.
+4. **Write descriptions that discriminate.** Most selection errors are between two tools whose
+   descriptions do not say how they differ. Say it explicitly: "use this for X, not for Y — for Y
+   use `other_tool`."
+
+<Warning title="Parallel tool calls inherit the fan-out tail">
+Executing $n$ tool calls concurrently means the step finishes when the slowest returns, which by
+<TopicRef id="ai-systems/tail-latency-and-fan-out" /> consumes the $p^{1/n}$ quantile of each tool
+rather than the $p$ quantile. Five parallel calls against a tool with a 1% slow rate produce a slow
+step 5% of the time. Give each call its own deadline, and return partial results — with the failed
+ones marked — rather than letting one straggler hold the step.
+</Warning>
+
+<NotSaid>
+This page covers one loop with one model. Multi-agent systems, where one loop spawns others, add a
+supervision problem this does not address: budgets must be hierarchical or a child loop can exhaust
+the parent's, failures must propagate with enough context to be actionable, and the compounding
+analysis in <TopicRef id="agents/error-compounding-in-trajectories" /> applies at each level, so
+per-step reliability has to be raised to the power of the *product* of the horizons rather than to
+either alone.
+</NotSaid>

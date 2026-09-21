@@ -138,6 +138,15 @@ const STAGES: StageSpec[] = [
     fields: ['ai-systems'],
   },
   {
+    id: 'ai-engineering',
+    title: 'AI systems engineering',
+    blurb:
+      'The software around the model. Everything a request passes through before and after the forward pass: the gateway that authenticates and meters it, the limiter that decides whether it runs, the router that picks a GPU, the cache that may answer it outright, the tools it calls, and the pipelines, evaluations and monitors that keep the whole thing honest over time.',
+    outcome:
+      'design and build the service around a model \u2014 its API, its limits, its routing, its caches, its data pipeline and its monitoring \u2014 rather than only the model call itself.',
+    fields: ['ai-engineering'],
+  },
+  {
     id: 'agents',
     title: 'Agentic systems',
     blurb:

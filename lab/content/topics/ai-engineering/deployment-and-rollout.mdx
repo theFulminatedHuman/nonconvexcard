@@ -1,0 +1,138 @@
+---
+title: Deployment and Rollout
+summary: 'Shipping a model change: the registry, shadow traffic, canaries, and why a config change deserves more caution than a code change.'
+field: ai-engineering
+level: 2
+order: 180
+prerequisites:
+  - ai-engineering/evaluation-harnesses
+  - ai-systems/rollout-and-experimentation
+tags: [deployment, canary, shadow traffic, model registry, rollback, blue-green, config]
+estimated_time: 1h
+claims:
+  - id: what-is-a-deploy
+    kind: definition
+    title: Six things whose change alters behaviour
+    summary: Model version, system prompt, tool schemas, retrieval index, sampling parameters and guardrail configuration are all deployments.
+    proved: false
+    tags: [configuration]
+  - id: rollout-ladder
+    kind: definition
+    title: The rollout ladder
+    summary: Offline eval, then shadow, then canary, then progressive rollout, each answering a question the previous one could not.
+    proved: false
+    tags: [rollout]
+  - id: rollback-first
+    kind: heuristic
+    title: Build the rollback before the rollout
+    summary: A change is only safe to ship if reverting it is a single fast action that does not depend on the thing being reverted.
+    proved: false
+    tags: [rollback]
+  - id: config-blast-radius
+    kind: proposition
+    title: A config change reaches every replica at once
+    summary: Configuration distributed by a control plane propagates without a rolling deploy, so it is a beta-equal-one correlated failure in the redundancy model.
+    proved: true
+    tags: [blast radius, correlated failure]
+references:
+  - key: google-sre-book
+    title: 'Site Reliability Engineering: How Google Runs Production Systems'
+    authors: B. Beyer, C. Jones, J. Petoff, N. R. Murphy
+    year: 2016
+    kind: book
+    url: https://sre.google/sre-book/table-of-contents/
+    note: Progressive rollout and the canarying practice followed here.
+---
+
+<Intuition>
+The dangerous deployments in an AI system usually contain no code. A word changed in a system
+prompt, a new document in the index, a temperature nudged from 0.2 to 0.7 — each ships instantly,
+to every replica, with no review and no rollback handle, and each can change behaviour more than a
+month of code changes would.
+</Intuition>
+
+<Definition id="what-is-a-deploy" title="Six things whose change alters behaviour">
+| Artefact | Usual rigour | Deserved rigour |
+|---|---|---|
+| service code | review, CI, canary | ✓ |
+| **model version** | often an alias | pin, eval, canary |
+| **system prompt** | edited in a config file | review, eval, canary |
+| **tool schemas** | shipped with code | ✓, plus a compatibility check |
+| **retrieval index** | rebuilt on a schedule | versioned, eval, atomic swap |
+| **sampling parameters** | a dashboard field | reviewed like code |
+| **guardrail config** | a dashboard field | reviewed like code |
+
+Everything in the table should go through the same pipeline and appear in the same change log.
+The failure that takes longest to diagnose is always the one that did not look like a deployment.
+</Definition>
+
+<Definition id="rollout-ladder" title="The rollout ladder">
+| Stage | Traffic | Answers | Catches |
+|---|---|---|---|
+| **offline eval** | none | is it better on what we can measure? | regressions you anticipated |
+| **shadow** | 100%, responses discarded | does it crash, and how fast is it? | latency, errors, cost — at full scale, zero user risk |
+| **canary** | 1–5%, real responses | do users react differently? | quality regressions your evals missed |
+| **progressive** | 5 → 25 → 50 → 100% | does it hold at scale? | capacity and long-tail effects |
+
+Shadow is the step most often skipped and the cheapest insurance: it exercises the new path against
+real production traffic distribution with no possibility of user harm. It cannot tell you anything
+about quality, because nobody sees the output — that is what the canary is for.
+</Definition>
+
+<Claim kind="proposition" id="config-blast-radius" title="A config change reaches every replica at once">
+A rolling code deploy updates replicas in batches, so a bad build is exposed to a fraction of
+traffic before it is halted. Configuration distributed by a control plane is fetched by all
+replicas within one refresh interval. In the beta-factor model of
+<TopicRef id="ai-systems/availability-and-redundancy" /> this is $\beta = 1$: every replica fails
+together, and the achievable unavailability floor $\beta U$ equals the unavailability of a single
+replica. Redundancy provides no protection at all against it.
+</Claim>
+
+<Proof>
+Under the beta-factor model, $U_n = (1-\beta)U^n + \beta U$. Setting $\beta = 1$ gives $U_n = U$ for
+every $n$: the $n$-replica system has exactly the unavailability of one replica.
+</Proof>
+
+<KeyIdea>
+Configuration must therefore be rolled out **like code** — staged by percentage of replicas or
+traffic, with the same halt-on-error automation — or the redundancy the fleet was built for is
+inoperative for that class of change. "It's just a config change" is precisely the reasoning that
+produces the worst outages, and the mathematics says why.
+</KeyIdea>
+
+<Claim kind="heuristic" id="rollback-first" title="Build the rollback before the rollout">
+Before shipping, three questions must have answers:
+
+1. **What is the revert action, exactly?** A pointer swap, a flag flip, a redeploy of a pinned
+   version — named, and tested in staging.
+2. **How long does it take?** If reverting a model change means a cold start on every replica, the
+   rollback takes as long as the cold start, and that is your worst-case exposure.
+3. **Does it depend on the thing being reverted?** A rollback that needs the control plane, when the
+   bad config broke the control plane, is not a rollback.
+
+```python
+DEPLOY = {"model": "claude-opus-4-5-20251101",
+          "prompt_version": "support-v14",
+          "index_version": 41,
+          "previous": {"model": "claude-opus-4-5-20251015",
+                       "prompt_version": "support-v13", "index_version": 40}}
+```
+
+Carrying the previous configuration *in* the current one makes reverting a single atomic write
+rather than an archaeology exercise during an incident.
+</Claim>
+
+<Warning title="Index rebuilds are deployments with no rollback by default">
+Rebuilding an index in place destroys the previous one. If the new chunking is worse, there is
+nothing to go back to and the rebuild takes hours. Always build into a new version and swap a
+pointer, keeping the previous version until the new one has been live long enough to trust — which
+is the same dual-index discipline the embedding migration in
+<TopicRef id="ai-engineering/data-pipelines-and-lineage" /> requires.
+</Warning>
+
+<NotSaid>
+Rolling back a model does not roll back its effects. Conversations already stored, tool calls
+already executed, documents already written and caches already populated persist across the
+revert — and a semantic cache filled by the bad version will keep serving its answers afterwards.
+Cache invalidation on rollback is part of the revert action, and is routinely forgotten.
+</NotSaid>

@@ -1,0 +1,130 @@
+---
+title: Vector Search Infrastructure
+summary: 'Index types and what each trades, the recall/latency dial, filtering, freshness and sharding.'
+field: ai-engineering
+level: 2
+order: 170
+prerequisites:
+  - ai-engineering/data-pipelines-and-lineage
+  - rag/vector-search-and-ann
+tags: [vector database, HNSW, IVF, recall, filtering, sharding, freshness, hybrid search]
+estimated_time: 1h
+claims:
+  - id: index-tradeoffs
+    kind: definition
+    title: What each index type costs
+    summary: Flat, IVF and HNSW trade build time, memory and query latency against recall in different proportions.
+    proved: false
+    tags: [index]
+  - id: recall-ceiling
+    kind: proposition
+    title: Retrieval recall caps end-to-end quality
+    summary: An answer that requires a document the retriever did not return cannot be produced, so index recall multiplies into every downstream metric.
+    proved: true
+    tags: [recall, ceiling]
+  - id: filter-strategies
+    kind: definition
+    title: Three ways to combine filters with vector search
+    summary: Pre-filtering, post-filtering and filtered traversal differ in whether they can silently return too few results.
+    proved: false
+    tags: [filtering, metadata]
+  - id: freshness
+    kind: heuristic
+    title: Two-tier indexing for freshness
+    summary: A small frequently-rebuilt hot index beside a large periodically-rebuilt cold one gives low write latency without paying incremental-update costs on the whole corpus.
+    proved: false
+    tags: [freshness, streaming]
+references:
+  - key: malkov-hnsw
+    title: 'Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs'
+    authors: Y. A. Malkov, D. A. Yashunin
+    year: 2020
+    kind: paper
+    url: https://doi.org/10.1109/TPAMI.2018.2889473
+    note: The HNSW index whose parameters are discussed below.
+---
+
+<Intuition>
+A vector index is an approximation with a dial on it. Turn the dial one way and queries are fast
+and sometimes miss the right document; turn it the other and they are slow and thorough. Almost
+every operational question about a vector database is really a question about where that dial
+should sit, and the answer comes from what a miss costs downstream.
+</Intuition>
+
+<Definition id="index-tradeoffs" title="What each index type costs">
+| | Build | Memory | Query | Recall | Updates |
+|---|---|---|---|---|---|
+| **Flat** (exhaustive) | none | vectors only | $O(N)$ | 1.0 exactly | trivial |
+| **IVF** (inverted file) | $k$-means, minutes | vectors + centroids | $O(N/k \cdot n_{\text{probe}})$ | tunable via `nprobe` | cheap inserts, drifts from centroids |
+| **HNSW** (graph) | slow, $O(N \log N)$ | vectors + graph, ~1.5× | $O(\log N)$ | tunable via `ef_search` | inserts fine, deletes are tombstones |
+
+Flat is correct and is the right answer far more often than people expect: at a hundred thousand
+vectors of 768 dimensions, exhaustive search is a few hundred megabytes and single-digit
+milliseconds. **Do not deploy an approximate index until exhaustive search is genuinely too slow**,
+because the approximate one costs you a recall number you now have to monitor.
+</Definition>
+
+<Claim kind="proposition" id="recall-ceiling" title="Retrieval recall caps end-to-end quality">
+Let $R$ be the probability that the document needed to answer is in the retrieved set, and let $A$
+be the probability the model answers correctly given it is present. Assuming the model cannot
+answer correctly without it, end-to-end accuracy is
+$$
+\Pr[\text{correct}] \;=\; R \cdot A \;\le\; R .
+$$
+</Claim>
+
+<Proof>
+Condition on whether the document was retrieved. If it was not — probability $1-R$ — the answer is
+incorrect by assumption, contributing nothing. If it was, the model is correct with probability
+$A$. The product is the display, bounded above by $R$.
+</Proof>
+
+<KeyIdea>
+Recall is a ceiling, and it multiplies with every other stage exactly as
+<TopicRef id="ai-systems/caching" /> and the pipeline-recall argument describe. Tuning `ef_search`
+from 40 to 200 to move recall from 0.92 to 0.98 raises the ceiling by six points — frequently more
+than a prompt change achieves, and far more measurable.
+</KeyIdea>
+
+<Definition id="filter-strategies" title="Three ways to combine filters with vector search">
+Almost every real query is "nearest neighbours **where** tenant = X and date > Y".
+
+| Strategy | How | Fails when |
+|---|---|---|
+| **post-filter** | retrieve top-$k$, then drop non-matching | the filter is selective — you asked for 10 and got 2 |
+| **pre-filter** | restrict the candidate set, then search | the set is large; you have lost the index |
+| **filtered traversal** | apply the predicate during graph/list traversal | needs index support, but is the correct answer |
+
+Post-filtering is the default in naive implementations and is the source of the "why did I only get
+three results?" bug. With a filter matching 1% of the corpus, a top-100 retrieval yields about one
+result.
+</Definition>
+
+<Warning title="Tenant isolation is a filter you cannot get wrong">
+Multi-tenant indexes filtered by `tenant_id` are one bug away from returning another customer's
+documents. Prefer a separate namespace or index per tenant where the tenancy is coarse: it makes
+cross-tenant leakage structurally impossible rather than dependent on a predicate being applied
+correctly on every path.
+</Warning>
+
+<Claim kind="heuristic" id="freshness" title="Two-tier indexing for freshness">
+Graph indexes are much cheaper to build in bulk than to update one vector at a time, and deletes
+leave tombstones that degrade the graph. The standard resolution:
+
+```
+query ──┬──► hot index   (flat, last few hours, rebuilt every few minutes)
+        └──► cold index  (HNSW, everything, rebuilt nightly)
+              └── results merged and re-ranked by true distance
+```
+
+New documents are searchable within minutes at flat-search cost, because the hot index is small.
+The cold index is rebuilt offline, which also removes accumulated tombstones and re-centres IVF
+centroids that have drifted.
+</Claim>
+
+<NotSaid>
+Dense retrieval alone under-performs on exact identifiers — part numbers, error codes, names — where
+lexical matching is strictly better. Production retrieval is usually hybrid, combining BM25 and
+dense scores, and the combination weight is another dial that needs the same recall measurement as
+`ef_search`.
+</NotSaid>

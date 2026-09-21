@@ -1,0 +1,247 @@
+---
+title: Semantic Caching
+summary: 'Answering a question you have answered before when it is not phrased the same way — the threshold that decides it, the cost of getting it wrong, and what must never be cached.'
+field: ai-engineering
+level: 2
+order: 60
+prerequisites:
+  - ai-engineering/anatomy-of-an-ai-system
+  - ai-systems/caching
+tags: [semantic cache, embeddings, similarity threshold, precision, invalidation, prefix cache]
+estimated_time: 3h
+claims:
+  - id: cache-tiers
+    kind: definition
+    title: Three tiers of caching, doing three different jobs
+    summary: Exact caching, prefix caching and semantic caching differ in what they key on, what they save and how they can be wrong.
+    proved: false
+    tags: [taxonomy]
+  - id: semantic-cost
+    kind: proposition
+    title: The expected cost of a semantic cache
+    summary: A semantic cache pays off only when the hit rate times the saving exceeds the false-hit rate times the cost of a wrong answer.
+    proved: true
+    tags: [cost model, threshold]
+  - id: threshold-tradeoff
+    kind: proposition
+    title: Lowering the threshold trades precision for recall monotonically
+    summary: Hit rate and false-hit rate are both non-increasing in the similarity threshold, so there is no threshold that improves both.
+    proved: true
+    tags: [threshold, precision, recall]
+  - id: uncacheable
+    kind: heuristic
+    title: What must never be cached
+    summary: Anything personalised, time-sensitive, side-effecting or authorisation-dependent is unsafe to serve from a similarity match.
+    proved: false
+    tags: [safety, correctness]
+references:
+  - key: bang-gptcache
+    title: 'GPTCache: An Open-Source Semantic Cache for LLM Applications'
+    authors: F. Bang
+    year: 2023
+    kind: paper
+    url: https://aclanthology.org/2023.nlposs-1.24/
+    note: Describes the embed-and-search cache architecture used as the reference design here.
+  - key: gill-meancache
+    title: 'MeanCache: User-Centric Semantic Cache for Large Language Model Based Web Services'
+    authors: W. Gill, M. Elidrisi, P. Kalapatapu, A. Anwar, M. A. Gulzar
+    year: 2024
+    kind: paper
+    url: https://arxiv.org/abs/2403.02694
+    note: Reports hit-rate and false-hit measurements against similarity thresholds.
+---
+
+<Intuition>
+"What is your refund policy?" and "how do refunds work?" are the same question. An exact-match
+cache sees two different strings and pays for two generations. A semantic cache embeds both,
+notices they are close, and serves the second from the first.
+
+It also, sometimes, decides that "how do I cancel my subscription?" is close enough to "how do I
+cancel my order?" and returns the wrong answer confidently. That is the whole design problem: the
+mechanism that produces the savings is the same mechanism that produces the errors, and the dial
+between them is a single number.
+</Intuition>
+
+## Three different caches
+
+<Definition id="cache-tiers" title="Three tiers of caching, doing three different jobs">
+| | **Exact** | **Prefix (KV)** | **Semantic** |
+|---|---|---|---|
+| Key | hash of the full request | the literal token prefix | embedding of the query |
+| Stored | the response | attention keys and values | the response |
+| Saves | the entire generation | prefill for the shared prefix | the entire generation |
+| Lives | anywhere (Redis) | on the GPU that holds it | a vector index |
+| Can be wrong | no | no | **yes** |
+| Typical hit rate | low (1–10%) | high with shared system prompts | workload-dependent |
+
+Exact and prefix caching are *transparent*: a hit returns exactly what a miss would have. Semantic
+caching is not — it returns the answer to a **different question** that was judged similar enough.
+That single difference is why it needs a cost model and the other two do not.
+</Definition>
+
+<KeyIdea>
+Prefix caching and semantic caching are frequently discussed as one thing and they are not
+comparable. Prefix caching is an optimisation with no correctness surface, and by the superlinear
+saving in <TopicRef id="ai-systems/caching" /> it should be on by default. Semantic caching is a
+product decision with an error rate. Ship the first without discussion; ship the second only with
+measurement.
+</KeyIdea>
+
+## Does it pay?
+
+<Claim kind="proposition" id="semantic-cost" title="The expected cost of a semantic cache">
+Let $h$ be the fraction of requests answered from the cache, $q$ the fraction of *those* that are
+wrong answers, $c_{\text{miss}}$ the cost of generating, $c_{\text{hit}}$ the cost of a lookup, and
+$C_{\text{wrong}}$ the cost of serving a wrong answer. Then
+$$
+\E[\text{cost}] \;=\; h\bigl(c_{\text{hit}} + q\,C_{\text{wrong}}\bigr) \;+\; (1-h)\,\bigl(c_{\text{hit}} + c_{\text{miss}}\bigr),
+$$
+and the cache is worth deploying exactly when
+$$
+h\,c_{\text{miss}} \;>\; h\,q\,C_{\text{wrong}} + c_{\text{hit}},
+\qquad\text{i.e.}\qquad
+q \;<\; \frac{c_{\text{miss}}}{C_{\text{wrong}}} - \frac{c_{\text{hit}}}{h\,C_{\text{wrong}}} .
+$$
+</Claim>
+
+<Proof>
+Every request pays the lookup $c_{\text{hit}}$. A hit — probability $h$ — additionally incurs
+$C_{\text{wrong}}$ with conditional probability $q$. A miss — probability $1-h$ — additionally
+incurs $c_{\text{miss}}$. Adding gives the first display. Comparing with the no-cache cost
+$c_{\text{miss}}$ and rearranging gives the condition.
+</Proof>
+
+<KeyIdea>
+The governing ratio is $c_{\text{miss}}/C_{\text{wrong}}$: the price of a generation against the
+price of being wrong. For a support bot where a wrong answer costs a human escalation worth
+perhaps a hundred generations, the tolerable false-hit rate is under 1%. For an internal search
+suggestion, where a wrong answer costs a click, it might be 20%. **The same cache with the same
+threshold is a good idea in one product and a bad idea in the other**, and no amount of tuning
+changes which.
+</KeyIdea>
+
+## The threshold
+
+<Claim kind="proposition" id="threshold-tradeoff" title="Lowering the threshold trades precision for recall monotonically">
+Let the cache return the nearest stored entry when its cosine similarity exceeds $\tau$. Both the
+hit rate $h(\tau)$ and the false-hit rate $h(\tau)\,q(\tau)$ are non-increasing in $\tau$. Hence no
+change of $\tau$ can reduce false hits and increase hits simultaneously: the only way to improve
+both is to change the *embedding*, not the threshold.
+</Claim>
+
+<Proof>
+Raising $\tau$ shrinks the acceptance set $\{s \ge \tau\}$, so the set of served requests is nested
+decreasing and $h$ is non-increasing. The false hits are a subset of the hits and are likewise
+indexed by the same nested sets, so their measure is non-increasing too. A simultaneous improvement
+would require the acceptance set to both grow and shrink.
+</Proof>
+
+<Note title="What actually moves the frontier">
+Since $\tau$ only slides along the curve, improving the cache means moving the curve: a domain-tuned
+embedding model, normalising queries before embedding (lower-casing, stripping boilerplate,
+resolving pronouns against the conversation), or adding a cheap **verification** step — a small
+model asked "do these two questions have the same answer?" — on candidate hits. Verification
+converts some of the saving back into cost but attacks $q$ directly, which the threshold cannot.
+</Note>
+
+## A reference implementation
+
+```python
+class SemanticCache:
+    def __init__(self, index, embedder, threshold=0.93, ttl=3600):
+        self.index, self.embed, self.tau, self.ttl = index, embedder, threshold, ttl
+
+    def _key(self, req) -> str:
+        # Everything that changes the answer must be in the namespace, not the vector.
+        return hashlib.sha256(json.dumps({
+            "model": req.model,
+            "system": req.system,            # a different system prompt is a different cache
+            "tools": sorted(t.name for t in req.tools),
+            "tenant": req.tenant,            # never share across tenants
+            "config": req.config_hash,
+        }, sort_keys=True).encode()).hexdigest()
+
+    async def lookup(self, req):
+        if not cacheable(req):
+            return None
+        v = await self.embed(normalise(req.query))
+        hit = await self.index.nearest(namespace=self._key(req), vector=v, k=1)
+        if hit is None or hit.score < self.tau:
+            return None
+        if hit.age > self.ttl:
+            await self.index.delete(hit.id)
+            return None
+        metrics.incr("semcache.hit", score=hit.score)
+        return hit.payload
+
+    async def store(self, req, response):
+        if not cacheable(req) or response.stop_reason != "end_turn":
+            return                            # never cache a truncated or errored generation
+        v = await self.embed(normalise(req.query))
+        await self.index.upsert(namespace=self._key(req), vector=v, payload=response)
+```
+
+<Warning title="The namespace is where the correctness lives">
+Two requests with the same question but a different system prompt, a different tool set, a
+different model, a different retrieval index version or a different tenant are **different
+questions**, and a cache that keys only on the query text will serve one tenant's answer to
+another. The vector captures the query; the namespace must capture everything else. Every field
+omitted from `_key` is a class of wrong answer you have decided to accept without noticing.
+</Warning>
+
+## What must never be cached
+
+<Claim kind="heuristic" id="uncacheable" title="What must never be cached">
+A request is unsafe to serve from a similarity match when any of the following hold:
+
+- **Personalised** — the answer depends on who is asking ("what is my balance?"). The query text
+  may be identical across users and the answers are not.
+- **Time-sensitive** — the answer depends on now ("is the service up?", "what did we ship this
+  week?"). A TTL bounds the damage but does not remove it.
+- **Side-effecting** — the request causes a tool call that does something. Serving a cached
+  "I've cancelled your order" without cancelling anything is a serious failure mode.
+- **Authorisation-dependent** — the answer depends on the caller's permissions. Caching across
+  principals leaks data upward.
+- **Non-deterministic by design** — brainstorming, creative writing, sampling with high
+  temperature, where returning the same answer twice defeats the purpose.
+
+The practical form is a `cacheable(req)` predicate consulted before both lookup and store, with the
+default being **not** cacheable and an explicit allowlist of intents that are.
+</Claim>
+
+<KeyIdea>
+Semantic caching works best in a narrow band: high-volume, low-variance, impersonal,
+read-only questions — FAQ-shaped traffic. That band is often a large fraction of a support
+workload and almost none of an agent workload. Measuring which you have, before building the cache,
+is the step most often skipped.
+</KeyIdea>
+
+## Measuring it honestly
+
+A semantic cache needs two numbers that ordinary caches do not:
+
+1. **Hit rate** — easy, a counter.
+2. **False-hit rate** — hard, because a false hit looks exactly like a hit. Obtaining it requires
+   deliberately sampling a small fraction of hits, generating the true answer anyway, and comparing.
+   That *shadow* generation costs a few percent of the savings and is the only way to know the rate
+   rather than assume it.
+
+```python
+if hit is not None and random.random() < SHADOW_RATE:      # e.g. 0.02
+    asyncio.create_task(shadow_compare(req, hit))          # off the response path
+```
+
+<Warning title="A cache whose false-hit rate is unmeasured is not a cache, it is a wager">
+Without shadow sampling the failure mode is silent and gradual: the query distribution drifts, the
+threshold that was safe in testing stops being safe, and the only signal is a slow decline in
+whatever downstream quality metric you happen to track. Budget the shadow sampling from the
+beginning; it is the instrument that makes the threshold tunable at all.
+</Warning>
+
+<NotSaid>
+Nothing here addresses invalidation when the *underlying truth* changes — the refund policy is
+rewritten and every cached answer about refunds is now wrong. TTL bounds the exposure but does not
+target it. Targeted invalidation requires tracking which source documents contributed to which
+cached answer, which is a lineage problem rather than a caching one and is taken up in
+<TopicRef id="ai-engineering/data-pipelines-and-lineage" />.
+</NotSaid>

@@ -1,0 +1,213 @@
+---
+title: Autoscaling and Cold Starts
+summary: 'Why a GPU replica takes minutes to become useful, what that does to a scaling policy, and the four techniques that shorten it.'
+field: ai-engineering
+level: 2
+order: 90
+prerequisites:
+  - ai-engineering/gpu-routing-and-affinity
+  - ai-systems/autoscaling
+tags: [autoscaling, cold start, warm pool, scale to zero, model loading, provisioning]
+estimated_time: 3h
+claims:
+  - id: cold-start-budget
+    kind: definition
+    title: What the cold start is made of
+    summary: Scheduling, image pull, weight load, CUDA initialisation, compilation and warm-up, each with a different remedy.
+    proved: false
+    tags: [cold start, breakdown]
+  - id: weight-load-floor
+    kind: proposition
+    title: A lower bound on weight loading
+    summary: Loading N parameters at b bytes each over a link of bandwidth B cannot take less than Nb/B seconds, which for a large model over object storage is minutes.
+    proved: true
+    tags: [bound, bandwidth]
+  - id: scale-to-zero-economics
+    kind: proposition
+    title: When scale-to-zero pays
+    summary: Scaling to zero is cheaper than a warm replica only when the idle fraction exceeds the cold-start cost amortised over the requests it delays.
+    proved: true
+    tags: [economics, tradeoff]
+  - id: scale-on-queue
+    kind: heuristic
+    title: Scale on queued work, with a lead
+    summary: The controller must act on a signal that grows past saturation and must act early enough to cover the cold start, which means predicting rather than reacting.
+    proved: false
+    tags: [control, prediction]
+references:
+  - key: fu-serverlessllm
+    title: 'ServerlessLLM: Low-Latency Serverless Inference for Large Language Models'
+    authors: Y. Fu et al.
+    year: 2024
+    kind: paper
+    url: https://arxiv.org/abs/2401.14351
+    note: Measures the checkpoint-loading term and attacks it with multi-tier caching and live migration.
+  - key: gandhi-autoscale
+    title: 'AutoScale: Dynamic, Robust Capacity Management for Multi-Tier Data Centers'
+    authors: A. Gandhi, M. Harchol-Balter, R. Raghunathan, M. A. Kozuch
+    year: 2012
+    kind: paper
+    url: https://doi.org/10.1145/2382553.2382556
+    note: The setup-delay analysis and the argument for keeping idle capacity.
+---
+
+<Intuition>
+Autoscaling a web service is a solved problem because a new instance is useful in seconds. A GPU
+replica is not: it has to be scheduled onto a node that has a free accelerator, pull a container
+measured in gigabytes, read tens of gigabytes of weights across a network, initialise CUDA, compile
+kernels for its shapes, and run a few warm-up generations before its latency is representative.
+
+Two to ten minutes is normal. Every scaling decision has to be made that far ahead of the traffic
+it is for, and the analysis in <TopicRef id="ai-systems/autoscaling" /> says exactly what that
+delay costs: a backlog of $(\lambda-\mu)d$ that no controller can avoid.
+</Intuition>
+
+## The budget
+
+<Definition id="cold-start-budget" title="What the cold start is made of">
+| Stage | Typical | Attack |
+|---|---|---|
+| scheduling onto a node with a free GPU | 5–60 s | pre-provisioned node pool, or reservations |
+| container image pull | 30–300 s | slim images, layer caching, pre-pulled on the node |
+| **weight load into device memory** | **60–600 s** | local NVMe cache, tensor streaming, snapshots |
+| CUDA context + kernel compilation | 10–90 s | AOT compilation, cached compilation artefacts |
+| warm-up generations | 5–30 s | run before joining the router, not after |
+| **total** | **2–10 min** | |
+
+The dominant term is almost always the weights, and it has a hard floor.
+</Definition>
+
+<Claim kind="proposition" id="weight-load-floor" title="A lower bound on weight loading">
+A model of $N$ parameters at $b$ bytes each cannot be loaded into device memory faster than
+$$
+t_{\text{load}} \;\ge\; \frac{N b}{B_{\text{eff}}} ,
+$$
+where $B_{\text{eff}}$ is the narrowest bandwidth on the path from where the weights are stored to
+device memory.
+</Claim>
+
+<Proof>
+Every byte of the checkpoint must traverse the path at least once, and the path sustains at most
+$B_{\text{eff}}$ bytes per second, so the transfer occupies at least $Nb/B_{\text{eff}}$ seconds.
+No caching within a single cold load reduces the byte count, since each byte is needed.
+</Proof>
+
+<KeyIdea>
+Put numbers on it. A 70-billion-parameter model in bf16 is $140$ GB.
+
+| Path | Bandwidth | Floor |
+|---|---|---|
+| object storage over a shared network | 1 GB/s | **140 s** |
+| local NVMe | 5 GB/s | 28 s |
+| host RAM → device over PCIe 4 ×16 | ~25 GB/s | 6 s |
+
+The remedy is visible directly in the table: **move the weights closer before you need them.**
+A node-local NVMe cache turns a 140-second load into 28; keeping the weights resident in host RAM
+turns it into 6. Both are pre-work, and both are what "warm pool" actually means in practice.
+</KeyIdea>
+
+## Should you scale to zero?
+
+<Claim kind="proposition" id="scale-to-zero-economics" title="When scale-to-zero pays">
+Over a period $T$, let $f$ be the fraction of time no request is in flight, $n$ the number of
+idle-to-active transitions, $d$ the cold start and $c$ the cost per replica-second. Keeping one
+replica warm costs $cT$. Scaling to zero costs
+$$
+c\,(1-f)\,T \;+\; c\,n\,d ,
+$$
+since each cold start burns $d$ replica-seconds before serving anything. Scale-to-zero is cheaper
+exactly when
+$$
+\boxed{\ f\,T \;>\; n\,d\ }
+$$
+— the **total idle time must exceed the total time spent starting up**. Separately, $n$ requests
+per period wait $d$ for their first token, which is a latency cost the inequality does not price.
+</Claim>
+
+<Proof>
+The warm cost is immediate. For scale-to-zero, the replica runs during the active fraction
+$(1-f)T$ and additionally during each of the $n$ cold starts, which occupy $d$ seconds each while
+producing nothing. Requiring $c(1-f)T + cnd < cT$ and cancelling $c$ gives $nd < fT$. The latency
+statement follows because a transition to active finds zero capacity, so the triggering request
+waits the full $d$.
+</Proof>
+
+<KeyIdea>
+Put numbers in. With $d = 5$ minutes and a service idle 20 hours a day, scale-to-zero pays while
+$n < fT/d = (20 \times 60)/5 = 240$ transitions a day. That sounds generous until you notice that
+a service probed by a health checker every minute never goes idle at all, and one used sporadically
+by twenty people can easily transition a few hundred times.
+
+So the rule is: scale to zero when the traffic is **clustered** — long genuine idle periods, few
+transitions — and never when it is sparse but spread out, which is the pattern that looks idle on a
+utilisation graph and thrashes on a cold-start graph. Interactive diurnal traffic is the worst
+case: one transition, at exactly the moment every user arrives, all of them paying $d$ together.
+</KeyIdea>
+
+## Scaling that arrives in time
+
+<Claim kind="heuristic" id="scale-on-queue" title="Scale on queued work, with a lead">
+Two properties the signal and the policy must have:
+
+**The signal must not saturate.** GPU utilisation reads near 100% at both "comfortably busy" and
+"catastrophically overloaded", so it cannot distinguish them. Queued tokens, queue depth and
+time-to-first-token all keep growing past saturation and can.
+
+**The policy must lead the traffic by $d$.** A reactive controller starts the replica when the
+queue is already long, and by the recovery-time result the system stays behind for
+$d(\mu'-\mu)/(\mu'-\lambda_1)$. Leading requires prediction: schedule-based (traffic is diurnal and
+you know the shape), derivative-based (the queue is growing at a rate that will breach in $d$
+seconds), or simply a standing headroom of $1/g$ from the step-absorption corollary.
+</Claim>
+
+<Assumptions>
+Prediction is only as good as the regularity of the traffic. For a genuinely unpredictable spike —
+a viral post, a batch job someone launched — no lead time is available, and the only defences are
+standing headroom and graceful degradation. The prediction is for the 95% of load that is
+predictable; the headroom is for the rest.
+</Assumptions>
+
+```python
+def desired_replicas(now, metrics, policy):
+    # reactive term: what the current queue needs
+    need_now = ceil(metrics.queued_tokens / policy.tokens_per_replica_per_sec / policy.target_ttft)
+
+    # predictive term: what we will need once a new replica is ready
+    growth = metrics.queued_tokens_derivative                 # tokens/s^2
+    need_then = ceil((metrics.queued_tokens + growth * policy.cold_start_seconds)
+                     / policy.tokens_per_replica_per_sec / policy.target_ttft)
+
+    # schedule term: known diurnal shape, if we have one
+    need_sched = policy.forecast(now + policy.cold_start_seconds)
+
+    target = max(need_now, need_then, need_sched, policy.floor)
+    return min(target, policy.ceiling)
+```
+
+<Warning title="Scale up fast, scale down slowly">
+The two directions have asymmetric costs. Scaling up late costs SLO violations; scaling down late
+costs a few minutes of one replica. So the policies should be asymmetric: react immediately on the
+way up, and on the way down require the lower reading to persist for several multiples of the cold
+start before acting. Symmetric thresholds produce the sawtooth described in
+<TopicRef id="ai-systems/autoscaling" />, where the system repeatedly pays a cold start to reclaim
+capacity it removed a minute earlier.
+</Warning>
+
+## The four techniques
+
+1. **Warm pools** — keep $k$ replicas loaded and idle, sized from the step-absorption bound. The
+   simplest and most reliable; it costs exactly what it looks like it costs.
+2. **Node-local weight cache** — keep checkpoints on NVMe so a restart reads at 5 GB/s rather than
+   pulling from object storage. Cheap, and the largest single win in the table above.
+3. **Snapshot and restore** — checkpoint the initialised process, including device memory, and
+   restore it. Skips CUDA init and compilation as well as the load.
+4. **Over-provision during known windows** — if traffic is diurnal, scale on the clock and let the
+   reactive controller handle only the residual.
+
+<NotSaid>
+Cold starts interact with the adapter routing in
+<TopicRef id="ai-engineering/gpu-routing-and-affinity" />: a fleet serving many per-tenant adapters
+has a second, much smaller cold start per adapter, and a scaling event throws away every resident
+adapter along with the KV cache. Systems that scale frequently and multiplex adapters heavily pay
+this repeatedly, and it is invisible in a cold-start metric that measures only the base model.
+</NotSaid>

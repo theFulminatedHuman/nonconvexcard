@@ -1,0 +1,264 @@
+---
+title: Drift Detection
+summary: 'What PSI actually measures, how to monitor an embedding distribution, and how to detect quality regressions when the labels arrive weeks late or never.'
+field: ai-engineering
+level: 3
+order: 130
+prerequisites:
+  - ai-engineering/data-pipelines-and-lineage
+  - probability/expectation-and-conditioning
+tags: [drift, PSI, KL divergence, monitoring, concept drift, proxy metrics, alerting]
+estimated_time: 3h
+claims:
+  - id: drift-taxonomy
+    kind: definition
+    title: Four things called drift
+    summary: Covariate shift, prior shift, concept drift and upstream corruption have the same symptom and different remedies.
+    proved: false
+    tags: [taxonomy]
+  - id: psi-definition
+    kind: definition
+    title: The population stability index
+    summary: A binned comparison of two distributions, summing the signed difference of bin masses times the log of their ratio.
+    proved: false
+    tags: [PSI]
+  - id: psi-is-jeffreys
+    kind: proposition
+    title: PSI is the symmetrised KL divergence
+    summary: The population stability index is exactly KL(p,q) plus KL(q,p), so it is non-negative and zero only when the distributions agree.
+    proved: true
+    tags: [divergence, KL]
+  - id: psi-thresholds
+    kind: heuristic
+    title: The conventional PSI thresholds
+    summary: Values below 0.1, between 0.1 and 0.25, and above 0.25 are conventionally read as stable, moderate and significant, with no distributional justification.
+    proved: false
+    tags: [thresholds, convention]
+  - id: monitoring-multiplicity
+    kind: proposition
+    title: Monitoring many features guarantees false alarms
+    summary: Independent tests on m features at level alpha, repeated each period, produce alarms at a rate that approaches certainty as m or the number of periods grows.
+    proved: true
+    tags: [multiple comparisons, alerting]
+  - id: proxy-metrics
+    kind: heuristic
+    title: Monitor proxies when labels are late
+    summary: Refusal rate, output length, tool-call rate, retry rate and escalation rate move before ground truth arrives and are available immediately.
+    proved: false
+    tags: [proxies, delayed labels]
+references:
+  - key: gama-drift-survey
+    title: A Survey on Concept Drift Adaptation
+    authors: J. Gama, I. Žliobaitė, A. Bifet, M. Pechenizkiy, A. Bouchachia
+    year: 2014
+    kind: survey
+    url: https://doi.org/10.1145/2523813
+    note: The taxonomy of drift types and detection strategies this page follows.
+  - key: gretton-mmd
+    title: A Kernel Two-Sample Test
+    authors: A. Gretton, K. Borgwardt, M. Rasch, B. Schölkopf, A. Smola
+    year: 2012
+    kind: paper
+    url: https://www.jmlr.org/papers/v13/gretton12a.html
+    note: Maximum mean discrepancy, the test used below for embedding distributions.
+---
+
+<Intuition>
+A model does not degrade. The world moves and the model stays where it was.
+
+That distinction matters because it tells you where to look. Nothing about the weights changed;
+what changed is the distribution of what arrives, or the relationship between inputs and the right
+answer, or something upstream that quietly stopped populating a field. Those have the same symptom
+— quality falls — and completely different fixes, so the first job of drift detection is to say
+*which one happened*.
+</Intuition>
+
+## Four things called drift
+
+<Definition id="drift-taxonomy" title="Four things called drift">
+Write $P(x)$ for the input distribution and $P(y \mid x)$ for the relationship being modelled.
+
+| Name | What changed | Example | Remedy |
+|---|---|---|---|
+| **Covariate shift** | $P(x)$ | new customer segment asks different questions | retrain or extend coverage |
+| **Prior shift** | $P(y)$ | fraud rate triples | recalibrate thresholds |
+| **Concept drift** | $P(y \mid x)$ | the refund policy changed, so the right answer changed | update the corpus, retrain |
+| **Upstream corruption** | $x$ itself is wrong | a field stopped being populated | fix the pipeline |
+
+The fourth is not drift at all and is the most common in practice. It is listed here because it
+presents identically on every monitoring dashboard, and because treating it as drift leads to
+retraining a model on corrupted data — which converts a fixable bug into a permanent one.
+</Definition>
+
+<KeyIdea>
+Distinguish them by *what else* moved. Upstream corruption shows a discontinuity — a step change at
+a deploy boundary, often with a null rate jumping. Covariate shift is gradual and shows in the
+input distribution with the output relationship intact. Concept drift shows **no input change at
+all** and is only visible in outcomes, which is why it is the hardest and needs labels or proxies.
+</KeyIdea>
+
+## PSI, and what it is
+
+<Definition id="psi-definition" title="The population stability index">
+Bin a variable into $k$ buckets. Let $p_i$ be the fraction of the reference sample in bucket $i$
+and $q_i$ the fraction of the current sample. Then
+$$
+\mathrm{PSI}(p, q) \;=\; \sum_{i=1}^{k} (p_i - q_i)\,\ln\frac{p_i}{q_i} .
+$$
+Buckets are built from the reference distribution — usually deciles — and held fixed thereafter.
+</Definition>
+
+<Claim kind="proposition" id="psi-is-jeffreys" title="PSI is the symmetrised KL divergence">
+$$
+\mathrm{PSI}(p,q) \;=\; D_{\mathrm{KL}}(p \,\|\, q) \;+\; D_{\mathrm{KL}}(q \,\|\, p) ,
+$$
+the Jeffreys divergence. Consequently $\mathrm{PSI} \ge 0$, with equality if and only if
+$p_i = q_i$ for every $i$, and it is symmetric in its arguments.
+</Claim>
+
+<Proof>
+Expand the two divergences:
+$$
+D_{\mathrm{KL}}(p\|q) = \sum_i p_i \ln\frac{p_i}{q_i},
+\qquad
+D_{\mathrm{KL}}(q\|p) = \sum_i q_i \ln\frac{q_i}{p_i} = -\sum_i q_i \ln\frac{p_i}{q_i} .
+$$
+Adding,
+$$
+D_{\mathrm{KL}}(p\|q) + D_{\mathrm{KL}}(q\|p)
+= \sum_i (p_i - q_i)\ln\frac{p_i}{q_i}
+= \mathrm{PSI}(p,q).
+$$
+Non-negativity and the equality condition follow from Gibbs' inequality applied to each term, and
+symmetry is visible in the final expression since swapping $p$ and $q$ negates both factors.
+</Proof>
+
+<KeyIdea>
+Knowing PSI is Jeffreys divergence explains two things practitioners hit and usually treat as
+quirks. It **diverges when a bucket empties**: $q_i \to 0$ with $p_i > 0$ sends the term to
+infinity, which is why implementations add an epsilon — and that epsilon silently sets the maximum
+detectable drift. And it is **symmetric**, so it cannot tell you which direction the distribution
+moved; that needs the per-bucket contributions, which are worth logging individually since they
+localise the change.
+</KeyIdea>
+
+<Claim kind="heuristic" id="psi-thresholds" title="The conventional PSI thresholds">
+| PSI | Conventional reading |
+|---|---|
+| $< 0.1$ | no significant change |
+| $0.1 - 0.25$ | moderate change, investigate |
+| $> 0.25$ | significant change, act |
+</Claim>
+
+<Assumptions>
+These figures are industry convention with no distributional derivation, and they are not
+scale-free: PSI depends on the number of buckets and on sample size, so the same underlying shift
+produces different values under 10 buckets and 20, and a small sample produces a positive PSI
+against an identical distribution purely from sampling noise. Calibrate thresholds by computing
+PSI between two samples drawn from the *same* period — the reference against itself — and set the
+alarm above the noise floor that produces. Using 0.25 without doing this is guessing.
+</Assumptions>
+
+## Embedding distributions
+
+For an LLM system the input is text, and the useful distributional handle is its embedding.
+
+```python
+def embedding_drift(reference: np.ndarray, current: np.ndarray) -> dict:
+    """Three complementary views of how an embedding cloud has moved."""
+    mu_r, mu_c = reference.mean(0), current.mean(0)
+    centroid_shift = np.linalg.norm(mu_c - mu_r) / np.linalg.norm(mu_r)
+
+    # Spread: has the cloud changed shape as well as position?
+    spread_ratio = current.std(0).mean() / reference.std(0).mean()
+
+    # Coverage: what fraction of current queries land far from everything we have seen?
+    d = pairwise_min_distance(current, reference)          # nearest reference neighbour
+    tail = float(np.mean(d > np.quantile(pairwise_min_distance(reference, reference), 0.99)))
+
+    return {"centroid_shift": centroid_shift, "spread_ratio": spread_ratio, "novel_fraction": tail}
+```
+
+The third number is the operationally useful one: **the fraction of current queries that are
+unlike anything in the reference set**. A rising novel fraction is the earliest signal that the
+retrieval corpus no longer covers what people are asking, and unlike PSI it points at specific
+examples you can read.
+
+<Note title="A principled two-sample test">
+For a defensible answer rather than a dashboard number, maximum mean discrepancy gives a kernel
+two-sample test directly on the embeddings, with a permutation test for the null. It is more
+expensive than a centroid distance and it answers a question a centroid cannot: *are these two
+samples from the same distribution at all?* Use the cheap statistics continuously and MMD when a
+decision hangs on the answer.
+</Note>
+
+## Alerting on many things at once
+
+<Claim kind="proposition" id="monitoring-multiplicity" title="Monitoring many features guarantees false alarms">
+Run an independent level-$\alpha$ test on each of $m$ features every period. Under the null — no
+drift anywhere — the probability of at least one alarm in a single period is
+$1-(1-\alpha)^m$, and over $T$ periods
+$$
+\Pr[\text{at least one false alarm}] \;=\; 1-(1-\alpha)^{mT} \;\xrightarrow[mT\to\infty]{}\; 1 .
+$$
+With $m = 50$ features at $\alpha = 0.01$, the daily false-alarm probability is
+$1 - 0.99^{50} = 0.395$, and over a 30-day month it is $1 - 0.99^{1500} \approx 1$.
+</Claim>
+
+<Proof>
+Independence across features and periods makes the no-alarm probability $(1-\alpha)^{mT}$; the
+complement is the displayed expression, which tends to $1$ as the exponent grows.
+</Proof>
+
+<Warning title="This is why drift dashboards get ignored">
+Forty percent of days showing a red feature is indistinguishable from noise to the person on call,
+and within two weeks nobody looks. The fixes are the standard ones and they must be chosen
+deliberately: control the false discovery rate across features rather than the per-feature rate;
+require persistence — $k$ consecutive periods, not one; alert on a small number of *aggregate*
+statistics rather than every feature; and reserve paging for the metric that maps to user harm,
+leaving the rest as a dashboard people consult when something is already known to be wrong.
+</Warning>
+
+## When the labels are late
+
+<Claim kind="heuristic" id="proxy-metrics" title="Monitor proxies when labels are late">
+Ground truth for a generative system arrives weeks later, incompletely, or never. These move
+earlier and are available immediately:
+
+| Proxy | Reads on | Typical failure it catches |
+|---|---|---|
+| refusal rate | outputs | prompt or policy change, safety filter regression |
+| mean output length | outputs | truncation bugs, model swap, prompt regression |
+| tool-call rate and failure rate | outputs | tool schema drift, broken integration |
+| retrieval score distribution | retrieval | index staleness, embedding mismatch |
+| "no relevant documents" rate | retrieval | corpus coverage gap |
+| user retry / rephrase rate | behaviour | answer quality, broadly |
+| escalation-to-human rate | behaviour | the closest thing to a quality label |
+| thumbs-down rate | behaviour | quality, heavily biased in sampling |
+
+Each is weak individually. Together, and with per-segment breakdowns, they catch most regressions
+before any labelled data exists.
+</Claim>
+
+<Assumptions>
+Every proxy is confounded. Output length moves when the prompt changes for good reasons; retry rate
+moves when the UI changes; thumbs-down is dominated by a small unrepresentative population. They
+are leading indicators for investigation, not evidence for a decision. Treating a proxy movement as
+proof of a regression is how teams roll back improvements.
+</Assumptions>
+
+<KeyIdea>
+The one genuinely reliable answer to delayed labels is to **create labels deliberately**: sample a
+small, fixed fraction of production traffic, run it through the evaluation harness in
+<TopicRef id="ai-engineering/evaluation-harnesses" />, and treat the result as a continuously
+refreshed quality estimate. It costs a percent or two of traffic and it converts drift detection
+from inference to measurement.
+</KeyIdea>
+
+<NotSaid>
+Detecting drift says nothing about responding to it. Automatic retraining on drifted data is
+tempting and dangerous: if the drift is upstream corruption, retraining bakes the corruption into
+the model; if it is concept drift, the recent data may be too sparse to retrain on; and a
+retraining loop triggered by a monitor is a feedback system whose stability nobody has analysed.
+The defensible default is that drift detection pages a human and retraining is a deliberate act.
+</NotSaid>

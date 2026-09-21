@@ -1,0 +1,323 @@
+---
+title: Rate Limiting Algorithms
+summary: 'Token bucket, sliding window and GCRA, what each actually guarantees, and the two problems unique to limiting an LLM: metering tokens you have not generated yet, and doing it across many instances.'
+field: ai-engineering
+level: 2
+order: 40
+prerequisites:
+  - ai-engineering/gateways-auth-and-quota
+tags: [rate limiting, token bucket, GCRA, sliding window, distributed limiting, backpressure]
+estimated_time: 3h
+claims:
+  - id: token-bucket
+    kind: definition
+    title: Token bucket
+    summary: A counter refilled at a constant rate and capped at a burst capacity, decremented by the cost of each admitted request.
+    proved: false
+    tags: [token bucket]
+  - id: token-bucket-bound
+    kind: proposition
+    title: What a token bucket guarantees
+    summary: Over any interval of length t a token bucket admits at most B + rt units of cost, and this is tight.
+    proved: true
+    tags: [bound, burst]
+  - id: fixed-window-burst
+    kind: proposition
+    title: The fixed window admits twice its limit
+    summary: A fixed-window counter of N per window permits 2N requests in an interval shorter than one window, straddling a boundary.
+    proved: true
+    tags: [fixed window, boundary]
+  - id: gcra-equivalence
+    kind: proposition
+    title: GCRA is a token bucket without the counter
+    summary: The generic cell rate algorithm with emission interval T and tolerance tau admits exactly the sequences a token bucket of rate 1/T and capacity 1 + tau/T admits.
+    proved: true
+    tags: [GCRA, equivalence]
+  - id: reserve-reconcile
+    kind: heuristic
+    title: Reserve on entry, reconcile on exit
+    summary: Output length is unknown in advance, so a token limiter must hold a reservation against an estimate and settle the difference when generation ends.
+    proved: false
+    tags: [tokens, estimation]
+  - id: split-budget-loss
+    kind: proposition
+    title: Splitting a budget across instances under-admits
+    summary: Statically dividing a rate limit among N instances admits only the fraction of the budget that reaches each instance, which under skewed routing is far below the intended rate.
+    proved: true
+    tags: [distributed, sharding]
+references:
+  - key: gcra-atm
+    title: 'ATM Forum Traffic Management Specification Version 4.0'
+    authors: ATM Forum
+    year: 1996
+    kind: lecture-notes
+    note: Original definition of the generic cell rate algorithm as a virtual scheduling procedure.
+  - key: rfc6585
+    title: 'RFC 6585: Additional HTTP Status Codes'
+    authors: M. Nottingham, R. Fielding
+    year: 2012
+    kind: lecture-notes
+    url: https://www.rfc-editor.org/rfc/rfc6585.html
+    note: Defines 429 Too Many Requests and its relationship to Retry-After.
+---
+
+<Intuition>
+A rate limiter answers one question — *may this run now?* — and the interesting part is what
+"now" means. Allowing exactly $r$ requests per second with perfect evenness is easy and useless:
+real clients arrive in clumps and a limiter that refuses every clump is a limiter people route
+around. Allowing clumps without allowing unbounded clumps is the actual problem, and the algorithms
+below are different answers to how much clumping to forgive.
+
+For an LLM there is a second problem that ordinary APIs do not have. The resource being limited is
+tokens, and you do not know how many tokens a request will use until it is finished.
+</Intuition>
+
+## Token bucket
+
+<Definition id="token-bucket" title="Token bucket">
+A bucket holds at most $B$ tokens and refills at $r$ tokens per second. A request of cost $c$ is
+admitted if the bucket holds at least $c$ tokens, which are then removed.
+
+```python
+class TokenBucket:
+    def __init__(self, rate: float, capacity: float):
+        self.rate, self.capacity = rate, capacity
+        self.tokens = capacity
+        self.updated = now()
+
+    def _refill(self) -> None:
+        t = now()
+        self.tokens = min(self.capacity, self.tokens + self.rate * (t - self.updated))
+        self.updated = t
+
+    def allow(self, cost: float = 1.0) -> bool:
+        self._refill()
+        if self.tokens >= cost:
+            self.tokens -= cost
+            return True
+        return False
+
+    def retry_after(self, cost: float = 1.0) -> float:
+        self._refill()
+        return max(0.0, (cost - self.tokens) / self.rate)
+```
+
+Note there is no timer: the bucket is refilled lazily on read, so an idle bucket costs nothing.
+</Definition>
+
+<Claim kind="proposition" id="token-bucket-bound" title="What a token bucket guarantees">
+For any interval $[t_0, t_0+t]$, the total cost admitted by a token bucket of rate $r$ and capacity
+$B$ is at most
+$$
+B + r\,t ,
+$$
+and this bound is attained — so the long-run rate is $r$ and the worst-case burst is $B$.
+</Claim>
+
+<Proof>
+Tokens available to be spent during the interval come from two sources only: those in the bucket at
+$t_0$, at most $B$ by the capacity cap, and those added during the interval, exactly $rt$ if the
+bucket never saturates and less otherwise. Every admitted request removes its full cost. Hence
+admitted cost $\le B + rt$.
+
+For tightness, start with a full bucket and admit $B$ units instantaneously at $t_0$, then admit
+each subsequent token the moment it is added; over $[t_0, t_0+t]$ that admits exactly $B + rt$.
+Dividing by $t$ and letting $t \to \infty$ gives a long-run rate of $r$; taking $t \to 0$ gives an
+instantaneous burst of $B$.
+</Proof>
+
+<KeyIdea>
+$B$ and $r$ are independent knobs and they mean different things to a user. $r$ is the sustained
+throughput you are selling. $B$ is how much *clumping* you forgive — how many requests a client may
+fire at once after a quiet period. Setting $B = r$ (one second of burst) is a common default;
+setting $B$ large makes the limiter friendly and the downstream service's peak load larger by
+exactly $B$.
+</KeyIdea>
+
+## What a fixed window gets wrong
+
+<Claim kind="proposition" id="fixed-window-burst" title="The fixed window admits twice its limit">
+A fixed-window counter allowing $N$ requests per window of length $W$ — reset to zero at times
+$0, W, 2W, \dots$ — admits $2N$ requests within an interval of length $2\varepsilon$ for any
+$\varepsilon > 0$.
+</Claim>
+
+<Proof>
+Issue $N$ requests in $[W-\varepsilon, W)$: the counter for the first window rises from $0$ to $N$
+and all are admitted. At $W$ the counter resets. Issue $N$ more in $[W, W+\varepsilon)$: all are
+admitted. The $2N$ requests occupy an interval of length $2\varepsilon$, which can be made
+arbitrarily small, whereas the intended guarantee was $N$ per $W$.
+</Proof>
+
+<Warning title="This is the most common limiter bug in production">
+Fixed windows are attractive because they are one integer per key in Redis with a TTL. The boundary
+burst is real, it is exactly $2\times$, and it lands on the downstream service as a spike at every
+window boundary — synchronised across all clients, because they all share the same wall clock.
+Sliding windows and token buckets do not have this property; use one of them.
+</Warning>
+
+### Sliding window counter
+
+The usual compromise: keep the current and previous window counts and interpolate.
+
+```python
+def allow_sliding(key, now, window, limit):
+    cur_start = now - (now % window)
+    frac = (now - cur_start) / window                 # how far into the current window
+    prev, cur = counters.get(key, cur_start - window), counters.get(key, cur_start)
+    estimate = prev * (1 - frac) + cur
+    if estimate >= limit:
+        return False
+    counters.incr(key, cur_start)
+    return True
+```
+
+This assumes the previous window's requests were spread uniformly, which is an approximation — it
+can admit slightly over the limit for bursty traffic and slightly under for smooth traffic. It
+costs two counters per key rather than a full log of timestamps, and it removes the $2\times$
+boundary burst, which is the trade most services want.
+
+## GCRA: the same thing without a counter
+
+<Claim kind="proposition" id="gcra-equivalence" title="GCRA is a token bucket without the counter">
+The generic cell rate algorithm keeps one timestamp, the **theoretical arrival time** $\mathrm{TAT}$.
+With emission interval $T$ and tolerance $\tau$, a request at time $t$ is admitted iff
+$t \ge \mathrm{TAT} - \tau$, after which $\mathrm{TAT} \leftarrow \max(t, \mathrm{TAT}) + T$.
+
+This admits exactly the same request sequences as a token bucket of rate $r = 1/T$ and capacity
+$$
+B \;=\; 1 + \frac{\tau}{T} .
+$$
+</Claim>
+
+<Proof>
+Write the bucket level after the $k$-th admission as $x_k$ and the GCRA state as
+$\mathrm{TAT}_k$. Claim the invariant
+$$
+\mathrm{TAT}_k \;=\; t_k + (B - x_k)\,T \;-\; \tau ,
+$$
+where $t_k$ is the time of the $k$-th admission. Check the base case with an empty, full bucket:
+$x_0 = B$ gives $\mathrm{TAT}_0 = t_0 - \tau$, so the admission test $t \ge \mathrm{TAT}-\tau$ is
+satisfied for any $t \ge t_0 - \tau + \tau= t_0$, matching a full bucket admitting immediately.
+
+For the step, a request at $t$ finds bucket level
+$x = \min(B,\ x_k + (t-t_k)/T)$, and is admitted iff $x \ge 1$. Substituting the invariant,
+$$
+x \ge 1
+\iff \min\!\Bigl(B,\ B - \frac{\mathrm{TAT}_k + \tau - t_k}{T} + \frac{t-t_k}{T}\Bigr) \ge 1
+\iff t \ge \mathrm{TAT}_k - \tau + (1-B)T + \tau ,
+$$
+and with $B = 1 + \tau/T$ the right-hand side is $\mathrm{TAT}_k - \tau$, which is exactly the GCRA
+test. The update $x \mapsto x-1$ corresponds to $\mathrm{TAT} \mapsto \max(t,\mathrm{TAT}) + T$,
+the $\max$ implementing the bucket's saturation at $B$.
+</Proof>
+
+<KeyIdea>
+GCRA stores **one timestamp per key** rather than a level plus a timestamp, and needs no refill
+arithmetic. In a distributed store that is one round trip against one value, which is why it is the
+usual choice when the limiter state lives in Redis. The equivalence means you lose nothing by using
+it: $\tau = (B-1)T$ converts a token-bucket configuration directly.
+</KeyIdea>
+
+## The LLM problem: metering what has not happened
+
+<Claim kind="heuristic" id="reserve-reconcile" title="Reserve on entry, reconcile on exit">
+Token limits are the meaningful limits for a model service — requests per minute cannot
+distinguish a 20-token reply from a 4000-token one — but output length is unknown when the
+admission decision is made. The workable pattern is two-phase:
+
+```python
+async def metered(tenant, req):
+    estimate = count_input_tokens(req) + (req.max_tokens or model.default_max)
+    lease = await limiter.reserve(tenant, estimate)      # hold the pessimistic amount
+    if lease is None:
+        raise TooManyRequests(retry_after=limiter.retry_after(tenant, estimate))
+    try:
+        resp = await model.generate(req)
+        return resp
+    finally:
+        actual = resp.usage.input_tokens + resp.usage.output_tokens if resp else estimate
+        await limiter.reconcile(lease, actual)           # refund or charge the difference
+```
+
+Reserve the **pessimistic** figure — input plus `max_tokens` — and refund on completion.
+</Claim>
+
+<Assumptions>
+Reserving the maximum systematically under-admits: if requests declare `max_tokens = 4096` but
+average 300 output tokens, the limiter holds about thirteen times the tokens actually consumed, and
+a tenant hits their limit at roughly a thirteenth of their real entitlement. The mitigations are to
+reserve a *predicted* length with a safety margin and accept occasional overshoot, or to require
+callers to set `max_tokens` honestly and price accordingly. Reserving optimistically instead means
+the limit can be exceeded by an unbounded amount, which defeats the purpose.
+</Assumptions>
+
+<Warning title="Reconcile in a finally, and expire leases">
+An unreconciled reservation is capacity permanently removed from the tenant. The `finally` handles
+exceptions; a lease **expiry** in the limiter handles the process dying between reserve and
+reconcile, which the `finally` cannot. Without both, a crash loop silently locks a tenant out, and
+the limiter's metrics will show nothing wrong because from its side the tokens are legitimately
+outstanding.
+</Warning>
+
+## Limiting across many instances
+
+<Claim kind="proposition" id="split-budget-loss" title="Splitting a budget across instances under-admits">
+Suppose a tenant's limit is $R$ and it is divided statically as $R/N$ across $N$ gateway instances.
+If the tenant's traffic is distributed over instances with fractions $f_1,\dots,f_N$ summing to
+$1$, the admitted rate is
+$$
+R\sum_{i=1}^N \min\!\left(f_i,\ \frac1N\right) \;\le\; R ,
+$$
+with equality only when $f_i = 1/N$ for every $i$. In the worst case — all traffic on one instance
+— the admitted rate is $R/N$.
+</Claim>
+
+<Proof>
+Instance $i$ receives offered rate $Rf_i$ and admits at most its own share $R/N$, so it admits
+$R\min(f_i, 1/N)$. Summing gives the display. Since $\sum_i f_i = 1$ and each term is capped at
+$1/N$, the total is at most $N \cdot (1/N) \cdot R = R$, attained only when no term is capped,
+i.e. $f_i \le 1/N$ for all $i$, which with the sum constraint forces equality throughout. With
+$f_1 = 1$ the sum is $R/N$.
+</Proof>
+
+<KeyIdea>
+Static splitting is only correct when load balancing is perfectly even — and with keep-alive
+connections, sticky sessions or a handful of large tenants, it is not. The options are:
+
+1. **Shared state** — one Redis counter per key. Correct, and adds a network round trip to every
+   request plus a dependency that must fail open.
+2. **Lease-based** — instances lease chunks of budget from a central allocator and spend them
+   locally, refreshing when low. One round trip per chunk rather than per request; slightly bursty
+   at chunk boundaries.
+3. **Sticky routing by key** — hash the tenant to one instance, which then holds the whole budget
+   locally. No shared state, but an instance restart loses the counter and a hot tenant has no
+   horizontal headroom.
+
+Most production limiters are (2) with (1) as the source of truth, because it keeps the per-request
+cost local while keeping the budget global.
+</KeyIdea>
+
+## Telling the client what to do
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 2
+anthropic-ratelimit-tokens-limit: 400000
+anthropic-ratelimit-tokens-remaining: 0
+anthropic-ratelimit-tokens-reset: 2026-09-21T14:32:00Z
+```
+
+`Retry-After` should be computed from the limiter state — for a token bucket, exactly
+$(c - \text{tokens})/r$ — not a fixed constant. Returning the true value lets a well-behaved client
+wait precisely long enough; returning a constant makes every client retry at the same instant,
+which is the synchronised-retry failure discussed in
+<TopicRef id="ai-engineering/reliability-patterns" />.
+
+<NotSaid>
+Rate limiting decides *whether* a request runs, not *when* it runs among those admitted. A limiter
+that admits a request hands it to a queue, and the queue's discipline — first-come, shortest-first,
+priority — is a separate decision covered by
+<TopicRef id="ai-systems/scheduling-and-admission-control" />. Limiting and scheduling are often
+conflated, and the symptom is a system that is fair in admission and wildly unfair in latency.
+</NotSaid>

@@ -1,0 +1,206 @@
+---
+title: Inference Server Architecture
+summary: 'The software inside a replica: the scheduler loop, continuous batching, paged KV memory, preemption, and what disaggregating prefill from decode buys.'
+field: ai-engineering
+level: 3
+order: 100
+prerequisites:
+  - ai-engineering/gpu-routing-and-affinity
+  - llm-ops/kv-cache-and-batching
+tags: [inference server, continuous batching, paged attention, scheduler, preemption, disaggregation]
+estimated_time: 3h
+claims:
+  - id: scheduler-loop
+    kind: definition
+    title: The iteration-level scheduler
+    summary: The server schedules per decode step rather than per request, so arrivals and completions are handled between tokens rather than between generations.
+    proved: false
+    tags: [scheduler, continuous batching]
+  - id: fragmentation
+    kind: proposition
+    title: Contiguous KV allocation wastes memory proportional to the length spread
+    summary: Reserving max_tokens contiguously per sequence wastes the gap between reserved and used, which for a mixed workload is most of the budget.
+    proved: true
+    tags: [memory, fragmentation, paging]
+  - id: preemption
+    kind: definition
+    title: Two ways to reclaim a running sequence
+    summary: A preempted sequence is either swapped out to host memory or recomputed from its prompt, trading bandwidth against compute.
+    proved: false
+    tags: [preemption, eviction]
+  - id: disaggregation
+    kind: definition
+    title: Prefill/decode disaggregation
+    summary: Running compute-bound prefill and memory-bound decode on separate pools lets each be provisioned for its own bottleneck, at the cost of transferring the KV cache between them.
+    proved: false
+    tags: [disaggregation, architecture]
+references:
+  - key: yu-orca
+    title: 'Orca: A Distributed Serving System for Transformer-Based Generative Models'
+    authors: G.-I. Yu, J. S. Jeong, G.-W. Kim, S. Kim, B.-G. Chun
+    year: 2022
+    kind: paper
+    url: https://www.usenix.org/conference/osdi22/presentation/yu
+    note: Introduces iteration-level scheduling, the basis of the loop below.
+  - key: kwon-vllm
+    title: Efficient Memory Management for Large Language Model Serving with PagedAttention
+    authors: W. Kwon et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2309.06180
+    note: Paged KV allocation and the fragmentation measurements referenced here.
+  - key: patel-splitwise
+    title: 'Splitwise: Efficient Generative LLM Inference Using Phase Splitting'
+    authors: P. Patel et al.
+    year: 2024
+    kind: paper
+    url: https://arxiv.org/abs/2311.18677
+    note: Separates prefill and decode onto different machines and measures the result.
+---
+
+<Intuition>
+A naive server treats a generation as a unit of work: take a batch, run it to completion, take the
+next batch. That wastes almost everything. The requests in a batch finish at wildly different
+times, so the GPU spends most of its life running a batch of one while nine slots sit empty waiting
+for the longest generation, and new arrivals wait for the whole batch to clear.
+
+The fix that made modern serving practical is to schedule **per token** instead of per request.
+Between every decode step, finished sequences leave and waiting ones join. That one change turns a
+batch from a convoy into a conveyor belt.
+</Intuition>
+
+## The loop
+
+<Definition id="scheduler-loop" title="The iteration-level scheduler">
+```python
+while True:
+    # 1. retire anything that finished on the previous step
+    for seq in running.finished():
+        emit(seq.final()); kv.free(seq); running.remove(seq)
+
+    # 2. admit what fits, honouring the memory budget rather than a fixed batch size
+    while waiting and kv.can_admit(waiting.peek(), running):
+        seq = waiting.pop()
+        kv.allocate_prompt(seq); running.add(seq)
+
+    # 3. if memory is short, reclaim from the running set
+    while kv.pressure() > HIGH_WATER:
+        victim = running.select_victim()          # usually newest or longest-remaining
+        preempt(victim)                           # swap out or drop and recompute
+
+    # 4. one step for everyone at once
+    logits = model.step(running.batch())          # prefill chunks + decode, fused
+    running.append_tokens(sample(logits))
+```
+
+Two properties distinguish this from static batching. The batch is **re-formed every step**, so
+waiting time is bounded by one step rather than one generation. And admission is governed by the
+**KV memory budget**, not by a batch-size constant, because memory is the binding constraint
+established in <TopicRef id="ai-systems/capacity-planning" />.
+</Definition>
+
+<KeyIdea>
+Iteration-level scheduling is what removes the head-of-line blocking described in
+<TopicRef id="ai-systems/scheduling-and-admission-control" />. Under static batching a 20-token
+request queued behind a 2000-token one waits for the whole generation; here it waits for one decode
+step. The fairness improvement is roughly the ratio of the longest generation to one step, which is
+three orders of magnitude.
+</KeyIdea>
+
+## Why the KV cache is paged
+
+<Claim kind="proposition" id="fragmentation" title="Contiguous KV allocation wastes memory proportional to the length spread">
+Suppose sequence $i$ reserves space for $L_i^{\max}$ tokens contiguously but uses only $L_i$. The
+wasted memory is $\sum_i (L_i^{\max} - L_i)$ per-token-bytes. With a common reservation
+$L^{\max}$ and actual lengths averaging $\bar L$, the utilisation of the KV budget is
+$$
+\eta \;=\; \frac{\bar L}{L^{\max}} ,
+$$
+so a workload declaring $L^{\max} = 4096$ and averaging $\bar L = 300$ uses $7.3\%$ of the memory
+it reserved.
+</Claim>
+
+<Proof>
+Each sequence occupies its reservation for its whole lifetime, since a contiguous allocation cannot
+be grown without moving it. Summing the reserved and used quantities and dividing gives $\eta$;
+substituting the figures gives $300/4096 = 0.0732$.
+</Proof>
+
+<KeyIdea>
+Paging fixes this the way operating systems always have: allocate the KV cache in fixed-size blocks
+and keep a per-sequence block table, so a sequence occupies only the blocks it has actually filled
+and grows one block at a time. Utilisation rises from $\bar L / L^{\max}$ to nearly $1$, and by the
+sizing formula in <TopicRef id="ai-systems/capacity-planning" /> the concurrency ceiling
+$L_{\max} = \eta M_{\text{kv}}/m$ rises in exact proportion — a tenfold increase in the number of
+concurrent sequences, from a memory-management change with no effect on the mathematics of the
+model.
+
+Blocks also make prefix sharing natural: two sequences with a common prompt point at the same
+blocks, with copy-on-write when they diverge.
+</KeyIdea>
+
+## Running out of memory mid-generation
+
+Admission is a prediction — a sequence admitted when memory was free may need more blocks later
+than remain. The server must therefore be able to take memory back.
+
+<Definition id="preemption" title="Two ways to reclaim a running sequence">
+| | **Swap** | **Recompute** |
+|---|---|---|
+| Action | copy the sequence's KV blocks to host memory | free the blocks, remember the tokens |
+| Cost to resume | transfer back over PCIe | re-prefill the whole sequence |
+| Scales with | tokens generated so far | tokens generated so far |
+| Better when | PCIe is idle, sequence is long | compute is idle, sequence is short |
+
+Victim selection is usually newest-first — the most recently admitted sequence has the least
+invested and is cheapest to restart — which is a last-in-first-out discipline layered under
+whatever policy governs admission.
+</Definition>
+
+<Warning title="Preemption is invisible in the wrong metrics">
+A preempted sequence's tokens-per-second goes to zero while it waits, then resumes. Averaged over
+the generation it looks like a slightly slow request; at the p99 it is a cliff. Servers should emit
+preemption counts and preempted-duration explicitly, because a rising preemption rate is the direct
+signal that admission is too aggressive for the memory budget, and no aggregate latency metric says
+so clearly.
+</Warning>
+
+## Splitting the two phases
+
+<Definition id="disaggregation" title="Prefill/decode disaggregation">
+Prefill is compute-bound and decode is memory-bandwidth-bound — the asymmetry derived in
+<TopicRef id="llm-ops/inference-arithmetic" />. Running both on the same replica means each phase
+interferes with the other: a long prefill stalls every decode in the batch, producing the
+inter-token latency spikes users perceive as stuttering.
+
+Disaggregation puts them on separate pools:
+
+```
+request ─► [prefill pool]  ──KV transfer──►  [decode pool] ─► tokens
+           compute-optimised                 bandwidth-optimised
+           large batches, short residency    many sequences, long residency
+```
+
+| | Gain | Cost |
+|---|---|---|
+| Prefill pool | sized for FLOPs, batched aggressively | — |
+| Decode pool | no prefill interference, smooth inter-token latency | — |
+| Transfer | — | the whole KV cache crosses the network per request |
+| Operations | each pool scales independently | two fleets, two failure domains |
+</Definition>
+
+<KeyIdea>
+The trade is decided by the KV transfer. Moving a sequence's cache between machines costs
+$m$ bytes over the interconnect — hundreds of megabytes for a long prompt. Disaggregation pays when
+the interconnect is fast relative to the interference being removed, which in practice means a
+high-bandwidth fabric and prompts long enough that prefill interference is the dominant latency
+defect. On a modest network, or for short prompts, the transfer costs more than the interference.
+</KeyIdea>
+
+<NotSaid>
+This page describes a single replica's internals. The interaction with routing is real and was
+covered from the other side in <TopicRef id="ai-engineering/gpu-routing-and-affinity" />: paged
+blocks with prefix sharing are exactly what makes cache affinity worth routing for, and
+disaggregation changes the affinity question because the decode pool holds the state while the
+prefill pool is interchangeable.
+</NotSaid>

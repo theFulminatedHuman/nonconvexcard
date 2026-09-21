@@ -1,0 +1,254 @@
+---
+title: API Design for Model Endpoints
+summary: 'Streaming, deadlines, cancellation, idempotency and versioning — the parts of a model API that are hard to change once anyone depends on them.'
+field: ai-engineering
+level: 1
+order: 20
+prerequisites:
+  - ai-engineering/anatomy-of-an-ai-system
+tags: [api design, streaming, SSE, idempotency, deadlines, cancellation, versioning]
+estimated_time: 3h
+claims:
+  - id: streaming-contract
+    kind: definition
+    title: The streaming response contract
+    summary: A token stream is a sequence of typed events ending in exactly one terminal event, so that a truncated connection is distinguishable from a completed one.
+    proved: false
+    tags: [streaming, sse]
+  - id: deadline-propagation
+    kind: heuristic
+    title: Propagate deadlines, do not re-specify timeouts
+    summary: Each hop should pass the remaining time budget downstream rather than applying its own fixed timeout, so that total latency is bounded and no hop works on an already-abandoned request.
+    proved: false
+    tags: [deadlines, timeouts]
+  - id: idempotency
+    kind: definition
+    title: Idempotency for non-idempotent generation
+    summary: A client-supplied key plus a stored result makes a retried generation return the original output rather than paying for and producing a second one.
+    proved: false
+    tags: [idempotency, retries]
+  - id: error-taxonomy
+    kind: definition
+    title: An error taxonomy that tells the client what to do
+    summary: Errors must separate retryable from terminal, and caller-fault from service-fault, because those two axes determine the client's next action.
+    proved: false
+    tags: [errors, retries]
+  - id: versioning
+    kind: heuristic
+    title: Pin model versions, evolve schemas additively
+    summary: Model identity belongs in the request and must be explicit and pinnable; the wire schema should only ever gain optional fields.
+    proved: false
+    tags: [versioning, compatibility]
+references:
+  - key: sse-spec
+    title: HTML Living Standard — Server-Sent Events
+    authors: WHATWG
+    kind: lecture-notes
+    url: https://html.spec.whatwg.org/multipage/server-sent-events.html
+    note: The event-stream format used by most streaming model APIs.
+  - key: rfc9110
+    title: 'RFC 9110: HTTP Semantics'
+    authors: R. Fielding, M. Nottingham, J. Reschke
+    year: 2022
+    kind: lecture-notes
+    url: https://www.rfc-editor.org/rfc/rfc9110.html
+    note: Status-code semantics and the definition of idempotent methods referenced below.
+  - key: google-sre-book
+    title: 'Site Reliability Engineering: How Google Runs Production Systems'
+    authors: B. Beyer, C. Jones, J. Petoff, N. R. Murphy
+    year: 2016
+    kind: book
+    url: https://sre.google/sre-book/table-of-contents/
+    note: Deadline propagation and the case against per-hop timeouts.
+---
+
+<Intuition>
+A model endpoint looks like an ordinary RPC until you notice four things that ordinary RPCs do not
+have to handle. Responses arrive over seconds, not milliseconds, so they stream. Requests cost real
+money, so a retry is not free. The unit of work is variable by two orders of magnitude, so one
+timeout does not fit. And the thing on the other end changes behaviour when it is upgraded, so
+"the same request" is not a stable notion.
+
+Each of those forces a decision into the API surface, and each decision is close to unchangeable
+once clients depend on it.
+</Intuition>
+
+## Streaming
+
+<Definition id="streaming-contract" title="The streaming response contract">
+A streamed generation is a sequence of typed events over one connection:
+
+```
+event: message_start        { "id": "...", "model": "...", "usage": { "input_tokens": 412 } }
+event: content_delta        { "index": 0, "text": "The" }
+event: content_delta        { "index": 0, "text": " utilisation" }
+        ...
+event: message_stop         { "stop_reason": "end_turn",
+                              "usage": { "input_tokens": 412, "output_tokens": 218 } }
+```
+
+The contract has three parts:
+
+1. **Exactly one terminal event.** A stream that ends without `message_stop` was truncated. Without
+   this, a dropped connection and a finished answer are indistinguishable to the client.
+2. **A stop reason.** `end_turn`, `max_tokens`, `stop_sequence`, `tool_use`, `refusal` — the client
+   frequently needs to branch on why generation ended, and inferring it from the text is guesswork.
+3. **Usage on the terminal event**, not only at the start: output tokens are unknown until the end,
+   and this is what the client is billed on.
+</Definition>
+
+<Warning title="An error can arrive after a 200">
+The HTTP status is committed the moment the first byte is sent, so a failure at token 300 cannot be
+a 500 — the response already said 200. Streaming APIs therefore need an in-band error event:
+
+```
+event: error                { "type": "overloaded_error", "message": "..." }
+```
+
+Clients that only check the status code will treat a mid-stream failure as a successful short
+answer. This is a common and quiet source of corrupted data downstream, because the truncated text
+is often syntactically fine.
+</Warning>
+
+<KeyIdea>
+Streaming exists for one reason: **time to first token is a different product from time to last
+token**. A 5-second generation that starts emitting at 300 ms feels interactive; the same
+generation delivered atomically at 5 s does not. That makes TTFT a first-class SLO —
+see <TopicRef id="ai-systems/what-a-serving-system-must-do" /> — and it means the API must not
+buffer for convenience anywhere on the path.
+</KeyIdea>
+
+## Deadlines rather than timeouts
+
+<Claim kind="heuristic" id="deadline-propagation" title="Propagate deadlines, do not re-specify timeouts">
+The client states *when it will give up*, as an absolute deadline; every hop passes the remaining
+budget downstream and refuses work it cannot finish in time.
+
+```python
+# each hop subtracts what it has already spent
+remaining = deadline - now()
+if remaining <= MIN_USEFUL:
+    raise DeadlineExceeded            # do not start work that cannot finish
+result = await downstream.call(req, deadline=deadline)   # absolute, not relative
+```
+
+Per-hop fixed timeouts have the opposite property: they compose additively, so a four-hop path with
+30-second timeouts can take two minutes, and hops keep working on requests whose callers left long
+ago.
+</Claim>
+
+<Assumptions>
+Deadline propagation assumes roughly synchronised clocks, which is why deadlines travel as a
+*remaining duration* in practice rather than an absolute timestamp, converted at each hop. It also
+assumes every hop actually checks; one hop that ignores the budget reintroduces the unbounded case
+for the whole path.
+</Assumptions>
+
+<Note title="Cancellation is the other half">
+A deadline tells a server when to stop; cancellation tells it to stop *now*, because the client
+disconnected. For generation this matters more than usual: an abandoned request holds a KV cache
+and a scheduler slot for its whole remaining length, which by
+<TopicRef id="ai-systems/capacity-planning" /> is a direct loss of concurrency. The inference
+server must observe client disconnect and free the sequence, and the path between the socket and
+the scheduler must actually carry that signal — it is routinely swallowed by an intermediate proxy
+or an unawaited task.
+</Note>
+
+## Retries that do not double-charge
+
+<Definition id="idempotency" title="Idempotency for non-idempotent generation">
+Generation is not idempotent: the same request run twice produces two answers and two bills. A
+client-supplied idempotency key makes it safe to retry:
+
+```
+POST /v1/messages
+Idempotency-Key: 8f2b1c0e-...       # chosen by the client, stable across its retries
+```
+
+The server stores the key with the request fingerprint and the eventual result:
+
+- **Key unseen** → run it, record `(key → in-flight)` before starting.
+- **Key seen, in flight** → return `409 Conflict`, or block until the original finishes.
+- **Key seen, completed** → return the stored result without re-running.
+- **Key seen, different request body** → `422` — the client has a bug, and silently returning the
+  old answer would hide it.
+
+Records expire, typically after 24 hours, and the expiry must be documented because it is the
+window in which a retry is safe.
+</Definition>
+
+<Warning title="Idempotency and streaming interact badly">
+Replaying a stored result for a streamed request means either replaying the whole event sequence or
+degrading to a single block. Both are acceptable; what is not acceptable is leaving it undefined,
+because a client retrying a dropped stream will otherwise receive a partial answer with no way to
+tell it apart from a complete one.
+</Warning>
+
+## Errors the client can act on
+
+<Definition id="error-taxonomy" title="An error taxonomy that tells the client what to do">
+Every error must answer two questions, because together they determine the client's next action:
+
+| | **Caller's fault** | **Service's fault** |
+|---|---|---|
+| **Terminal** | `400` invalid request, `401`, `403`, `422` | `501` not implemented |
+| **Retryable** | `429` rate limited — *with* `Retry-After` | `503` overloaded, `504` deadline, `500` internal |
+
+A typed body carries the detail:
+
+```json
+{ "type": "error",
+  "error": { "type": "rate_limit_error",
+             "message": "tokens-per-minute quota exhausted",
+             "retry_after_ms": 1840 } }
+```
+</Definition>
+
+<KeyIdea>
+`429` and `503` are the two that matter and they are routinely conflated. `429` means *you* asked
+for too much and the limit is yours; backing off fixes it. `503` means the *service* is out of
+capacity; backing off helps only if everyone does it, which is why it must be paired with jitter —
+see <TopicRef id="ai-engineering/reliability-patterns" />. Returning `500` for an overload turns a
+sheddable condition into one clients will hammer.
+</KeyIdea>
+
+## Versioning
+
+<Claim kind="heuristic" id="versioning" title="Pin model versions, evolve schemas additively">
+Two independent things change and need separate versioning.
+
+**The wire schema** evolves additively: new fields are optional, existing fields never change type
+or meaning, and nothing is removed within a major version. A date-based header
+(`anthropic-version: 2023-06-01` is the shape) lets the server serve old semantics to old clients.
+
+**The model** is named explicitly in the request, and the name must be pinnable:
+
+```
+"model": "claude-opus-4-5-20251101"     # pinned: byte-identical behaviour over time
+"model": "claude-opus-4-5"              # alias: follows the latest point release
+```
+</Claim>
+
+<Warning title="An alias is a silent deployment">
+Pointing production at an alias means the model changes under you with no deploy, no rollback
+handle and no entry in your change log. When output quality shifts, the first hypothesis will be
+your prompt, your retrieval, or your users — and it will take a long time to arrive at the one
+thing that actually changed. Pin in production; use aliases in development, where a surprise is
+cheap.
+</Warning>
+
+<Note title="Prompts are part of the version too">
+Model version, system prompt, tool schemas, sampling parameters and retrieval index version jointly
+determine behaviour. Versioning only the model leaves four other ways for behaviour to change
+without a version bump. The practical form is a single **configuration hash** recorded on every
+response and every eval run, so that "what produced this output?" is answerable months later —
+which is what <TopicRef id="ai-engineering/evaluation-harnesses" /> is built on.
+</Note>
+
+<NotSaid>
+This page is about the synchronous request API. Long-running work — batch jobs, large document
+processing, asynchronous agent runs — needs a different shape entirely: submit returns a job id,
+the client polls or subscribes, and the result lives somewhere addressable. Trying to serve those
+through the streaming endpoint by raising timeouts is the usual mistake, and it fails at the first
+connection drop.
+</NotSaid>

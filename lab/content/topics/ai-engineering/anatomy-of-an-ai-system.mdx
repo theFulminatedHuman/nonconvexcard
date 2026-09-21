@@ -1,0 +1,248 @@
+---
+title: The Anatomy of an AI System
+summary: 'Everything a request passes through besides the model: the components, what each one owns, and why the boundaries fall where they do.'
+field: ai-engineering
+level: 1
+order: 10
+prerequisites:
+  - ai-systems/what-a-serving-system-must-do
+tags: [architecture, request lifecycle, components, separation of concerns]
+estimated_time: 1h
+claims:
+  - id: request-path
+    kind: definition
+    title: The request path
+    summary: The ordered stages a request crosses between the client and the model, and the one job each stage owns.
+    proved: false
+    tags: [architecture]
+  - id: control-vs-data-plane
+    kind: definition
+    title: Control plane and data plane
+    summary: The split between components on the per-request path and components that configure them.
+    proved: false
+    tags: [control plane]
+  - id: cheap-work-first
+    kind: heuristic
+    title: Order stages by cost of rejection
+    summary: Put the checks that can reject a request earliest, cheapest first, so that work is never spent on a request that will be refused.
+    proved: false
+    tags: [ordering, admission]
+  - id: statelessness
+    kind: heuristic
+    title: Keep the request path stateless except where state is the product
+    summary: Only the KV cache and the conversation store hold per-request state worth keeping; everything else should be reconstructible.
+    proved: false
+    tags: [state, scaling]
+references:
+  - key: mcp-spec
+    title: Model Context Protocol — Specification
+    authors: Anthropic
+    year: 2024
+    kind: lecture-notes
+    url: https://modelcontextprotocol.io/specification
+    note: The protocol used for the tool and resource layer in later pages of this field.
+  - key: google-sre-book
+    title: 'Site Reliability Engineering: How Google Runs Production Systems'
+    authors: B. Beyer, C. Jones, J. Petoff, N. R. Murphy
+    year: 2016
+    kind: book
+    url: https://sre.google/sre-book/table-of-contents/
+    note: Source of the load-shedding, retry and error-budget practices referenced throughout this field.
+---
+
+<Intuition>
+Almost nothing in a production AI system is the model. A request arriving at a mature service
+touches a dozen components before a single token is generated, and most of the engineering — and
+most of the outages — live in those components rather than in the forward pass.
+
+The useful way to hold the whole thing in your head is as a pipeline with one rule: **each stage
+owns exactly one decision**. The gateway decides *who you are*. The limiter decides *whether you
+run now*. The router decides *where*. The cache decides *whether we need the model at all*. When
+a stage owns two decisions, it becomes the thing nobody can change.
+</Intuition>
+
+## The path a request takes
+
+<Definition id="request-path" title="The request path">
+The ordered stages between a client and a model, each owning one decision:
+
+```
+client
+  │
+  ▼
+[1] edge / TLS termination        transport, compression, geography
+  │
+  ▼
+[2] API gateway                   authenticate, resolve tenant, validate schema
+  │
+  ▼
+[3] quota + rate limiter          admit, delay, or reject — before any cost is incurred
+  │
+  ▼
+[4] semantic / exact cache        answer without the model, if we safely can
+  │
+  ▼
+[5] router                        choose model, version, replica; consider KV affinity
+  │
+  ▼
+[6] inference server              queue, batch, prefill, decode, stream
+  │      ▲
+  │      │ [7] tool / retrieval calls (MCP servers, vector search, functions)
+  ▼      │
+[8] post-processing               guardrails, redaction, schema validation
+  │
+  ▼
+[9] telemetry + accounting        traces, token counts, cost attribution, evals
+  │
+  ▼
+client
+```
+
+Stages 1–5 are cheap and fast; stage 6 is where essentially all the money is spent; stages 7–9
+happen per request and must not become serial bottlenecks.
+</Definition>
+
+<KeyIdea>
+The ordering is not arbitrary. Every stage before the inference server exists to **avoid** reaching
+the inference server, or to make reaching it cheaper. Authentication rejects strangers, the limiter
+rejects excess, the cache answers repeats, the router places the request where its KV cache already
+is. Each is orders of magnitude cheaper than a forward pass, so each one that fires is a large
+saving.
+</KeyIdea>
+
+## Which plane are you on
+
+<Definition id="control-vs-data-plane" title="Control plane and data plane">
+The **data plane** is everything on the per-request path: gateway, limiter, cache, router,
+inference servers. It must be fast, horizontally scalable, and survive the control plane being
+down.
+
+The **control plane** is everything that configures the data plane: the model registry, the
+deployment controller, the quota configuration store, the feature-flag service, the autoscaler.
+It may be slower, may be a single region, and may be briefly unavailable.
+</Definition>
+
+<Warning title="The control plane must not be on the request path">
+The most common structural outage in AI services is a data-plane component that calls the control
+plane synchronously — the limiter fetching a tenant's quota from a config service on every request,
+or the router asking the registry which model version is current. When the control plane hiccups,
+every request fails, and the blast radius is total.
+
+The fix is always the same shape: the data plane holds a **cached snapshot** of control-plane state
+with a defined staleness bound and an explicit behaviour when the snapshot is old. Deciding what to
+do with a five-minute-stale quota table is a design question with a real answer; discovering it
+during an incident is not.
+</Warning>
+
+## Ordering the checks
+
+<Claim kind="heuristic" id="cheap-work-first" title="Order stages by cost of rejection">
+Place the stages that can reject a request in increasing order of the work they consume, so a
+request that will be refused is refused as early as possible. Concretely, authentication before
+schema validation, schema validation before quota, quota before cache lookup, cache lookup before
+model dispatch.
+</Claim>
+
+<Assumptions>
+This is a rule of thumb, not a theorem — it assumes the checks are independent and that any of them
+may reject. It fails when a later, more expensive check would reject far more often than an early
+cheap one; then the expected cost is minimised by running the high-rejection check first, which is
+the same reasoning as ordering predicates in a query plan by selectivity over cost.
+</Assumptions>
+
+<Note title="The exception that matters">
+Abuse traffic inverts the ordering. A caller sending malformed requests at high volume costs you
+schema validation on every one, so a cheap reputation check *before* parsing — on the connection or
+the API key — pays for itself. In general: order by expected cost, which is
+$\text{cost of check} + \Pr[\text{pass}] \times \text{cost of the rest}$, not by cost alone.
+</Note>
+
+## Where state is allowed to live
+
+<Claim kind="heuristic" id="statelessness" title="Keep the request path stateless except where state is the product">
+Only three kinds of per-request state genuinely need to persist across the call:
+
+1. **KV cache** — lives on a specific GPU, is expensive to rebuild, and is the reason routing has
+   affinity at all.
+2. **Conversation history** — belongs in a store the client or the service owns explicitly, not
+   implicitly in a server's memory.
+3. **Idempotency records** — so a retried request returns the original result instead of running
+   twice.
+
+Everything else — limiter counters, cache entries, routing tables — should be reconstructible from
+the control plane or from scratch, so that any instance can be killed at any time.
+</Claim>
+
+<KeyIdea>
+The KV cache is what makes an inference fleet different from a stateless web fleet. It gives
+requests *affinity* to a particular replica, and affinity is exactly what
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" /> shows costs you queueing delay by
+re-partitioning a pooled queue. Every routing decision in this field is a negotiation between those
+two facts.
+</KeyIdea>
+
+## A minimal skeleton
+
+The whole path, with each stage as a function that either returns a response or passes the request
+on. This is the shape the rest of the field fills in:
+
+```python
+async def handle(req: Request) -> Response:
+    # [2] who is this, and is the request well formed?
+    tenant = await gateway.authenticate(req)          # raises 401
+    body = gateway.validate(req, schema=ChatRequest)  # raises 400
+
+    # [3] are they allowed to run this now?
+    lease = await limiter.acquire(tenant, cost=estimate_tokens(body))
+    if lease is None:
+        raise TooManyRequests(retry_after=limiter.retry_after(tenant))
+
+    # [4] can we answer without the model?
+    if (hit := await cache.lookup(body)) is not None:
+        telemetry.record(tenant, hit, cached=True)
+        return hit.response
+
+    # [5] where should this run?
+    target = router.choose(body, affinity=body.conversation_id)
+
+    # [6] the expensive part, streamed back as it is produced
+    try:
+        stream = await target.generate(body, deadline=req.deadline)
+        response = await postprocess.guard(stream)     # [8]
+    finally:
+        await lease.release()                          # always, even on failure
+
+    # [9] account for it whether or not it succeeded
+    telemetry.record(tenant, response, cached=False)
+    await cache.maybe_store(body, response)
+    return response
+```
+
+<Warning title="The finally block is not decoration">
+A limiter lease that is not released on the error path leaks capacity. After enough failures the
+tenant is locked out entirely, with no errors in the limiter's own logs — because from its point of
+view the requests are still running. Any component that hands out a resource on the request path
+needs its release in a `finally`, and needs a lease timeout as a backstop for the process dying
+between the two.
+</Warning>
+
+## What each later page covers
+
+| Stage | Page |
+|---|---|
+| 2 | <TopicRef id="ai-engineering/api-design-for-model-endpoints" /> and <TopicRef id="ai-engineering/gateways-auth-and-quota" /> |
+| 3 | <TopicRef id="ai-engineering/rate-limiting-algorithms" /> |
+| 4 | <TopicRef id="ai-engineering/semantic-caching" /> |
+| 5 | <TopicRef id="ai-engineering/gpu-routing-and-affinity" /> |
+| 6 | <TopicRef id="ai-engineering/inference-server-architecture" /> and <TopicRef id="ai-engineering/autoscaling-and-cold-starts" /> |
+| 7 | <TopicRef id="ai-engineering/model-context-protocol" /> and <TopicRef id="ai-engineering/tool-loops-in-production" /> |
+| 8 | <TopicRef id="ai-engineering/guardrails-and-safety-layers" /> |
+| 9 | <TopicRef id="ai-engineering/observability-for-ai-systems" /> |
+
+<NotSaid>
+This page describes a single-model, single-region service. Multi-region adds a routing decision
+above stage 1 and a consistency question about where quota counters live; multi-model adds a
+capability-matching problem at stage 5. Both are compositions of what follows rather than new
+ideas, but neither is free, and a design that ignores them until it needs them usually discovers
+that the limiter and the router made region-local assumptions that are expensive to undo.
+</NotSaid>

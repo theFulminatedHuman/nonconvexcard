@@ -1,0 +1,209 @@
+---
+title: GPU Routing and Cache Affinity
+summary: 'Choosing which replica serves a request when the replicas are not interchangeable — prefix affinity, queue-aware placement, LoRA multiplexing and draining.'
+field: ai-engineering
+level: 3
+order: 80
+prerequisites:
+  - ai-engineering/anatomy-of-an-ai-system
+  - ai-systems/load-balancing
+tags: [routing, load balancing, KV cache, affinity, LoRA, draining, heterogeneous fleet]
+estimated_time: 3h
+claims:
+  - id: affinity-tension
+    kind: definition
+    title: The affinity–pooling tension
+    summary: Routing to the replica holding a request's KV prefix saves prefill but partitions the queue, and the two effects pull in opposite directions.
+    proved: false
+    tags: [affinity, pooling]
+  - id: affinity-rule
+    kind: proposition
+    title: When to honour affinity
+    summary: Prefer the cache-warm replica exactly when the prefill saved exceeds the extra queueing its load implies.
+    proved: true
+    tags: [decision rule]
+  - id: lor-routing
+    kind: heuristic
+    title: Route on outstanding work, not outstanding requests
+    summary: Requests differ by orders of magnitude in size, so the balancing signal must be queued tokens rather than queued requests.
+    proved: false
+    tags: [least outstanding, variance]
+  - id: lora-multiplexing
+    kind: definition
+    title: Adapter-aware routing
+    summary: Replicas holding different LoRA adapters form overlapping capability classes, turning routing into a constrained assignment rather than a free choice.
+    proved: false
+    tags: [LoRA, multi-tenant]
+  - id: draining
+    kind: definition
+    title: Draining a replica
+    summary: Removing a replica requires stopping new admissions, letting in-flight generations finish, and bounding the wait with a forced-migration deadline.
+    proved: false
+    tags: [draining, deployment]
+references:
+  - key: kwon-vllm
+    title: Efficient Memory Management for Large Language Model Serving with PagedAttention
+    authors: W. Kwon et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2309.06180
+    note: Paged KV cache and prefix sharing, which is what makes affinity worth routing for.
+  - key: zheng-sglang
+    title: 'SGLang: Efficient Execution of Structured Language Model Programs'
+    authors: L. Zheng et al.
+    year: 2024
+    kind: paper
+    url: https://arxiv.org/abs/2312.07104
+    note: RadixAttention, a prefix-tree KV cache that makes prefix-aware routing directly actionable.
+  - key: sheng-slora
+    title: 'S-LoRA: Serving Thousands of Concurrent LoRA Adapters'
+    authors: Y. Sheng et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2311.03285
+    note: Serving many adapters from one base model, the setting of the adapter-routing section.
+---
+
+<Intuition>
+A stateless web fleet has an easy routing problem: any server will do, so send the request to
+whichever is least busy. An inference fleet does not, because the replicas are not
+interchangeable. One of them already holds the attention keys and values for this conversation's
+first four thousand tokens. Sending the request elsewhere means recomputing all of it.
+
+So the router is choosing between two real costs: recompute the prefix somewhere idle, or queue
+behind other work somewhere warm. Which is cheaper is a calculation, and it changes with load.
+</Intuition>
+
+## The tension
+
+<Definition id="affinity-tension" title="The affinity–pooling tension">
+**Affinity** routes a request to the replica that already holds its KV prefix, saving the prefill
+for that prefix. **Pooling** routes to whichever replica is least loaded, minimising queueing.
+
+They conflict because affinity partitions one queue into many. By the pooling result in
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />, $c$ separate queues have strictly
+worse delay than one queue with $c$ servers at the same utilisation — and the gap grows with $c$.
+</Definition>
+
+<Claim kind="proposition" id="affinity-rule" title="When to honour affinity">
+Let replica $A$ hold a prefix of $k$ tokens and have queued work $Q_A$ seconds; let replica $B$
+hold nothing and have $Q_B < Q_A$. Writing $t_{\text{prefill}}(k)$ for the time to prefill $k$
+tokens, routing to $A$ is faster exactly when
+$$
+Q_A - Q_B \;<\; t_{\text{prefill}}(k) .
+$$
+</Claim>
+
+<Proof>
+Time to first token on $A$ is $Q_A$ plus the prefill of the *uncached* remainder; on $B$ it is
+$Q_B$ plus the prefill of the whole prompt, which exceeds $A$'s by $t_{\text{prefill}}(k)$.
+Comparing $Q_A + p$ against $Q_B + p + t_{\text{prefill}}(k)$ gives the condition.
+</Proof>
+
+<KeyIdea>
+The rule has the right shape: **affinity is worth more for long prefixes and less under load.**
+A 20,000-token system prompt is worth waiting a long time for; a 200-token one is not worth
+waiting at all. Using $t_{\text{prefill}}(k)$ as the tolerance — rather than a fixed "always
+prefer warm" or "never prefer warm" — is the whole design, and both fixed policies are wrong in
+the regime the other one covers.
+</KeyIdea>
+
+```python
+def choose(req, replicas):
+    k = prefix_len(req)                       # longest cached prefix across the fleet
+    warm = [r for r in replicas if r.has_prefix(req.prefix_hash)]
+    cold = [r for r in replicas if r not in warm]
+    best_cold = min(cold, key=lambda r: r.queued_seconds, default=None)
+    if not warm:
+        return best_cold
+    best_warm = min(warm, key=lambda r: r.queued_seconds)
+    if best_cold is None:
+        return best_warm
+    saved = prefill_seconds(k, best_warm.hardware)
+    return best_warm if (best_warm.queued_seconds - best_cold.queued_seconds) < saved else best_cold
+```
+
+<Warning title="Affinity without a release valve is a hotspot generator">
+A popular conversation, a shared system prompt or a single heavy tenant will pin traffic to one
+replica, and strict affinity will keep sending more. The condition above is the release valve: once
+that replica's queue exceeds the others by more than the prefill saving, traffic moves. Deleting
+the comparison "because the cache hit rate looks better" produces exactly the hotspot the metric
+was hiding.
+</Warning>
+
+## What to balance on
+
+<Claim kind="heuristic" id="lor-routing" title="Route on outstanding work, not outstanding requests">
+Round-robin equalises request counts; least-outstanding-requests equalises in-flight counts. For
+generation neither is right, because a request may be 20 tokens or 20,000. Balance on **queued
+tokens** — the sum over queued and running requests of their remaining expected output — which is
+the quantity that actually predicts when the replica will be free.
+</Claim>
+
+<Assumptions>
+Remaining output length is unknown, so this needs an estimate: `max_tokens` as a pessimistic bound,
+a learned predictor, or a running estimate that decays as tokens are emitted. An estimate is still
+far better than a count, because the count is wrong by the full dynamic range of the workload.
+</Assumptions>
+
+By the Pollaczek–Khinchine formula in
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />, queueing delay scales with
+$1 + c_s^2$; routing on counts lets that variance land unevenly across replicas, so some replicas
+carry several long generations while others idle.
+
+## Adapters
+
+<Definition id="lora-multiplexing" title="Adapter-aware routing">
+When replicas serve a shared base model with different LoRA adapters loaded, the fleet is no longer
+homogeneous: replica $r$ can serve tenant $t$ only if $t$'s adapter is resident, or can be loaded.
+Routing becomes a constrained assignment with three costs:
+
+| | Cost |
+|---|---|
+| adapter already resident | 0 |
+| adapter loadable from host memory | tens of milliseconds |
+| adapter must be fetched from object storage | seconds |
+
+The router therefore maintains, per replica, the resident adapter set, and prefers residency the
+same way it prefers KV affinity — with a tolerance, so that a busy replica holding the adapter
+eventually loses to an idle one that must load it.
+</Definition>
+
+<KeyIdea>
+Adapter residency and KV affinity are the same kind of constraint at different timescales: adapters
+are per-tenant and persist for minutes, KV prefixes are per-conversation and persist for seconds.
+A router that models both as "cost to make this replica able to serve this request cheaply" handles
+them with one rule rather than two special cases.
+</KeyIdea>
+
+## Taking a replica out
+
+<Definition id="draining" title="Draining a replica">
+Removing a replica — for a deploy, a scale-down or a failing GPU — has three phases:
+
+1. **Close to new work.** Mark unhealthy in the router, keep serving. New requests go elsewhere;
+   in-flight generations continue.
+2. **Wait for in-flight work.** Generations finish naturally. This is bounded by the longest
+   `max_tokens` on the replica, which can be minutes.
+3. **Force-migrate at a deadline.** Anything still running is cancelled and, if the client is still
+   connected, re-dispatched — losing its KV cache and restarting the prefill.
+
+The deadline is required: without it, one request with a large `max_tokens` blocks the drain
+indefinitely, and rolling deploys stall behind it.
+</Definition>
+
+<Warning title="Health checks must distinguish 'busy' from 'broken'">
+A saturated replica fails a naive health check — it is slow to respond — and gets removed, sending
+its load to its neighbours, which then saturate and are removed in turn. That cascade empties a
+healthy fleet under load. The health endpoint must answer "is this process functioning?" from a
+path that does not queue behind inference work, and load must be communicated through a *separate*
+signal the router uses for weighting rather than for eviction.
+</Warning>
+
+<NotSaid>
+This page assumes prefill and decode happen on the same replica. Disaggregated serving splits them
+onto separate pools, which changes the routing problem substantially: affinity then applies to the
+decode pool while the prefill pool is genuinely interchangeable, and the KV cache has to be
+transferred between them over the network. That is covered in
+<TopicRef id="ai-engineering/inference-server-architecture" />.
+</NotSaid>

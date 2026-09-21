@@ -1,0 +1,236 @@
+---
+title: Evaluation Harnesses
+summary: 'Turning "is it good?" into a test suite that runs in CI — golden sets, graders, the failure modes of LLM-as-judge, and why a passing eval on a changed config proves nothing.'
+field: ai-engineering
+level: 3
+order: 150
+prerequisites:
+  - ai-engineering/data-pipelines-and-lineage
+  - ai-systems/rollout-and-experimentation
+tags: [evaluation, golden set, LLM as judge, regression testing, CI, grading]
+estimated_time: 3h
+claims:
+  - id: eval-anatomy
+    kind: definition
+    title: The four parts of an eval
+    summary: A dataset, a runner pinned to an exact configuration, a grader, and an aggregation with a decision rule.
+    proved: false
+    tags: [structure]
+  - id: grader-ladder
+    kind: definition
+    title: The grader ladder
+    summary: Prefer exact match, then programmatic checks, then reference-based similarity, then a model judge, then a human — cheaper and more reliable first.
+    proved: false
+    tags: [grading]
+  - id: judge-bias
+    kind: empirical
+    title: Model judges have systematic biases
+    summary: Reported evaluations find judges favour longer answers, answers in the first position, and outputs from the model family doing the judging.
+    proved: false
+    tags: [LLM as judge, bias]
+  - id: eval-noise-floor
+    kind: proposition
+    title: A golden set of size n cannot resolve differences below its noise floor
+    summary: With binary grading on n items, the standard error of the pass rate is at most 1/(2 sqrt n), so small sets cannot distinguish small regressions.
+    proved: true
+    tags: [sample size, power]
+  - id: config-hash
+    kind: heuristic
+    title: An eval result is meaningless without the configuration that produced it
+    summary: Model, prompt, tools, retrieval index and sampling parameters jointly determine behaviour, so all of them must be pinned and recorded.
+    proved: false
+    tags: [reproducibility]
+references:
+  - key: zheng-mtbench
+    title: 'Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena'
+    authors: L. Zheng et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2306.05685
+    note: Measures position, verbosity and self-enhancement bias in model judges.
+  - key: kohavi-trustworthy
+    title: 'Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing'
+    authors: R. Kohavi, D. Tang, Y. Xu
+    year: 2020
+    kind: book
+    note: The offline/online split and the guardrail-metric discipline assumed here.
+---
+
+<Intuition>
+Traditional software has tests because behaviour is specified. Model behaviour is not specified; it
+is *observed*, and it changes when anything around it changes — the model version, a word in the
+prompt, a document in the index, the temperature. So the equivalent of a test suite is a
+measurement apparatus: a fixed set of inputs, a fixed way of scoring the outputs, and a recorded
+baseline to compare against.
+
+The engineering discipline is the same as for any test suite. It must be fast enough to run on
+every change, deterministic enough that a failure means something, and honest enough that people
+believe it when it goes red.
+</Intuition>
+
+## Anatomy
+
+<Definition id="eval-anatomy" title="The four parts of an eval">
+1. **A dataset** — inputs with, where possible, references. Versioned, immutable, in source
+   control or an addressable store.
+2. **A runner** — executes the system under an exactly pinned configuration and records raw
+   outputs alongside that configuration.
+3. **A grader** — turns each output into a score. The most consequential choice.
+4. **An aggregation and decision rule** — how scores combine and what constitutes a regression,
+   decided *before* looking at the result.
+
+```python
+@dataclass(frozen=True)
+class EvalRun:
+    dataset: str          # "support-golden-v7"          immutable id
+    config_hash: str      # model + prompt + tools + index + sampling
+    results: list[Result]
+    started_at: datetime
+    git_sha: str
+```
+</Definition>
+
+<Claim kind="heuristic" id="config-hash" title="An eval result is meaningless without the configuration that produced it">
+Behaviour is determined jointly by the model version, the system prompt, the tool schemas, the
+retrieval index version and the sampling parameters. An eval that records only the model version
+cannot answer "what changed?" when the score moves, and there are four other candidates.
+
+```python
+def config_hash(cfg) -> str:
+    return sha256(json.dumps({
+        "model": cfg.model,                    # pinned, never an alias
+        "system_prompt": sha256(cfg.system_prompt.encode()).hexdigest(),
+        "tools": sorted((t.name, t.schema_hash) for t in cfg.tools),
+        "index": (cfg.index_name, cfg.index_version),
+        "sampling": {"temperature": cfg.temperature, "top_p": cfg.top_p, "seed": cfg.seed},
+    }, sort_keys=True).encode()).hexdigest()
+```
+</Claim>
+
+<Warning title="Temperature above zero makes the eval a random variable">
+Running at temperature 0.7 means the score differs between two runs of identical code, and the
+variance is often larger than the effect being measured. Either evaluate at temperature 0 — which
+measures something different from what users get — or run $k$ samples per item and report the mean
+with its standard error. Reporting a single sampled run as though it were a measurement is the most
+common way eval dashboards mislead.
+</Warning>
+
+## Choosing a grader
+
+<Definition id="grader-ladder" title="The grader ladder">
+| Grader | Cost | Reliability | Use when |
+|---|---|---|---|
+| **exact / normalised match** | free | perfect | the answer is a value: a number, a label, an id |
+| **programmatic check** | free | perfect within its rules | the output has structure: valid JSON, compiles, passes tests, cites a real id |
+| **reference similarity** | cheap | moderate | a reference exists but wording may vary |
+| **model judge** | expensive | biased, see below | open-ended quality with a written rubric |
+| **human** | very expensive | the ground truth, with its own variance | calibrating everything above |
+
+Climb the ladder only when forced. A surprising fraction of what teams grade with a model judge is
+programmatically checkable: *did it cite a document that exists? is the JSON valid against the
+schema? did it call the tool at all? is the refund amount in the answer equal to the one in the
+record?*
+</Definition>
+
+<KeyIdea>
+The best graders are **assertions about verifiable properties**, not judgements about quality. They
+are free, deterministic and never drift. Every open-ended criterion you can convert into a checkable
+one removes a source of noise from the suite permanently — and the conversion is usually a
+conversation about what "good" actually means, which is valuable independently of the eval.
+</KeyIdea>
+
+## Model judges
+
+<Claim kind="empirical" id="judge-bias" title="Model judges have systematic biases">
+Published evaluations of LLM judges report three biases in particular: a preference for **longer**
+answers independent of quality; a **position** effect when two candidates are compared in sequence;
+and **self-enhancement**, a preference for outputs produced by the same model family as the judge.
+</Claim>
+
+<Assumptions>
+These are measurements of particular models on particular benchmarks, not universal laws, and their
+magnitudes vary. They are reported here because the mitigations below are cheap and worth applying
+regardless of the exact effect size in your setting.
+</Assumptions>
+
+Mitigations, in order of value for effort:
+
+1. **Randomise position and average both orders.** Removes the position effect essentially
+   entirely, at double the judge cost.
+2. **Grade against a rubric with explicit criteria**, not "which is better". Rubrics reduce the
+   verbosity effect because length is not one of the criteria.
+3. **Use a different model family to judge** than the one generating, to avoid self-enhancement.
+4. **Calibrate against humans on a sample.** Measure judge–human agreement on a hundred items and
+   report it alongside every score. A judge with 70% agreement is measuring something, and it is
+   not what you think.
+5. **Require a reason before the score**, and log it. Reasons make disagreements inspectable, and
+   an implausible reason on a passing item is a signal the rubric is wrong.
+
+<Warning title="Never judge with the model under test">
+Evaluating a prompt change to model X with model X as judge means a change that makes X more
+confident can raise the score without improving anything. This closes a loop between the optimiser
+and its own metric, and the eval stops being evidence.
+</Warning>
+
+## How big must the set be?
+
+<Claim kind="proposition" id="eval-noise-floor" title="A golden set of size n cannot resolve differences below its noise floor">
+With binary grading, the pass rate $\hat p$ on $n$ independent items has standard error
+$\sqrt{p(1-p)/n} \le 1/(2\sqrt n)$. Detecting a change of $\Delta$ in the pass rate with 80% power
+at the 5% level needs, by the two-sample sizing result,
+$$
+n \;\ge\; \frac{2\,(z_{0.975}+z_{0.8})^2\,p(1-p)}{\Delta^2}
+\;\approx\; \frac{15.7\,p(1-p)}{\Delta^2} .
+$$
+At $p = 0.9$: detecting a 5-point drop needs $n \approx 565$; a 1-point drop needs
+$n \approx 14{,}130$.
+</Claim>
+
+<Proof>
+The pass count is Binomial$(n,p)$, so $\Var(\hat p) = p(1-p)/n$, maximised at $p = 1/2$ giving the
+bound $1/(2\sqrt n)$. The sample size follows from the two-arm sizing proposition in
+<TopicRef id="ai-systems/rollout-and-experimentation" /> with $\sigma^2 = p(1-p)$.
+</Proof>
+
+<KeyIdea>
+A 50-item golden set has a standard error of about 4 percentage points. It cannot tell a 5% real
+regression from noise, which means **most hand-curated eval sets are too small to detect the
+regressions they were built to catch**. Either grow the set, or accept that it is a smoke test —
+useful for catching catastrophic breakage, useless for the incremental decisions people actually
+use it for.
+</KeyIdea>
+
+## Running it in CI
+
+```yaml
+on: [pull_request]
+jobs:
+  eval:
+    steps:
+      - run: eval run --suite smoke --config-from-branch      # ~2 min, catches breakage
+      - run: eval compare --against main --fail-on regression
+```
+
+Three tiers, by cost and cadence:
+
+| Tier | Size | Cadence | Blocks |
+|---|---|---|---|
+| **smoke** | 50–100 items, programmatic graders only | every PR | yes |
+| **regression** | 500–5000 items, full ladder | nightly and pre-release | release |
+| **deep** | everything, including human review | before a model change | model rollout |
+
+<Warning title="An eval that blocks and is noisy will be disabled">
+If the smoke suite fails spuriously even 5% of the time, developers learn to re-run it, and within
+a month a real failure will be re-run away too. Blocking suites must use only deterministic graders
+at temperature 0. Anything with a model judge belongs in the nightly tier where a human reads the
+result.
+</Warning>
+
+<NotSaid>
+Offline evaluation measures the system against a fixed distribution that you chose, and the
+distribution is where the errors hide: the golden set contains the failures you already knew about.
+It cannot discover a new failure mode, and it systematically over-represents what someone thought
+to write down. The corrective is sampling production traffic into the eval set continuously — which
+is also what makes the drift-monitoring proposal in
+<TopicRef id="ai-engineering/drift-detection" /> work, since the two need the same apparatus.
+</NotSaid>

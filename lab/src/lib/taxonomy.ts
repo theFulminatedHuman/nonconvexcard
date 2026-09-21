@@ -27,6 +27,7 @@ export const FIELD_SLUGS = [
   'quantization',
   'llm-ops',
   'ai-systems',
+  'ai-engineering',
   'rag',
   'agents',
 ] as const;
@@ -206,6 +207,15 @@ export const FIELDS: Readonly<Record<FieldSlug, FieldMeta>> = {
     blurb:
       'The mathematics of putting a model into production: Little\u2019s law and the utilisation wall, tail latency under fan-out, parallelism and collective-communication cost models, caching, load balancing, availability and cost per token.',
     requires: ['llm-ops', 'probability'],
+  },
+  'ai-engineering': {
+    slug: 'ai-engineering',
+    title: 'AI Systems Engineering',
+    short: 'AI Engineering',
+    group: 'Systems',
+    blurb:
+      'Building the system around the model: gateways, rate limiting and quota, the Model Context Protocol, tool loops, semantic caching, GPU routing, cold starts, data pipelines, drift detection, evaluation harnesses and observability.',
+    requires: ['ai-systems'],
   },
   rag: {
     slug: 'rag',

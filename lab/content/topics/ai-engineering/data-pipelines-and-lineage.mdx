@@ -1,0 +1,225 @@
+---
+title: Data Pipelines and Lineage
+summary: 'The pipeline that feeds a model — ingestion, validation, chunking, embedding, indexing — and the lineage records that make "why did it answer that?" a question with an answer.'
+field: ai-engineering
+level: 2
+order: 120
+prerequisites:
+  - ai-engineering/anatomy-of-an-ai-system
+tags: [MLOps, data pipeline, lineage, versioning, idempotency, backfill, training-serving skew]
+estimated_time: 3h
+claims:
+  - id: pipeline-stages
+    kind: definition
+    title: The stages, and what each may not do
+    summary: Ingest, validate, transform, embed, index and publish, with validation as a gate rather than a filter.
+    proved: false
+    tags: [pipeline]
+  - id: idempotent-stages
+    kind: heuristic
+    title: Every stage must be idempotent and replayable
+    summary: Pipelines fail partway, so each stage must be safe to re-run over the same input and produce the same output.
+    proved: false
+    tags: [idempotency, replay]
+  - id: lineage-record
+    kind: definition
+    title: The lineage record
+    summary: Each artefact records the exact inputs, code version and configuration that produced it, so any output can be traced back to its sources.
+    proved: false
+    tags: [lineage, provenance]
+  - id: skew
+    kind: definition
+    title: Training–serving skew
+    summary: A discrepancy between how a feature is computed offline and online, which produces a model that is correct in evaluation and wrong in production.
+    proved: false
+    tags: [skew, correctness]
+  - id: backfill-cost
+    kind: proposition
+    title: Re-embedding is the dominant cost of changing an embedding model
+    summary: Switching embedding models requires re-embedding the whole corpus, so the migration cost is linear in corpus size and independent of query volume.
+    proved: true
+    tags: [migration, embeddings]
+references:
+  - key: sculley-tech-debt
+    title: Hidden Technical Debt in Machine Learning Systems
+    authors: D. Sculley et al.
+    year: 2015
+    kind: paper
+    url: https://papers.nips.cc/paper/2015/hash/86df7dcfd896fcaf2674f757a2463eba-Abstract.html
+    note: Source of the glue-code, configuration-debt and entanglement failure modes described here.
+  - key: polyzotis-data-validation
+    title: Data Validation for Machine Learning
+    authors: E. Breck, N. Polyzotis, S. Roy, S. Whang, M. Zinkevich
+    year: 2019
+    kind: paper
+    url: https://mlsys.org/Conferences/2019/doc/2019/167.pdf
+    note: The schema-and-statistics validation approach used in the validation stage below.
+---
+
+<Intuition>
+The model is the part of an AI system that people talk about and the smallest part of what can go
+wrong. A retrieval system that answers badly is, nine times out of ten, not a model problem: it is
+a document that failed to ingest, a chunk that split a table in half, an embedding produced by a
+model that was upgraded six weeks ago for half the corpus, or an index that is silently four days
+stale.
+
+None of those produce errors. They produce *plausible wrong answers*, which is much worse, and the
+only defence is a pipeline that records enough about itself to be interrogated afterwards.
+</Intuition>
+
+## The stages
+
+<Definition id="pipeline-stages" title="The stages, and what each may not do">
+```
+source ──► ingest ──► validate ──► transform ──► embed ──► index ──► publish
+             │           │            │            │         │          │
+          raw copy    gate, not    chunk, clean,  batch,   upsert,   atomic
+          retained     filter       enrich        cache    version    swap
+```
+
+| Stage | Owns | Must not |
+|---|---|---|
+| **ingest** | fetching, deduplication, raw retention | transform anything |
+| **validate** | schema and statistical checks | silently drop bad records |
+| **transform** | chunking, cleaning, metadata extraction | depend on wall-clock time |
+| **embed** | vectorisation, batching, caching | mix embedding model versions |
+| **index** | upsert into the vector store, build | serve from a half-built index |
+| **publish** | atomic pointer swap to the new version | leave two versions live |
+</Definition>
+
+<Warning title="Validation is a gate, not a filter">
+The tempting implementation drops records that fail validation and carries on. The corpus then
+shrinks silently, and the first symptom is a retrieval gap nobody can explain. Validation must
+*quarantine* — write failures to a dead-letter store with the reason, emit a count, and fail the
+run when the failure rate exceeds a threshold. "We ingested 94% of the documents" is a fact someone
+must be told, not a detail to be absorbed.
+</Warning>
+
+## Replayability
+
+<Claim kind="heuristic" id="idempotent-stages" title="Every stage must be idempotent and replayable">
+Pipelines fail halfway: a node dies, an API rate-limits, a deploy lands mid-run. Recovery must be
+"run it again", which requires each stage to be a **pure function of its inputs and its
+configuration**:
+
+- Address outputs by a content hash of `(input, code version, config)`, so a re-run writes the
+  same key and a completed unit is skipped rather than redone.
+- Never use `now()` inside a transform. Pass the logical processing date in as a parameter, so a
+  backfill for last Tuesday produces what last Tuesday's run would have.
+- Make writes upserts keyed on a stable document id, never appends.
+
+```python
+def unit_key(doc, code_version, config) -> str:
+    return sha256(f"{doc.id}:{doc.content_hash}:{code_version}:{config.hash}".encode()).hexdigest()
+
+async def embed_stage(docs, code_version, config):
+    for doc in docs:
+        key = unit_key(doc, code_version, config)
+        if await store.exists(key):
+            continue                              # already done, in a previous attempt
+        await store.put(key, await embedder.embed(doc.chunks))
+```
+</Claim>
+
+<KeyIdea>
+The content-hash key does three jobs at once: it makes retries free, it makes backfills incremental
+(only changed documents re-run), and it makes a config change *visibly* invalidate everything it
+should — because the hash changes and every unit is recomputed. A pipeline keyed on document id
+alone silently serves stale artefacts after a config change, which is the bug that takes weeks to
+find.
+</KeyIdea>
+
+## Lineage
+
+<Definition id="lineage-record" title="The lineage record">
+Every artefact carries the inputs and the code that produced it:
+
+```json
+{ "artifact": "chunk:doc-8812:14",
+  "produced_at": "2026-09-21T09:14:02Z",
+  "logical_date": "2026-09-20",
+  "source": { "uri": "s3://corpus/policies/refunds.md",
+              "content_hash": "sha256:3f1a...", "fetched_at": "2026-09-20T02:11:00Z" },
+  "code": { "pipeline": "corpus-v4", "git_sha": "a91f3c2" },
+  "config": { "chunker": "markdown-sections", "size": 512, "overlap": 64,
+              "embedder": "embed-v3", "config_hash": "sha256:77be..." },
+  "index": { "name": "policies", "version": 41 } }
+```
+
+With this, three otherwise unanswerable questions become lookups:
+
+1. *Why did the model say that?* → the response cites chunk ids → the chunks cite source documents
+   and versions.
+2. *This document changed — what is now stale?* → find artefacts whose `source.content_hash` is
+   superseded.
+3. *We are deprecating `embed-v3` — what depends on it?* → query artefacts by `config.embedder`.
+</Definition>
+
+<Warning title="Lineage you add later is lineage you do not have">
+Provenance cannot be reconstructed after the fact: the information exists only at the moment the
+artefact is produced. A pipeline built without it can be instrumented going forward, but everything
+already in the index stays anonymous until it is rebuilt. This is the one part of the design that is
+genuinely expensive to retrofit, which is why it goes in first even when it looks premature.
+</Warning>
+
+## Skew
+
+<Definition id="skew" title="Training–serving skew">
+A feature is computed one way when the model is built and another way when it is served. The model
+is correct on the offline data and wrong in production, and every offline metric says it is fine.
+
+Common forms in a retrieval system:
+
+| Skew | How it happens |
+|---|---|
+| **Different chunker** | the eval set was chunked with the old settings |
+| **Different embedder** | the index was built with `embed-v2`, queries are embedded with `v3` |
+| **Different normalisation** | offline lower-cases and strips accents, online does not |
+| **Time leakage** | the eval corpus contains documents published after the query date |
+</Definition>
+
+<KeyIdea>
+The structural defence is that there is **one implementation**, used by both paths, parameterised
+by configuration rather than duplicated. When offline and online are separate code, they will drift,
+and the drift is undetectable by construction — both sides work, they simply disagree.
+
+The detection of last resort is an assertion in the serving path: embed a fixed canary string and
+compare its vector against the one recorded when the index was built. If they differ, the query
+embedder and the index embedder are not the same, and that is a hard failure rather than a
+degradation.
+</KeyIdea>
+
+## Migrations
+
+<Claim kind="proposition" id="backfill-cost" title="Re-embedding is the dominant cost of changing an embedding model">
+Let a corpus have $M$ chunks and let embedding cost $c_e$ per chunk. Changing embedding model
+requires re-embedding every chunk, costing $M c_e$, regardless of query volume — the vectors from
+two different models are not comparable, so there is no incremental path.
+</Claim>
+
+<Proof>
+Similarity is only meaningful within one embedding space, so a query embedded by the new model
+cannot be compared against vectors produced by the old one. Serving correctly therefore requires
+every indexed vector to come from the new model, i.e. all $M$ chunks re-embedded. No subset
+suffices, because a query must be compared against the whole index.
+</Proof>
+
+<KeyIdea>
+Two practical consequences. First, the migration is a **batch job whose cost you can compute in
+advance** — $M c_e$ — and it is usually large enough to need its own budget approval. Second, it
+must be done into a *new index version*, with an atomic pointer swap at the end, because a
+half-migrated index mixes two embedding spaces and returns nonsense for the portion that has moved.
+
+The dual-index pattern is the standard shape: build version $n+1$ alongside $n$, shadow-query both,
+compare recall on a golden set, then swap. It costs double storage for the duration and it is the
+only way to find out whether the new model is actually better before committing.
+</KeyIdea>
+
+<NotSaid>
+This page treats the corpus as a batch. Streaming ingestion — documents arriving continuously,
+needing to be searchable within seconds — changes the index stage substantially: most vector
+indexes are cheaper to build in bulk than to update incrementally, so a streaming design usually
+maintains a small hot index of recent documents alongside a large periodically-rebuilt cold one and
+queries both. The freshness/latency trade that implies is covered in
+<TopicRef id="ai-engineering/vector-search-infrastructure" />.
+</NotSaid>

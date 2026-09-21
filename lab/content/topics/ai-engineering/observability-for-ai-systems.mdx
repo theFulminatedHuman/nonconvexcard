@@ -1,0 +1,139 @@
+---
+title: Observability for AI Systems
+summary: 'Tracing a request through prefill, tools and retrieval; accounting for tokens and cost per tenant; and keeping prompts out of your logs.'
+field: ai-engineering
+level: 2
+order: 160
+prerequisites:
+  - ai-engineering/anatomy-of-an-ai-system
+tags: [observability, tracing, spans, token accounting, sampling, PII, cost attribution]
+estimated_time: 1h
+claims:
+  - id: span-tree
+    kind: definition
+    title: The span tree of a model request
+    summary: One trace per request with nested spans for gateway, retrieval, each model call and each tool call, carrying token counts as attributes.
+    proved: false
+    tags: [tracing]
+  - id: four-signals
+    kind: definition
+    title: What to record that a web service would not
+    summary: Tokens in and out, time to first token, cache tier hit, tool call outcomes, stop reason and configuration hash.
+    proved: false
+    tags: [metrics]
+  - id: tail-sampling
+    kind: heuristic
+    title: Sample on the outcome, not on arrival
+    summary: Deciding which traces to keep after the request finishes lets you keep every error and slow request while discarding most of the ordinary ones.
+    proved: false
+    tags: [sampling]
+  - id: log-hygiene
+    kind: heuristic
+    title: Prompts are user data
+    summary: Prompt and completion text must be redacted or separately access-controlled, because it contains whatever the user pasted.
+    proved: false
+    tags: [privacy, PII]
+references:
+  - key: otel-genai
+    title: OpenTelemetry Semantic Conventions for Generative AI
+    authors: OpenTelemetry Authors
+    kind: lecture-notes
+    url: https://opentelemetry.io/docs/specs/semconv/gen-ai/
+    note: Standard attribute names for the span attributes used below.
+---
+
+<Intuition>
+When a request is slow, the question is always *which part*. For an AI system there are at least
+five candidates — queueing, prefill, decode, retrieval, a tool — and they have completely different
+fixes. A single latency number cannot distinguish them, so the minimum viable instrumentation is a
+trace, not a metric.
+</Intuition>
+
+## The trace
+
+<Definition id="span-tree" title="The span tree of a model request">
+```
+POST /v1/messages                                    1 842 ms
+├── gateway.authenticate                                 3 ms
+├── limiter.acquire                                      2 ms
+├── cache.semantic_lookup                               18 ms   hit=false score=0.81
+├── retrieval.search                                   142 ms   k=8 index=policies:41
+│   ├── embed.query                                     31 ms
+│   └── vector.search                                  108 ms
+├── model.generate                                    1 610 ms   ttft=287ms
+│   ├── queue.wait                                     121 ms
+│   ├── prefill                                        166 ms   tokens=4 213 cached=3 900
+│   └── decode                                       1 323 ms   tokens=218
+└── guardrail.check                                     41 ms
+```
+
+The `parent → child` structure is what makes it diagnostic: `queue.wait` at 121 ms says the fleet
+is loaded, `prefill` at 166 ms with 3 900 cached tokens says the prefix cache worked, and
+`decode` dominating says the answer was simply long. Three different actions.
+</Definition>
+
+<Definition id="four-signals" title="What to record that a web service would not">
+| Attribute | Why |
+|---|---|
+| `gen_ai.usage.input_tokens` / `output_tokens` | the billing unit and the load unit |
+| `gen_ai.response.finish_reason` | `max_tokens` vs `end_turn` is a silent truncation |
+| time to first token, separately from total | a different SLO, per the API page |
+| cache tier hit (exact / prefix / semantic) | attributes savings and detects a cache going cold |
+| `gen_ai.request.model` **and the config hash** | the five things that jointly determine behaviour |
+| tool name, duration, outcome per call | tool failures are invisible in the aggregate |
+| tenant id | every metric above needs a per-tenant breakdown |
+</Definition>
+
+<KeyIdea>
+Token counts as span attributes give cost attribution for free: summing
+`input_tokens × price_in + output_tokens × price_out` over spans grouped by tenant is the
+cost-per-tenant report, and grouped by feature it is the cost-per-feature report. Building that
+from billing exports afterwards is far harder, and arrives a month late.
+</KeyIdea>
+
+<Claim kind="heuristic" id="tail-sampling" title="Sample on the outcome, not on arrival">
+Head sampling — decide at the start, keep 1% — throws away 99% of errors. Tail sampling buffers the
+spans and decides at the end:
+
+```python
+def keep(trace) -> bool:
+    if trace.error or trace.status >= 500:    return True    # every failure
+    if trace.duration > SLO_P99:              return True    # every slow request
+    if trace.tool_failures:                   return True
+    if trace.tenant in WATCHED:               return True
+    return random.random() < 0.01                            # a baseline of normal
+```
+</Claim>
+
+<Assumptions>
+Tail sampling requires buffering every trace until it completes, which costs memory proportional to
+in-flight requests times span size — real, but bounded, and for generation the in-flight count is
+small because concurrency is capped by memory anyway.
+</Assumptions>
+
+<Claim kind="heuristic" id="log-hygiene" title="Prompts are user data">
+Prompt and completion text is whatever the user pasted, which routinely includes credentials,
+personal data and customer records. It must not land in general-purpose logs.
+
+- Store text in a **separate store** with its own access control and retention, referenced by id
+  from the trace.
+- Default span attributes to **metadata only**: token counts, hashes, lengths — never content.
+- Redact before storage where you can, and record that redaction happened.
+- Give it a shorter retention than the metrics, and make deletion actually reachable, since a
+  deletion request has to be satisfiable.
+</Claim>
+
+<Warning title="The debugging convenience is the breach">
+Logging full prompts is enormously useful and is how prompt text ends up in a log aggregator every
+engineer can search, replicated to three regions, retained for a year. If it is needed for
+debugging, it belongs behind the same access control as the production database, not in the same
+place as latency metrics.
+</Warning>
+
+<NotSaid>
+Traces tell you what happened, not whether the answer was any good. Quality is not observable from
+the request path; it needs the sampled-grading apparatus in
+<TopicRef id="ai-engineering/evaluation-harnesses" />, and the two systems should share a
+correlation id so a bad grade can be traced back to the exact retrieval and tool calls that
+produced it.
+</NotSaid>
