@@ -1,0 +1,309 @@
+---
+title: Queueing and the Utilisation Wall
+summary: Why latency diverges like 1/(1−ρ) as a server approaches saturation, derived exactly for M/M/1 and M/G/1, and why variance costs as much as load.
+field: ai-systems
+level: 2
+order: 30
+prerequisites:
+  - ai-systems/littles-law
+  - probability/expectation-and-conditioning
+tags: [queueing theory, M/M/1, Pollaczek-Khinchine, utilisation, variance, heavy traffic]
+estimated_time: 3h
+claims:
+  - id: mm1-stationary
+    kind: theorem
+    title: Stationary distribution of M/M/1
+    summary: With Poisson arrivals at rate λ and exponential service at rate μ, the number in system is geometric with parameter ρ = λ/μ.
+    proved: true
+    tags: [markov chain, birth-death]
+  - id: mm1-latency
+    kind: corollary
+    title: Mean latency of M/M/1
+    summary: Mean time in system is 1/(μ−λ), so latency diverges like 1/(1−ρ) as load approaches capacity.
+    proved: true
+    tags: [latency, utilisation wall]
+  - id: pollaczek-khinchine
+    kind: theorem
+    title: The Pollaczek–Khinchine mean formula
+    summary: For Poisson arrivals and any service distribution, mean queueing delay is λE[S²]/(2(1−ρ)), so it grows linearly in the second moment of service time.
+    proved: true
+    tags: [M/G/1, variance]
+  - id: variance-costs-as-much-as-load
+    kind: corollary
+    title: Halving service variability halves the queue
+    summary: Deterministic service produces exactly half the mean queueing delay of exponential service at the same utilisation.
+    proved: true
+    tags: [variance, determinism]
+  - id: pooling
+    kind: proposition
+    title: Pooling servers reduces delay
+    summary: One queue served by c servers has strictly lower mean waiting time than c separate queues of the same total capacity, and the gap widens with c.
+    proved: true
+    tags: [pooling, multi-server, affinity]
+  - id: kingman
+    kind: heuristic
+    title: Kingman's approximation
+    summary: For a general single-server queue, mean wait is approximately the product of a utilisation factor, a variability factor and the mean service time.
+    proved: false
+    tags: [approximation, heavy traffic]
+  - id: kendall
+    kind: definition
+    title: Kendall notation
+    summary: The A/B/c naming scheme for queues, and what M, D and G stand for.
+    proved: false
+    tags: [notation]
+references:
+  - key: kingman-heavy-traffic
+    title: The Single Server Queue in Heavy Traffic
+    authors: J. F. C. Kingman
+    year: 1961
+    kind: paper
+    url: https://doi.org/10.1017/S0305004100036094
+    note: Source of the heavy-traffic approximation quoted here as a heuristic.
+  - key: erlang-1917
+    title: Solution of Some Problems in the Theory of Probabilities of Significance in Automatic Telephone Exchanges
+    authors: A. K. Erlang
+    year: 1917
+    kind: paper
+    note: The origin of the multi-server delay formula still called Erlang C.
+  - key: harchol-balter
+    title: 'Performance Modeling and Design of Computer Systems: Queueing Theory in Action'
+    authors: M. Harchol-Balter
+    year: 2013
+    kind: book
+    note: Standard modern treatment; the M/G/1 derivation here follows its structure.
+---
+
+<Intuition>
+A road at 50% occupancy flows freely. The same road at 95% occupancy is a traffic jam, and the
+difference is not that twice as many cars appeared — only 1.9 times as many did. What changed is
+that at high occupancy, every small fluctuation has nowhere to go. A gap absorbed instantly at low
+load propagates backwards for miles at high load.
+
+Servers do the same thing, and the mathematics says exactly how: the waiting time carries a factor
+$1/(1-\rho)$. Going from 50% to 90% load multiplies queueing delay by 9. Going from 90% to 99%
+multiplies it by 10 again. This is the single most important curve in capacity planning, and it is
+why "the CPUs are only at 80%" is not the reassurance it sounds like.
+</Intuition>
+
+## The simplest queue, solved exactly
+
+<Definition id="kendall" title="Kendall notation">
+A queue is written $A/B/c$: $A$ the arrival process, $B$ the service distribution, $c$ the number of
+servers. $M$ means *memoryless* — Poisson arrivals, or exponential service; $D$ means
+deterministic; $G$ means a general distribution. So M/M/1 is Poisson arrivals, exponential service,
+one server; M/G/1 relaxes the service distribution.
+</Definition>
+
+<Claim kind="theorem" id="mm1-stationary" title="Stationary distribution of M/M/1">
+Let arrivals be Poisson with rate $\lambda$ and service times be exponential with rate $\mu$, one
+server, first-come-first-served, infinite buffer. Write $\rho = \lambda/\mu$. If $\rho < 1$ the
+number in system $N$ has stationary distribution
+$$
+\pi_n \ =\ (1-\rho)\,\rho^{\,n}, \qquad n = 0,1,2,\dots
+$$
+so $N$ is geometric, and $\E[N] = \dfrac{\rho}{1-\rho}$.
+</Claim>
+
+<Proof>
+The process $N(t)$ is a birth–death chain: from state $n$ it jumps to $n+1$ at rate $\lambda$ and,
+for $n \ge 1$, to $n-1$ at rate $\mu$. A birth–death chain is reversible, so the stationary
+distribution satisfies the *detailed balance* equations
+$$
+\pi_n \lambda \ =\ \pi_{n+1}\, \mu \qquad (n \ge 0),
+$$
+which say that transitions across the cut between $\{0,\dots,n\}$ and $\{n+1,\dots\}$ balance.
+Solving the recursion gives $\pi_n = \pi_0 \rho^n$. Normalising,
+$$
+1 \ =\ \sum_{n\ge0}\pi_0\rho^n \ =\ \frac{\pi_0}{1-\rho}
+\quad\Longrightarrow\quad \pi_0 = 1-\rho ,
+$$
+which requires $\rho<1$ for the geometric series to converge — this is the stability condition
+again. For the mean, differentiate the geometric series: with $\sum_n \rho^n = (1-\rho)^{-1}$,
+$$
+\E[N] \;=\; (1-\rho)\sum_{n\ge0} n\rho^n \;=\; (1-\rho)\cdot \frac{\rho}{(1-\rho)^2}
+\;=\; \frac{\rho}{1-\rho}. \qquad\square
+$$
+</Proof>
+
+<Claim kind="corollary" id="mm1-latency" title="Mean latency of M/M/1">
+$$
+\E[W] \;=\; \frac{1}{\mu-\lambda} \;=\; \frac{\E[S]}{1-\rho},
+\qquad
+\E[W_q] \;=\; \E[W]-\E[S] \;=\; \frac{\rho}{1-\rho}\,\E[S].
+$$
+</Claim>
+
+<Proof>
+Little's law applied to the whole system gives $\E[N] = \lambda\E[W]$, so
+$\E[W] = \E[N]/\lambda = \rho/(\lambda(1-\rho)) = 1/(\mu-\lambda)$, using $\rho = \lambda/\mu$. The
+waiting time is the total minus the service, and $\E[S] = 1/\mu$.
+</Proof>
+
+<KeyIdea>
+Mean latency is the service time multiplied by $1/(1-\rho)$. That factor is the **utilisation
+wall**:
+
+| $\rho$ | 0.5 | 0.8 | 0.9 | 0.95 | 0.99 |
+|---|---|---|---|---|---|
+| $\E[W]/\E[S]$ | 2 | 5 | 10 | 20 | 100 |
+
+The last 9% of capacity costs a factor of ten in latency. This is why serving systems are
+provisioned at 50–70% utilisation and why the remaining headroom is not waste — it is what the
+latency target is *purchased with*.
+</KeyIdea>
+
+## Variance is a second axis of load
+
+Exponential service times are convenient, not realistic. Real inference has service times set by
+output length, which is far from exponential. The general answer separates load from variability.
+
+<Claim kind="theorem" id="pollaczek-khinchine" title="The Pollaczek–Khinchine mean formula">
+For an M/G/1 queue — Poisson arrivals at rate $\lambda$, i.i.d. service times $S$ with finite
+second moment, one server, work-conserving and non-preemptive with a discipline that does not use
+service times — the mean waiting time in queue is
+$$
+\E[W_q] \;=\; \frac{\lambda\,\E[S^2]}{2\,(1-\rho)}, \qquad \rho = \lambda\,\E[S] < 1 .
+$$
+</Claim>
+
+<Assumptions>
+- Arrivals are Poisson. This is what licenses the PASTA property used below; the formula genuinely
+  fails for non-Poisson arrivals, where Kingman's approximation is the usual substitute.
+- $\E[S^2] < \infty$. Service distributions with infinite second moment have infinite mean wait at
+  *every* positive utilisation, which is not a pathology — it is what heavy-tailed request sizes do.
+- The scheduler may not look at service times. Shortest-remaining-processing-time beats this
+  formula, at the cost discussed at the end.
+</Assumptions>
+
+<Proof>
+Condition on a tagged arrival. By PASTA (Poisson Arrivals See Time Averages), the arriving request
+finds the system in its stationary state. Its wait is the *unfinished work* $V$ in the system on
+arrival, since service is work-conserving and first-come-first-served, so $\E[W_q] = \E[V]$.
+
+Decompose the unfinished work at a stationary instant into two pieces:
+
+**Work from requests waiting in queue.** There are $\E[N_q] = \lambda\E[W_q]$ of them on average by
+Little's law applied to the queue alone, each carrying a full service time $\E[S]$, contributing
+$\lambda\E[W_q]\E[S] = \rho\,\E[W_q]$.
+
+**Residual work of the request in service.** The server is busy a fraction $\rho$ of the time, and
+given that it is busy, the expected *remaining* service time is the mean residual life of $S$,
+which for a stationary renewal-type observation is $\E[S^2]/(2\E[S])$. This is the inspection
+paradox: a random instant is more likely to land inside a long service. Its contribution is
+$\rho \cdot \E[S^2]/(2\E[S])$.
+
+Adding,
+$$
+\E[W_q] \;=\; \rho\,\E[W_q] \;+\; \rho\,\frac{\E[S^2]}{2\E[S]} .
+$$
+Solve, using $\rho = \lambda\E[S]$:
+$$
+\E[W_q](1-\rho) \;=\; \lambda\E[S]\cdot\frac{\E[S^2]}{2\E[S]} \;=\; \frac{\lambda\E[S^2]}{2}
+\quad\Longrightarrow\quad
+\E[W_q] \;=\; \frac{\lambda\E[S^2]}{2(1-\rho)} . \qquad\square
+$$
+</Proof>
+
+Writing $\E[S^2] = \E[S]^2(1+c_s^2)$ with $c_s = \sqrt{\Var(S)}/\E[S]$ the coefficient of
+variation puts the formula in its most usable form:
+$$
+\boxed{\ \E[W_q] \;=\; \underbrace{\frac{\rho}{1-\rho}}_{\text{load}}\ \cdot\
+\underbrace{\frac{1+c_s^2}{2}}_{\text{variability}}\ \cdot\ \underbrace{\E[S]}_{\text{scale}}\ }
+$$
+
+<Claim kind="corollary" id="variance-costs-as-much-as-load" title="Halving service variability halves the queue">
+Exponential service has $c_s = 1$, so the variability factor is $1$ and
+$\E[W_q] = \rho\E[S]/(1-\rho)$, recovering the M/M/1 result. Deterministic service has $c_s = 0$,
+giving variability factor $1/2$:
+$$
+\E[W_q]^{\,M/D/1} \;=\; \tfrac12\,\E[W_q]^{\,M/M/1} .
+$$
+Making service times perfectly predictable is worth exactly as much as halving the queueing term —
+at $\rho = 0.9$, it is worth as much as dropping utilisation to $0.82$.
+</Claim>
+
+<Proof>
+Substitute $c_s^2 = 1$ and $c_s^2 = 0$ into the boxed form. For the utilisation comparison, solve
+$\rho'/(1-\rho') = \tfrac12 \cdot 0.9/(1-0.9) = 4.5$ for $\rho'$, giving
+$\rho' = 4.5/5.5 \approx 0.818$.
+</Proof>
+
+<KeyIdea>
+There are two ways to shorten a queue and they are interchangeable: reduce load, or reduce
+variability. In LLM serving the second is often the cheaper lever, because output-length variance
+is enormous — a mix of 20-token and 2000-token generations has a coefficient of variation well
+above 1. Splitting that traffic into separate pools by expected length reduces $c_s$ within each
+pool, and the boxed formula says the queueing term falls proportionally.
+</KeyIdea>
+
+## When arrivals are not Poisson
+
+<Claim kind="heuristic" id="kingman" title="Kingman's approximation">
+For a G/G/1 queue with arrival-interval coefficient of variation $c_a$ and service coefficient of
+variation $c_s$,
+$$
+\E[W_q] \;\approx\; \frac{\rho}{1-\rho}\cdot\frac{c_a^2+c_s^2}{2}\cdot\E[S] .
+$$
+</Claim>
+
+<Assumptions>
+This is an approximation, not a theorem. Kingman proved it is asymptotically exact in the
+**heavy-traffic limit** $\rho \to 1$; at moderate utilisation it is a rule of thumb that is
+typically right to within tens of percent, and it can be materially wrong when either distribution
+is heavy-tailed. It is stated here because it is the formula practitioners actually use, and it
+should be labelled for what it is.
+</Assumptions>
+
+<Note title="Why the same shape keeps appearing">
+Every formula on this page factorises as load $\times$ variability $\times$ scale, with the load
+factor $\rho/(1-\rho)$ common to all of them. That is not a coincidence of the models: the
+$1/(1-\rho)$ arises from solving $\E[W_q] = \rho\E[W_q] + (\text{something})$, and that fixed-point
+structure — work arriving while you wait, at rate $\rho$ — is present in any work-conserving queue.
+</Note>
+
+## More servers beat bigger servers
+
+<Claim kind="proposition" id="pooling" title="Pooling servers reduces delay">
+Compare $c$ separate M/M/1 queues each receiving $\lambda/c$, against one M/M/c queue receiving
+$\lambda$ with the same total capacity. The pooled system has strictly smaller mean waiting time at
+every $\rho \in (0,1)$ and $c \ge 2$.
+</Claim>
+
+<Proof>
+For the separated system each sub-queue has arrival rate $\lambda/c$ and service rate $\mu$, so
+utilisation $\rho = \lambda/(c\mu)$ and, by the corollary above,
+$\E[W_q]^{\text{sep}} = \rho\E[S]/(1-\rho)$.
+
+For the pooled M/M/c system, a request waits only if all $c$ servers are busy. Let
+$P_{\text{wait}}$ denote that stationary probability (the Erlang C formula). Given that it waits,
+the system empties a server at rate $c\mu$, so the residual wait is exponential with mean
+$1/(c\mu - \lambda)$, and
+$$
+\E[W_q]^{\text{pool}} \;=\; \frac{P_{\text{wait}}}{c\mu-\lambda}
+\;=\; P_{\text{wait}}\cdot\frac{\E[S]}{c\,(1-\rho)} .
+$$
+Since $P_{\text{wait}} \le 1$ we get $\E[W_q]^{\text{pool}} \le \E[S]/(c(1-\rho))$, whereas the
+separated system pays $\rho\E[S]/(1-\rho)$ — larger by a factor $c\rho/P_{\text{wait}} \ge c\rho$.
+For $c \ge 2$ and $\rho$ not vanishing this is a strict improvement, and the gap grows with $c$.
+</Proof>
+
+Numerically, at $\rho = 0.8$: one server waits $4\E[S]$; four pooled servers wait $0.75\E[S]$;
+sixteen pooled servers wait $0.095\E[S]$. Same utilisation, same total capacity, a
+forty-fold difference in delay.
+
+<Warning title="Pooling assumes interchangeable servers">
+The pooling gain evaporates if requests cannot go to any server — which is exactly the situation
+when each replica holds a different model, a different LoRA adapter, or a warm KV cache for a
+particular conversation. Affinity requirements re-partition a pooled queue back into separate ones,
+and the delay penalty above is the price. This is the central tension in multi-tenant model
+serving: cache locality pulls towards affinity, queueing theory pulls towards pooling.
+</Warning>
+
+<NotSaid>
+None of this bounds the *tail*. The formulas here are all statements about $\E[W_q]$. The
+geometric stationary distribution of M/M/1 does give the full law in that one case — and it is
+exponential, so its p99 is about $4.6$ times its mean — but M/G/1 tails depend on the service
+distribution in ways the mean formula cannot see. Tail behaviour under fan-out is taken up in
+<TopicRef id="ai-systems/tail-latency-and-fan-out" />.
+</NotSaid>

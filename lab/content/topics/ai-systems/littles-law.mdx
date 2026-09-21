@@ -1,0 +1,202 @@
+---
+title: Little's Law and the Capacity of a Serving System
+summary: The one identity that holds for any queueing system whatsoever — L = λW — proved from an area argument, and the sizing rules that follow from it.
+field: ai-systems
+level: 1
+order: 20
+prerequisites:
+  - ai-systems/what-a-serving-system-must-do
+tags: [little's law, concurrency, throughput, capacity planning]
+estimated_time: 1h
+claims:
+  - id: littles-law
+    kind: theorem
+    title: Little's law
+    summary: In any stable system, the long-run average number in the system equals the long-run arrival rate times the long-run average time in the system.
+    proved: true
+    tags: [queueing, invariant]
+  - id: utilisation-law
+    kind: corollary
+    title: The utilisation law
+    summary: Applying Little's law to the servers alone shows that utilisation equals throughput times mean service time, per server.
+    proved: true
+    tags: [utilisation]
+  - id: concurrency-sizing
+    kind: corollary
+    title: Concurrency needed for a throughput target
+    summary: To sustain throughput X at latency W the system must hold XW requests concurrently, which bounds the batch size and the KV-cache memory a serving replica needs.
+    proved: true
+    tags: [sizing, batching]
+references:
+  - key: little-proof
+    title: A Proof for the Queuing Formula L = λW
+    authors: J. D. C. Little
+    year: 1961
+    kind: paper
+    url: https://doi.org/10.1287/opre.9.3.383
+    note: The original proof; the argument given here is the standard area/sample-path version.
+  - key: little-fifty-years
+    title: 'Little''s Law as Viewed on Its 50th Anniversary'
+    authors: J. D. C. Little
+    year: 2011
+    kind: paper
+    url: https://doi.org/10.1287/opre.1110.0940
+    note: Little's own account of exactly how few assumptions the law requires.
+---
+
+<Intuition>
+Imagine photographing a queue at random moments and counting the people in the picture. If people
+arrive twice a second and each stays five seconds, the photographs will average ten people. Nothing
+about *how* the queue is served enters that calculation — not the order, not the number of
+servers, not whether service times are wild or uniform. Arrivals times duration equals occupancy.
+
+That triviality is the single most useful identity in capacity planning, because it is an identity:
+it cannot be violated by a clever scheduler, and any measurement that appears to violate it is a
+measurement error.
+</Intuition>
+
+## The law
+
+<Claim kind="theorem" id="littles-law" title="Little's law">
+Consider any system into which items arrive and from which they eventually depart. Let
+$N(t)$ be the number present at time $t$, let $A(T)$ be the number of arrivals in $[0,T]$, and let
+$W_i$ be the time item $i$ spends in the system. Suppose the limits
+$$
+\lambda = \lim_{T\to\infty} \frac{A(T)}{T},
+\qquad
+\overline{W} = \lim_{n\to\infty} \frac 1n \sum_{i=1}^n W_i
+$$
+exist and are finite. Then the time-average occupancy exists and equals their product:
+$$
+\overline{L} \ =\ \lim_{T\to\infty}\frac1T\int_0^T N(t)\,dt \ =\ \lambda \overline{W} .
+$$
+</Claim>
+
+<Assumptions>
+- Every item that arrives eventually departs, and no item is present forever.
+- The two limits above exist and are finite. This is the only substantive hypothesis.
+- **Nothing else.** In particular: no assumption that arrivals are Poisson, that service times are
+  exponential or independent, that service is first-come-first-served, that there is one server, or
+  that the system is even work-conserving. The law is a sample-path identity, not a probabilistic
+  one.
+</Assumptions>
+
+<Proof>
+Write $a_i$ for the arrival time of item $i$ and $d_i = a_i + W_i$ for its departure. The indicator
+that item $i$ is present at time $t$ is $\one\{a_i \le t < d_i\}$, so
+$$
+N(t) \ =\ \sum_{i \ge 1} \one\{a_i \le t < d_i\} .
+$$
+Integrate over $[0,T]$ and exchange the (non-negative) sum and integral by Tonelli:
+$$
+\int_0^T N(t)\,dt \ =\ \sum_{i\ge1} \bigl| [a_i, d_i) \cap [0,T] \bigr| .
+$$
+Both sides count the same area in the $(i,t)$ plane: the left by vertical slices at each time, the
+right by horizontal bars for each item. That is the whole content of the argument.
+
+Now bound the right-hand side. Every item that arrives *and departs* within $[0,T]$ contributes its
+full $W_i$; items still present at $T$ contribute less; no item contributes more than $W_i$. Hence
+$$
+\sum_{i : d_i \le T} W_i \ \le\ \int_0^T N(t)\,dt \ \le\ \sum_{i : a_i \le T} W_i .
+$$
+Divide by $T$. For the upper bound, $a_i \le T$ means $i \le A(T)$, so
+$$
+\frac1T \int_0^T N(t)\,dt \ \le\ \frac{A(T)}{T}\cdot \frac{1}{A(T)}\sum_{i=1}^{A(T)} W_i
+\ \longrightarrow\ \lambda \overline{W},
+$$
+using $A(T)\to\infty$ (which follows from $\lambda>0$; if $\lambda = 0$ both sides are $0$). The
+lower bound is the same computation applied to the departure counting process $D(T)$, which
+satisfies $D(T)/T \to \lambda$ because the number in system $N(T) = A(T)-D(T)$ is $o(T)$ — itself a
+consequence of $\overline W < \infty$. The two bounds squeeze, giving the identity.
+</Proof>
+
+<KeyIdea>
+Little's law relates three quantities, so it determines any one from the other two. That is how it
+is used in practice: measure the two you can measure, and deduce the third. The most common
+application is the one you *cannot* measure directly — average latency inside a component that does
+not emit per-request timings — from occupancy and arrival rate, both of which are easy counters.
+</KeyIdea>
+
+## Two immediate corollaries
+
+Apply the law to a sub-system rather than the whole, and it gives something new each time. The
+trick is choosing the boundary.
+
+<Claim kind="corollary" id="utilisation-law" title="The utilisation law">
+Draw the boundary around the servers only, excluding the queue. Items "arrive" at that sub-system
+when service begins and "depart" when it ends, so the arrival rate is the throughput $X$ and the
+time in the sub-system is the service time $S$. Little's law gives
+$$
+\overline{L}_{\text{busy}} \ =\ X\,\E[S],
+$$
+where $\overline{L}_{\text{busy}}$ is the average number of *busy* servers. Dividing by the number
+of servers $c$,
+$$
+\rho \ =\ \frac{X\,\E[S]}{c} .
+$$
+</Claim>
+
+<Proof>
+The sub-system contains exactly the items currently in service, so $N_{\text{busy}}(t)$ is the
+number of busy servers. In steady state every item that begins service finishes it, and items begin
+service at the same long-run rate they complete, namely $X$. Applying the theorem with
+$\lambda \mapsto X$ and $\overline W \mapsto \E[S]$ gives the first display; utilisation is by
+definition the fraction of servers busy, $\overline L_{\text{busy}}/c$.
+</Proof>
+
+<Claim kind="corollary" id="concurrency-sizing" title="Concurrency needed for a throughput target">
+To sustain throughput $X$ when each request takes $W$ seconds end to end, the system must hold
+$$
+L \ =\ X\,W
+$$
+requests concurrently. Conversely, a system whose concurrency is capped at $L_{\max}$ — by a
+thread pool, a connection limit, or the KV-cache memory of a GPU — cannot exceed throughput
+$L_{\max}/W$ no matter how much offered load it receives.
+</Claim>
+
+<Proof>
+Immediate from the theorem with $\lambda = X$, which holds in steady state because arrivals and
+departures balance. The converse follows by rearranging: $X = L/W \le L_{\max}/W$.
+</Proof>
+
+## Working the numbers
+
+The corollary above is the sizing rule for an inference server, and it is worth doing concretely.
+
+Suppose one replica must sustain $X = 20$ requests per second, and a request occupies the replica
+for $W = 4$ seconds — a 500-token generation at 8 ms per token, say, plus prefill and queueing.
+Then
+$$
+L \ =\ 20 \times 4 \ =\ 80
+$$
+requests must be resident simultaneously. Every one of them holds a KV cache. Using the KV-cache
+arithmetic from <TopicRef id="llm-ops/kv-cache-and-batching" />, that resident count multiplied by
+the per-sequence cache size is a hard memory requirement — and if the GPU cannot hold 80 sequences'
+worth, the target throughput is unreachable on that replica at that latency, whatever the batching
+implementation does.
+
+<Note title="The three ways to read one equation">
+$L = XW$ can be read as three different design statements, and each is used:
+1. **Sizing** — "I want $X$ at latency $W$, so I must provision for $L$ concurrent requests."
+2. **Diagnosis** — "Concurrency is pinned at $L_{\max}$ and latency is rising, so throughput has
+   stopped growing" — the signature of a saturated system.
+3. **Inference of the unmeasurable** — "Queue depth averages 80 and we complete 20 per second, so
+   requests are spending 4 seconds inside," with no per-request instrumentation at all.
+</Note>
+
+<Warning title="Little's law does not predict latency">
+The law is an identity among three averages: given any two it returns the third. It does **not**
+tell you what $W$ will be at a given load — that requires knowing how the queue behaves, which is
+the subject of <TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />. A common error is to
+increase the concurrency limit $L_{\max}$ expecting throughput to rise proportionally. If the
+bottleneck is the server rather than the limit, raising $L_{\max}$ raises $W$ instead, and $X$ does
+not move at all.
+</Warning>
+
+<NotSaid>
+Little's law says nothing about variability. Two systems with identical $L$, $X$ and $W$ can have
+completely different latency distributions — one tight around 4 seconds, the other mostly instant
+with a heavy tail. Since <TopicRef id="ai-systems/what-a-serving-system-must-do" /> established that
+the mean constrains the p99 only by a factor of $1/(1-p)$, an identity about means is exactly as
+informative about the tail as that factor permits, and no more.
+</NotSaid>

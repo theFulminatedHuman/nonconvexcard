@@ -1,0 +1,79 @@
+problem: sys-implement-two-choices
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  def assign_balls(n, d, seed=0):
+      """Throw n balls into n bins with the d-choice rule.
+
+      For each ball, sample d bin indices uniformly at random (with replacement)
+      from a generator seeded with `seed`, and place the ball in whichever of
+      those d bins currently holds the fewest. Break ties any way you like.
+      Return the array of n bin loads.
+      """
+      raise NotImplementedError
+
+  def max_load(n, d, seed=0):
+      """The largest bin load under that rule, as an int."""
+      raise NotImplementedError
+
+  def mean_max_load(n, d, reps=5, seed=0):
+      """Average of max_load over `reps` runs, using seeds seed, seed+1, ..."""
+      raise NotImplementedError
+tests:
+  - name: every ball lands somewhere, exactly once
+    code: |
+      import numpy as np
+      for n, d in ((100, 1), (100, 2), (500, 3)):
+          loads = np.asarray(assign_balls(n, d, seed=0)).ravel()
+          assert loads.shape == (n,), f"expected {n} bins, got {loads.shape}"
+          assert int(loads.sum()) == n, f"expected {n} balls placed, got {loads.sum()}"
+          assert np.all(loads >= 0), "loads cannot be negative"
+  - name: max_load agrees with the assignment it describes
+    code: |
+      import numpy as np
+      for n, d in ((200, 1), (200, 2)):
+          loads = np.asarray(assign_balls(n, d, seed=3)).ravel()
+          assert int(max_load(n, d, seed=3)) == int(loads.max()), \
+              "max_load must be the maximum of assign_balls with the same seed"
+  - name: one choice leaves a growing imbalance
+    code: |
+      vals = [float(mean_max_load(n, 1, reps=3, seed=0)) for n in (500, 2000, 8000, 20000)]
+      assert vals[0] >= 4, f"n=500 with one choice should already clump, got {vals[0]}"
+      assert vals[-1] > vals[0], f"the maximum load should grow with n: {vals}"
+  - name: two choices is dramatically flatter
+    code: |
+      for n in (500, 2000, 8000, 20000):
+          one = float(mean_max_load(n, 1, reps=3, seed=0))
+          two = float(mean_max_load(n, 2, reps=3, seed=0))
+          assert two < one, f"n={n}: two choices ({two}) should beat one ({one})"
+      assert float(mean_max_load(20000, 2, reps=3, seed=0)) <= 5, \
+          "with two choices the maximum load should stay tiny even at n = 20000"
+  - name: two choices barely grows while one choice keeps climbing
+    code: |
+      # The theoretical shapes are log n / log log n against log log n / log 2:
+      # over this range the first roughly doubles and the second is flat.
+      small_one = float(mean_max_load(500, 1, reps=3, seed=0))
+      big_one = float(mean_max_load(20000, 1, reps=3, seed=0))
+      small_two = float(mean_max_load(500, 2, reps=3, seed=0))
+      big_two = float(mean_max_load(20000, 2, reps=3, seed=0))
+      assert big_one - small_one >= 1.0, f"d=1 should climb: {small_one} -> {big_one}"
+      assert abs(big_two - small_two) <= 1.0, f"d=2 should be nearly flat: {small_two} -> {big_two}"
+  - name: the second choice is where almost all the gain is
+    code: |
+      n = 8000
+      one = float(mean_max_load(n, 1, reps=5, seed=0))
+      two = float(mean_max_load(n, 2, reps=5, seed=0))
+      three = float(mean_max_load(n, 3, reps=5, seed=0))
+      assert one - two > 2.0, f"1->2 should be a large drop: {one} -> {two}"
+      assert two - three < 1.0, f"2->3 should be a small one: {two} -> {three}"
+      assert three <= two + 0.5, f"more choices should not hurt much: d=2 {two}, d=3 {three}"
+  - name: the rule really is least-loaded, not first-sampled
+    code: |
+      # Picking the first sampled bin would reproduce d = 1 exactly, so a large
+      # d must be far below it.
+      n = 8000
+      one = float(mean_max_load(n, 1, reps=3, seed=0))
+      four = float(mean_max_load(n, 4, reps=3, seed=0))
+      assert four < one - 1.5, f"d=4 ({four}) should be far below d=1 ({one})"
+      assert four <= 3.5, f"d=4 should be very flat, got {four}"

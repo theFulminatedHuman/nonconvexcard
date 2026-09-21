@@ -1,0 +1,195 @@
+---
+title: Rollout, Canaries and Online Experiments
+summary: How much traffic a canary needs before it can detect a regression, why stopping when the result looks good inflates the error rate, and what a guardrail suite costs in sensitivity.
+field: ai-systems
+level: 3
+order: 150
+prerequisites:
+  - ai-systems/availability-and-redundancy
+  - high-dimensional-probability/concentration-inequalities
+tags: [A/B testing, canary, sequential testing, power, guardrails, multiple comparisons]
+estimated_time: 3h
+claims:
+  - id: sample-size
+    kind: proposition
+    title: Sample size for a two-arm comparison
+    summary: Detecting a difference of size Delta with 80% power at the 5% level needs about 16 sigma squared over Delta squared observations per arm.
+    proved: true
+    tags: [power, sizing]
+  - id: canary-duration
+    kind: corollary
+    title: How long a canary must run
+    summary: Duration is the required sample size divided by the traffic share allocated to the canary, so small canaries are slow detectors.
+    proved: true
+    tags: [canary, rollout]
+  - id: peeking-inflates-error
+    kind: proposition
+    title: Repeated testing inflates the false-positive rate
+    summary: Testing at k interim points, each at level alpha, gives an overall false-positive probability that grows with k and tends to 1 under continuous monitoring.
+    proved: true
+    tags: [sequential, peeking]
+  - id: guardrail-cost
+    kind: proposition
+    title: The sensitivity cost of a guardrail suite
+    summary: Controlling the family-wise error rate across m metrics by Bonferroni raises the required sample size by roughly a factor of log m over the single-metric case.
+    proved: true
+    tags: [multiple comparisons, bonferroni]
+references:
+  - key: johari-peeking
+    title: 'Peeking at A/B Tests: Why It Matters, and What to Do About It'
+    authors: R. Johari, P. Koomen, L. Pekelis, D. Walsh
+    year: 2017
+    kind: paper
+    url: https://doi.org/10.1145/3097983.3097992
+    note: Quantifies the error inflation from continuous monitoring and gives always-valid alternatives.
+  - key: kohavi-trustworthy
+    title: 'Trustworthy Online Controlled Experiments: A Practical Guide to A/B Testing'
+    authors: R. Kohavi, D. Tang, Y. Xu
+    year: 2020
+    kind: book
+    note: Standard reference for the practical design of the experiments modelled here.
+---
+
+<Intuition>
+A canary is a hypothesis test with a deployment attached. You route a slice of traffic to the new
+version, watch a metric, and decide. Everything that makes statistical testing hard applies —
+with two extra difficulties that experiments in a laboratory do not have: the slice is small, so
+power is scarce, and you are watching continuously, which quietly destroys the error guarantee the
+test was supposed to give.
+
+Both problems have arithmetic answers. The first says how long you must wait. The second says that
+if you look a hundred times at the 5% level, you will find "significance" in a healthy deployment
+about half the time.
+</Intuition>
+
+## How much traffic you need
+
+<Claim kind="proposition" id="sample-size" title="Sample size for a two-arm comparison">
+To detect a true difference of $\Delta$ in the mean of a metric with per-observation variance
+$\sigma^2$ in each arm, using a two-sided test at level $\alpha$ with power $1-\beta$, the required
+sample size per arm is
+$$
+n \;=\; \frac{2\sigma^2\,\bigl(z_{1-\alpha/2} + z_{1-\beta}\bigr)^2}{\Delta^2} .
+$$
+For $\alpha = 0.05$ and $1-\beta = 0.8$ the constant is $2(1.96+0.84)^2 = 15.7$, so
+$$
+n \;\approx\; \frac{16\,\sigma^2}{\Delta^2} .
+$$
+</Claim>
+
+<Assumptions>
+- Observations are independent within and across arms. Correlated units — repeated requests from
+  the same user, or requests sharing a replica — inflate the effective variance, and the standard
+  fix is to randomise and analyse at the unit of independence rather than per request.
+- The difference-in-means estimator is approximately normal, which for the sample sizes below
+  follows from the central limit theorem.
+</Assumptions>
+
+<Proof>
+The estimator $\hat\Delta = \bar X_A - \bar X_B$ has variance $2\sigma^2/n$ under equal allocation,
+so its standard error is $\mathrm{se} = \sigma\sqrt{2/n}$. A two-sided level-$\alpha$ test rejects
+when $|\hat\Delta| > z_{1-\alpha/2}\,\mathrm{se}$. Under the alternative $\E[\hat\Delta] = \Delta$,
+so rejection has probability
+$$
+\Pr\left[\,\hat\Delta > z_{1-\alpha/2}\mathrm{se}\,\right]
+= \Pr\left[\, Z > z_{1-\alpha/2} - \frac{\Delta}{\mathrm{se}} \,\right],
+$$
+ignoring the negligible far tail. Requiring this to be at least $1-\beta$ means
+$z_{1-\alpha/2} - \Delta/\mathrm{se} \le -z_{1-\beta}$, i.e.
+$\Delta/\mathrm{se} \ge z_{1-\alpha/2}+z_{1-\beta}$. Substituting
+$\mathrm{se} = \sigma\sqrt{2/n}$ and solving for $n$ gives the display.
+</Proof>
+
+<Claim kind="corollary" id="canary-duration" title="How long a canary must run">
+If total traffic is $\lambda$ requests per second and the canary receives a fraction $f$, then
+both arms can be sized at $n$ only after
+$$
+T \;=\; \frac{n}{f\,\lambda} \;\approx\; \frac{16\,\sigma^2}{f\,\lambda\,\Delta^2}
+$$
+seconds, since the canary arm is the scarce one.
+</Claim>
+
+<Proof>
+The canary accumulates observations at rate $f\lambda$; reaching $n$ takes $n/(f\lambda)$. The
+control arm accumulates faster and is not binding.
+</Proof>
+
+<KeyIdea>
+Work an example. Suppose you want to detect a 1% relative regression in a latency metric whose
+coefficient of variation is $1$ — so $\sigma \approx$ the mean $m$, and $\Delta = 0.01m$. Then
+$$
+n \;\approx\; \frac{16\,m^2}{(0.01m)^2} \;=\; 16\times10^4 \;=\; 160{,}000 \ \text{per arm}.
+$$
+At 1000 requests per second with a 1% canary, $f\lambda = 10$ per second, so
+$T = 16{,}000$ s $\approx 4.4$ hours. **A 1% canary cannot detect a 1% regression quickly**, and
+the quadratic dependence on $\Delta$ is unforgiving: detecting 0.5% instead takes four times as
+long.
+</KeyIdea>
+
+## Why watching continuously breaks the test
+
+<Claim kind="proposition" id="peeking-inflates-error" title="Repeated testing inflates the false-positive rate">
+Suppose the null hypothesis holds and you run a fixed-sample test at level $\alpha$ at each of $k$
+interim times, stopping and declaring significance the first time it rejects. The probability of
+declaring significance at some point is
+$$
+\alpha_k \;=\; \Pr\left[\bigcup_{j=1}^k R_j\right] \;\ge\; \alpha,
+$$
+strictly increasing in $k$, and $\alpha_k \to 1$ as $k \to \infty$ with continuous monitoring.
+</Claim>
+
+<Proof>
+Each $R_j$ has probability $\alpha$ under the null, so the union has probability at least $\alpha$
+and strictly more as soon as some $R_j$ is not contained in the others. For the limit, note that
+the test statistic is (asymptotically) a random walk whose rescaled path is a Brownian motion; the
+event "the standardised difference ever exceeds a *fixed* threshold" has probability $1$ for
+Brownian motion by the law of the iterated logarithm, since $\limsup_t B_t/\sqrt{2t\ln\ln t} = 1$
+almost surely implies $B_t$ exceeds any fixed multiple of $\sqrt t$ infinitely often. Hence
+continuous monitoring against a fixed-sample critical value rejects almost surely.
+</Proof>
+
+<Warning title="This is the most common way experiment results are wrong">
+Checking a dashboard daily for a fortnight and shipping when $p < 0.05$ is not a 5% test. The
+honest options are: fix the sample size in advance and look once; spend the error budget explicitly
+across interim looks (a group-sequential design); or use a sequential procedure whose guarantee
+holds at every time, such as those in the cited work. All three are fine. Looking repeatedly at a
+fixed-sample threshold is not.
+</Warning>
+
+## What guardrails cost
+
+A rollout is rarely judged on one metric. There is the target metric and then a suite of guardrails
+— latency, error rate, cost, refusal rate — any of which can block the release.
+
+<Claim kind="proposition" id="guardrail-cost" title="The sensitivity cost of a guardrail suite">
+Testing $m$ metrics and controlling the family-wise error rate at $\alpha$ by the Bonferroni
+correction means testing each at $\alpha/m$. The required sample size per metric becomes
+$$
+n_m \;=\; \frac{2\sigma^2\bigl(z_{1-\alpha/(2m)}+z_{1-\beta}\bigr)^2}{\Delta^2},
+$$
+and since $z_{1-u} \sim \sqrt{2\ln(1/u)}$ as $u \to 0$, $n_m$ grows like $\ln m$.
+</Claim>
+
+<Proof>
+Bonferroni: if each of $m$ tests is run at level $\alpha/m$, the union bound gives family-wise
+error at most $\alpha$. Substituting $\alpha \mapsto \alpha/m$ in the sample-size proposition gives
+$n_m$. For the growth rate, the Gaussian tail bound
+$1-\Phi(z) \le e^{-z^2/2}$ inverts to $z_{1-u} \le \sqrt{2\ln(1/u)}$, and the matching lower bound
+gives $z_{1-u} \sim \sqrt{2\ln(1/u)}$; with $u = \alpha/(2m)$ this is
+$\sqrt{2\ln(2m/\alpha)} = \Theta(\sqrt{\ln m})$, whose square is $\Theta(\ln m)$.
+</Proof>
+
+Concretely, at $\alpha = 0.05$ and 80% power: one metric needs the constant $15.7$; ten metrics
+need $2(z_{0.9975}+0.84)^2 = 2(2.807+0.842)^2 \approx 26.6$; a hundred need
+$2(3.481+0.842)^2 \approx 37.4$. Going from one guardrail to a hundred costs about $2.4\times$ the
+traffic — expensive, but logarithmic rather than linear, which is why large guardrail suites are
+affordable at all.
+
+<NotSaid>
+Nothing here addresses whether the metric measures what you care about. A canary that is
+statistically clean on latency, error rate and cost can still ship a model that is worse in ways
+none of those capture — and for generative systems the important regressions are usually of that
+kind. The statistics above bound the risk of being *fooled by noise*; they say nothing about the
+risk of measuring the wrong thing, which is the larger risk in practice and is not a statistical
+problem at all.
+</NotSaid>

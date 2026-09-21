@@ -1,0 +1,115 @@
+problem: sys-simulate-fanout
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  def required_child_quantile(n, p):
+      """The per-child quantile that a parent p-quantile demands.
+
+      A parent that waits for all n independent children meets its p-quantile at
+      t exactly when every child's CDF reaches p**(1/n) at t. Return that
+      probability.
+      """
+      raise NotImplementedError
+
+  def parent_tail(n, child_tail):
+      """Probability the slowest of n independent children exceeds t, given that
+      one child exceeds t with probability `child_tail`."""
+      raise NotImplementedError
+
+  def simulate_max_quantile(n, mean, p, trials=20000, seed=0):
+      """Empirical p-quantile of the maximum of n exponential latencies.
+
+      Draw a trials-by-n array of exponentials with the given mean from a
+      generator seeded with `seed`, take the maximum of each row, and return the
+      p-quantile of those maxima.
+      """
+      raise NotImplementedError
+
+  def hedged_samples(mean, d, trials=20000, seed=0):
+      """Latency when a duplicate request is issued at delay d.
+
+      Draw two independent exponential attempts with the given mean. The first
+      starts at time 0. If it has not finished by d, a second starts at d. The
+      observed latency is whichever response arrives first. Return an array of
+      `trials` such latencies.
+      """
+      raise NotImplementedError
+
+  def hedge_extra_load(p):
+      """Expected number of attempts per logical request when the hedge fires at
+      the p-quantile of the latency distribution."""
+      raise NotImplementedError
+tests:
+  - name: the required child quantile is p to the power 1/n
+    code: |
+      for n in (1, 10, 50, 100, 1000):
+          got = float(required_child_quantile(n, 0.99))
+          want = 0.99 ** (1.0 / n)
+          assert abs(got - want) < 1e-12, f"n={n}: expected {want}, got {got}"
+      assert abs(float(required_child_quantile(1, 0.99)) - 0.99) < 1e-12
+      # A hundred-way fan-out turns a p99 parent target into p99.99 per child.
+      assert float(required_child_quantile(100, 0.99)) > 0.9998
+  - name: the parent tail is one minus the survival product
+    code: |
+      for n in (1, 5, 100):
+          for ct in (0.0, 0.001, 0.01, 0.5, 1.0):
+              got = float(parent_tail(n, ct))
+              want = 1 - (1 - ct) ** n
+              assert abs(got - want) < 1e-12, f"n={n}, tail={ct}: expected {want}, got {got}"
+      assert abs(float(parent_tail(100, 0.01)) - 0.6339676587) < 1e-8, \
+          "a 1% child tail becomes a 63% parent tail at n=100"
+  - name: fan-out amplification is monotone and saturates
+    code: |
+      vals = [float(parent_tail(n, 0.01)) for n in (1, 10, 100, 1000)]
+      assert all(a < b for a, b in zip(vals, vals[1:])), f"should increase with n: {vals}"
+      assert vals[-1] > 0.99, f"at n=1000 almost every parent is slow, got {vals[-1]}"
+  - name: the simulated parent quantile matches the closed form
+    code: |
+      import numpy as np
+      # For Exp(mean), the parent p-quantile is -mean * log(1 - p**(1/n)).
+      for n in (1, 10, 50):
+          mean, p = 20.0, 0.99
+          got = float(simulate_max_quantile(n, mean, p, trials=40000, seed=1))
+          want = -mean * np.log(1 - p ** (1.0 / n))
+          assert abs(got - want) < 0.12 * want, f"n={n}: simulated {got}, theory {want}"
+  - name: fanning out really does inflate the parent latency
+    code: |
+      one = float(simulate_max_quantile(1, 20.0, 0.99, trials=40000, seed=2))
+      fifty = float(simulate_max_quantile(50, 20.0, 0.99, trials=40000, seed=2))
+      assert fifty > 1.5 * one, f"50-way fan-out should dominate a single call: {one} -> {fifty}"
+  - name: the hedged tail is the product of two survivals
+    code: |
+      import numpy as np
+      mean, d = 10.0, 15.0
+      y = np.asarray(hedged_samples(mean, d, trials=80000, seed=3), dtype=float).ravel()
+      assert y.shape == (80000,), f"expected 80000 samples, got {y.shape}"
+      for t in (20.0, 25.0, 30.0):
+          emp = float(np.mean(y > t))
+          want = np.exp(-t / mean) * np.exp(-(t - d) / mean)
+          assert abs(emp - want) < 0.004 + 0.15 * want, f"t={t}: empirical {emp}, theory {want}"
+  - name: before the hedge fires nothing has changed
+    code: |
+      import numpy as np
+      mean, d = 10.0, 15.0
+      y = np.asarray(hedged_samples(mean, d, trials=80000, seed=4), dtype=float).ravel()
+      for t in (5.0, 10.0, 14.0):
+          emp = float(np.mean(y > t))
+          want = float(np.exp(-t / mean))
+          assert abs(emp - want) < 0.01, f"t={t} is before the hedge: expected {want}, got {emp}"
+  - name: hedging shortens the tail
+    code: |
+      import numpy as np
+      mean = 10.0
+      plain = np.asarray(hedged_samples(mean, 1e9, trials=60000, seed=5), dtype=float).ravel()
+      hedged = np.asarray(hedged_samples(mean, 23.0, trials=60000, seed=5), dtype=float).ravel()
+      p99_plain = float(np.quantile(plain, 0.99))
+      p99_hedged = float(np.quantile(hedged, 0.99))
+      assert p99_hedged < 0.85 * p99_plain, f"hedging should cut the p99: {p99_plain} -> {p99_hedged}"
+      assert abs(float(np.mean(plain)) - mean) < 0.3, "with an unreachable hedge delay this is just Exp(mean)"
+  - name: the extra load is the tail probability
+    code: |
+      for p in (0.5, 0.9, 0.95, 0.99, 1.0):
+          got = float(hedge_extra_load(p))
+          assert abs(got - (1 + (1 - p))) < 1e-12, f"p={p}: expected {1+(1-p)}, got {got}"
+      assert abs(float(hedge_extra_load(0.95)) - 1.05) < 1e-12, "hedging at p95 costs 5% more load"

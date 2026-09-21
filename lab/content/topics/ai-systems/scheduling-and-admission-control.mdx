@@ -1,0 +1,227 @@
+---
+title: Scheduling, Admission Control and Fairness
+summary: Why shortest-remaining-first minimises mean latency, what it costs the long requests, and why a bounded queue is a feature rather than a limitation.
+field: ai-systems
+level: 3
+order: 120
+prerequisites:
+  - ai-systems/queueing-and-the-utilisation-wall
+tags: [scheduling, SRPT, FCFS, head-of-line blocking, admission control, fairness, starvation]
+estimated_time: 3h
+claims:
+  - id: srpt-optimal
+    kind: theorem
+    title: SRPT minimises mean response time
+    summary: Among all preemptive scheduling disciplines on one server, serving the job with least remaining work minimises the mean time in system on every arrival sequence.
+    proved: true
+    tags: [optimality, exchange argument]
+  - id: srpt-starvation
+    kind: proposition
+    title: What SRPT costs the largest jobs
+    summary: Under SRPT a job can be delayed by every shorter job that arrives while it waits, so its response time is unbounded in the arrival sequence even at stable utilisation.
+    proved: true
+    tags: [starvation, fairness]
+  - id: hol-blocking
+    kind: proposition
+    title: Head-of-line blocking under FCFS
+    summary: With first-come-first-served, a request waits for the full service of everything ahead of it, so mean wait scales with the second moment of service time rather than the mean.
+    proved: true
+    tags: [fcfs, variance]
+  - id: admission-tradeoff
+    kind: proposition
+    title: A bounded queue converts latency failure into rejection
+    summary: Capping the queue at K bounds the waiting time by K times the service time, at the cost of a computable rejection probability.
+    proved: true
+    tags: [admission control, load shedding]
+references:
+  - key: schrage-srpt
+    title: A Proof of the Optimality of the Shortest Remaining Processing Time Discipline
+    authors: L. Schrage
+    year: 1968
+    kind: paper
+    url: https://doi.org/10.1287/opre.16.3.687
+    note: The optimality theorem quoted here.
+  - key: smith-1956
+    title: Various Optimizers for Single-Stage Production
+    authors: W. E. Smith
+    year: 1956
+    kind: paper
+    url: https://doi.org/10.1002/nav.3800030106
+    note: The non-preemptive ancestor — shortest processing time first minimises mean flow time.
+  - key: bansal-srpt-unfairness
+    title: 'Analysis of SRPT Scheduling: Investigating Unfairness'
+    authors: N. Bansal, M. Harchol-Balter
+    year: 2001
+    kind: paper
+    url: https://doi.org/10.1145/378420.378792
+    note: Shows the unfairness of SRPT to large jobs is much milder than commonly assumed.
+  - key: yu-orca
+    title: 'Orca: A Distributed Serving System for Transformer-Based Generative Models'
+    authors: G.-I. Yu, J. S. Jeong, G.-W. Kim, S. Kim, B.-G. Chun
+    year: 2022
+    kind: paper
+    url: https://www.usenix.org/conference/osdi22/presentation/yu
+    note: Iteration-level scheduling, which is what makes preemption cheap enough to consider for LLM serving.
+---
+
+<Intuition>
+Put ten one-second jobs behind one hundred-second job and the average wait is about 100 seconds.
+Reverse the order and it is about 5. Nothing was made faster; the same work finished in the same
+total time. Only the *order* changed, and mean latency moved by a factor of twenty.
+
+That is the entire content of scheduling theory, and it has a clean optimum: always run whatever
+will finish soonest. The reason production systems do not simply do that is the other half of the
+story — the job that never finishes soonest never runs at all.
+</Intuition>
+
+## The optimum
+
+<Claim kind="theorem" id="srpt-optimal" title="SRPT minimises mean response time">
+Consider a single server, jobs arriving at arbitrary times with arbitrary known service
+requirements, and preemption allowed at no cost. The **shortest-remaining-processing-time** rule —
+always serve the job whose remaining work is least — minimises the mean response time
+$\frac1n\sum_i (d_i - a_i)$ over all scheduling disciplines, on every arrival sequence.
+</Claim>
+
+<Assumptions>
+- Remaining work is known. For LLM decoding it is not: output length is not known until the model
+  emits a stop token. Approximations — predicted length, elapsed tokens as a proxy — inherit the
+  benefit only to the extent the prediction is accurate.
+- Preemption is free. Iteration-level scheduling makes it nearly so for decoding, since a
+  generation can be paused between tokens; it is not free if pausing means evicting a KV cache.
+- One server. The multi-server case has no comparably clean optimum.
+</Assumptions>
+
+<Proof>
+Fix any schedule $\sigma$ that is not SRPT and let $t$ be the earliest instant at which it serves a
+job $j$ while some available job $i$ has strictly smaller remaining work, $r_i < r_j$.
+
+Let $T$ be the set of time slots that $\sigma$ devotes to $i$ or $j$ at or after $t$; since
+$\sigma$ completes both, $|T| = r_i + r_j$. Define $\sigma'$ to agree with $\sigma$ everywhere
+except on $T$, where it runs $i$ to completion first and then $j$. Every other job's service is
+untouched, so only $i$ and $j$ can change completion time.
+
+Write $c_i, c_j$ for completions under $\sigma$ and $c'_i, c'_j$ under $\sigma'$. Two observations
+finish it:
+
+- $c'_j$ is the last instant of $T$. Under $\sigma$ the later of $i$ and $j$ also completes at the
+  last instant of $T$, so $c'_j = \max(c_i, c_j)$.
+- $c'_i$ is the instant at which $r_i$ units of $T$ have elapsed. Any schedule using only slots in
+  $T$ needs at least $\min(r_i, r_j) = r_i$ units before either job can finish, so
+  $c'_i \le \min(c_i, c_j)$.
+
+Adding, $c'_i + c'_j \le \min(c_i,c_j) + \max(c_i,c_j) = c_i + c_j$: the sum of completion times
+does not increase. Each exchange strictly reduces the number of pairs served out of
+remaining-work order, so repeating terminates, and the only schedule with no such pair is SRPT.
+Arrival times are unchanged throughout, so minimising the sum of completion times minimises the sum
+of response times $\sum_i (d_i - a_i)$.
+</Proof>
+
+<KeyIdea>
+Mean response time is minimised by a rule that uses *one* piece of information — remaining work —
+and no information about arrival rates, distributions or the future. That is why length prediction
+is such a high-leverage feature in an LLM scheduler: it is the single input that the optimal policy
+needs.
+</KeyIdea>
+
+## What it costs
+
+<Claim kind="proposition" id="srpt-starvation" title="What SRPT costs the largest jobs">
+Under SRPT a job with remaining work $r$ is served only at instants when no job of smaller
+remaining work is present. Writing
+$$
+\rho_{<r} \;=\; \lambda\,\E\bigl[S\,\one\{S<r\}\bigr]
+$$
+for the utilisation generated by work smaller than $r$, that job's expected response time is at
+least $r/(1-\rho_{<r})$. For the largest jobs $\rho_{<r} \to \rho$, so their delay carries the
+full $1/(1-\rho)$ factor even though SRPT is minimising the *mean* over all jobs.
+</Claim>
+
+<Proof>
+SRPT gives absolute priority to any present job of smaller remaining work, so the tagged job
+accumulates service only during instants when the smaller-work classes are absent. In steady state
+the server spends a fraction $\rho_{<r}$ of its time on that work, so the tagged job receives
+service at long-run rate at most $1-\rho_{<r}$. Accumulating $r$ units of service therefore takes
+at least $r/(1-\rho_{<r})$ in expectation.
+</Proof>
+
+<NotSaid>
+The lower bound above is not a claim that SRPT starves large jobs catastrophically. Measured
+against the response time those jobs would get under a fair policy at the same load, SRPT's penalty
+is far smaller than the folklore suggests for most realistic size distributions — the analysis is
+in Bansal and Harchol-Balter's study of SRPT unfairness. What the bound does establish is that the
+largest jobs pay the full utilisation-wall factor, so SRPT improves the mean without improving, and
+sometimes while worsening, the quantile an SLO is written against.
+</NotSaid>
+
+<Warning title="Optimal on the mean, arbitrary on the tail">
+SRPT minimises the *mean*. By the result in
+<TopicRef id="ai-systems/what-a-serving-system-must-do" /> the mean constrains the p99 only by a
+factor of $1/(1-p)$, and SRPT spends exactly that budget: it buys a better average by making the
+largest requests much worse. A service whose SLO is a high quantile — as serving SLOs usually are —
+can be made *worse* by switching to the mean-optimal policy.
+</Warning>
+
+## The cost of the fair policy
+
+<Claim kind="proposition" id="hol-blocking" title="Head-of-line blocking under FCFS">
+Under first-come-first-served on one server with Poisson arrivals, the mean wait is
+$$
+\E[W_q] \;=\; \frac{\lambda\E[S^2]}{2(1-\rho)}
+\;=\; \frac{\rho}{1-\rho}\cdot\frac{1+c_s^2}{2}\cdot\E[S] ,
+$$
+so a single very long request inflates $\E[S^2]$ and therefore the wait of *every* request behind
+it, regardless of how short those are.
+</Claim>
+
+<Proof>
+This is the Pollaczek–Khinchine formula proved in
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />. The head-of-line reading is that
+the residual-work term $\rho\E[S^2]/(2\E[S])$ is the expected remaining service of whatever is at
+the head, and under FCFS every arrival pays it.
+</Proof>
+
+<KeyIdea>
+FCFS is fair in the sense of *order* and unfair in the sense of *outcome*: a 20-token request
+queued behind a 4000-token one waits for the whole generation. Continuous (iteration-level)
+batching is the standard escape — it interleaves at token granularity, so a short request's wait is
+bounded by one decode step rather than by a whole generation.
+</KeyIdea>
+
+## Admission control
+
+Every policy so far assumes an unbounded queue. Unbounded queues are how a system converts a brief
+overload into an hour of timeouts: requests accepted during the spike are still being served long
+after the users behind them left.
+
+<Claim kind="proposition" id="admission-tradeoff" title="A bounded queue converts latency failure into rejection">
+Cap the queue at $K$ waiting requests, rejecting arrivals that find it full. Then every *accepted*
+request waits at most $K\,S_{\max}$, and for M/M/1/K the rejection probability is
+$$
+P_{\text{block}} \;=\; \frac{(1-\rho)\rho^{K}}{1-\rho^{K+1}} .
+$$
+</Claim>
+
+<Proof>
+The bound on waiting is immediate: an accepted request has at most $K$ ahead of it, each taking at
+most $S_{\max}$. For the blocking probability, the truncated birth–death chain on states
+$0,\dots,K$ has $\pi_n \propto \rho^n$ by the same detailed-balance argument as M/M/1, normalising
+to $\pi_n = \rho^n(1-\rho)/(1-\rho^{K+1})$. By PASTA an arrival is blocked exactly when the chain
+is in state $K$, giving $\pi_K$ as displayed.
+</Proof>
+
+<KeyIdea>
+A rejection is a *fast, honest* failure; a timeout is a slow one that consumed capacity first.
+Bounding the queue is therefore not a compromise but the mechanism by which a system stays inside
+its latency SLO under overload — it trades an availability number, which the formula above lets you
+compute, for a latency guarantee. Load shedding is the same idea with a priority ordering attached.
+</KeyIdea>
+
+<NotSaid>
+Nothing here addresses fairness *between tenants*. SRPT and FCFS both treat the queue as
+undifferentiated; a multi-tenant service usually needs a guarantee that one customer's burst cannot
+consume another's capacity, which calls for a weighted-fair-queueing or token-bucket structure
+layered above whatever within-class policy is used. Those mechanisms are about isolation, and
+isolation is precisely what the pooling argument in
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" /> says you pay for in delay.
+</NotSaid>

@@ -1,0 +1,199 @@
+---
+title: Availability, Redundancy and Correlated Failure
+summary: The arithmetic of nines — why chains multiply, why replicas help less than they look like they should, and the floor that correlated failure puts under any amount of redundancy.
+field: ai-systems
+level: 2
+order: 110
+prerequisites:
+  - ai-systems/what-a-serving-system-must-do
+  - probability/probability-spaces
+tags: [availability, redundancy, reliability, correlated failure, common mode, nines]
+estimated_time: 1h
+claims:
+  - id: series-availability
+    kind: proposition
+    title: Availability of a dependency chain
+    summary: A request needing k independent services succeeds with probability equal to the product of their availabilities, so unavailabilities approximately add.
+    proved: true
+    tags: [series]
+  - id: parallel-availability
+    kind: proposition
+    title: Availability of independent replicas
+    summary: With n independent replicas and any one sufficing, unavailability is the n-th power of a single replica's, so each replica multiplies the nines.
+    proved: true
+    tags: [parallel, replicas]
+  - id: k-of-n
+    kind: proposition
+    title: Quorum availability
+    summary: A system needing k of n replicas is available with probability given by a binomial tail, which is maximised at k = 1 and degrades sharply once k exceeds n/2.
+    proved: true
+    tags: [quorum, binomial]
+  - id: common-mode-floor
+    kind: theorem
+    title: Correlated failure puts a floor under redundancy
+    summary: If a fraction beta of failures are common-mode, unavailability cannot be driven below beta times a single component's unavailability, however many replicas are added.
+    proved: true
+    tags: [correlation, common mode, limits]
+  - id: availability
+    kind: definition
+    title: Availability
+    summary: The long-run fraction of requests a component serves successfully, and its complement, unavailability, measured in nines.
+    proved: false
+    tags: [definition, nines]
+references:
+  - key: gilbert-lynch-cap
+    title: 'Brewer''s Conjecture and the Feasibility of Consistent, Available, Partition-Tolerant Web Services'
+    authors: S. Gilbert, N. Lynch
+    year: 2002
+    kind: paper
+    url: https://doi.org/10.1145/564585.564601
+    note: The formal statement and proof of the CAP theorem referenced at the end.
+  - key: fleming-beta-factor
+    title: 'A Reliability Model for Common Mode Failures in Redundant Safety Systems'
+    authors: K. N. Fleming
+    year: 1975
+    kind: paper
+    note: Origin of the beta-factor model for common-cause failure used in the final theorem.
+---
+
+<Intuition>
+Availability arithmetic has two moves and they pull in opposite directions. Putting things in
+*series* — a request that needs the router and the retriever and the model — multiplies
+availabilities, so nines erode. Putting things in *parallel* — three replicas, any one of which
+will do — multiplies *un*availabilities, so nines accumulate fast.
+
+The catch is that the parallel calculation assumes replicas fail independently, and they mostly do
+not. They share a deployment, a configuration, a certificate expiry, a dependency version. Once a
+fixed fraction of failures hit every replica at once, adding replicas stops helping, and the
+mathematics says exactly where that floor sits.
+</Intuition>
+
+## Series: nines erode
+
+<Definition id="availability" title="Availability">
+The **availability** $A$ of a component is the long-run fraction of requests (or of time) in which
+it is functioning. Its complement $U = 1-A$ is the **unavailability**. "Four nines" means
+$A = 0.9999$, i.e. $U = 10^{-4}$, i.e. about 53 minutes per year.
+</Definition>
+
+<Claim kind="proposition" id="series-availability" title="Availability of a dependency chain">
+If a request requires $k$ components with independent availabilities $A_1,\dots,A_k$, the
+end-to-end availability is
+$$
+A_{\text{series}} \;=\; \prod_{i=1}^k A_i ,
+\qquad\text{and}\qquad
+U_{\text{series}} \;=\; 1-\prod_i (1-U_i) \;\le\; \sum_{i=1}^k U_i ,
+$$
+so unavailabilities add to first order.
+</Claim>
+
+<Proof>
+The request succeeds exactly when all components are up; independence gives the product. The
+inequality is the union bound, or equivalently Bernoulli's inequality
+$\prod_i(1-U_i) \ge 1-\sum_i U_i$.
+</Proof>
+
+Ten services each at three nines give $0.999^{10} = 0.99005$ — **two** nines, and about 87 hours of
+annual downtime. Depth in a call graph is expensive, and this is the quantitative case for
+collapsing dependencies on the critical path.
+
+## Parallel: nines accumulate
+
+<Claim kind="proposition" id="parallel-availability" title="Availability of independent replicas">
+If $n$ replicas each have availability $A$ and fail independently, and the system needs at least
+one,
+$$
+A_{\text{parallel}} \;=\; 1-(1-A)^n \;=\; 1-U^n .
+$$
+</Claim>
+
+<Proof>
+The system is down only if every replica is down, which by independence has probability $U^n$.
+</Proof>
+
+Two replicas at three nines give $1-10^{-6}$ — six nines. That is the calculation that makes
+redundancy look irresistible, and it is the one that is wrong in practice.
+
+## Quorums
+
+<Claim kind="proposition" id="k-of-n" title="Quorum availability">
+If the system requires at least $k$ of $n$ independent replicas,
+$$
+A_{k/n} \;=\; \sum_{j=k}^{n}\binom nj A^j (1-A)^{n-j} .
+$$
+This is decreasing in $k$; $k=1$ recovers the parallel formula and $k=n$ recovers the series
+formula $A^n$.
+</Claim>
+
+<Proof>
+The number of functioning replicas is Binomial$(n, A)$; the system is available exactly when that
+count is at least $k$. The endpoints are immediate: the $k=n$ term is $A^n$, and summing from
+$j=1$ gives $1 - (1-A)^n$.
+</Proof>
+
+<Note title="Why majority quorums cost availability">
+A three-replica system needing a majority ($k=2$) has availability
+$3A^2(1-A) + A^3$, which at $A = 0.99$ is $0.99970$ — better than one replica but far short of the
+$0.9999$ that $k=1$ would give. Consensus protocols buy consistency with exactly this: they move
+$k$ from $1$ to $\lfloor n/2\rfloor + 1$. The CAP theorem is the formal statement that this trade
+cannot be avoided when the network may partition.
+</Note>
+
+## The floor
+
+<Claim kind="theorem" id="common-mode-floor" title="Correlated failure puts a floor under redundancy">
+Model failures with a common-cause fraction $\beta \in [0,1]$: with probability $\beta$ a failure
+event takes down *every* replica simultaneously, and with probability $1-\beta$ replicas fail
+independently. Writing $U$ for a single replica's unavailability, the $n$-replica system has
+$$
+U_n \;=\; (1-\beta)\,U^{\,n} \;+\; \beta\,U ,
+$$
+which is decreasing in $n$ with
+$$
+\lim_{n\to\infty} U_n \;=\; \beta\,U \; > \;0 \quad\text{whenever } \beta > 0 .
+$$
+No amount of redundancy reduces unavailability below $\beta U$.
+</Claim>
+
+<Assumptions>
+The beta-factor model is the simplest correlated-failure model: it splits failure causes into
+"independent" and "hits everything", with no intermediate structure. Real correlation is graded —
+a rack, a zone, a region — and is better modelled by a hierarchy. The theorem's conclusion survives
+any such refinement, because the coarsest shared level plays the role of $\beta$.
+</Assumptions>
+
+<Proof>
+Condition on the failure mode. With probability $\beta$ the failure is common-cause, and the system
+is down exactly when the (shared) cause fires, contributing $\beta U$. With probability $1-\beta$
+the replicas fail independently, and all $n$ must be down, contributing $(1-\beta)U^n$. Adding
+gives $U_n$. Each term is non-increasing in $n$ and the first tends to $0$, leaving $\beta U$.
+</Proof>
+
+<KeyIdea>
+Take $A = 0.999$, so $U = 10^{-3}$, and suppose just **1%** of failures are common-mode. Two
+replicas give
+$$
+U_2 \;=\; 0.99\times10^{-6} + 0.01\times10^{-3} \;=\; 1.1\times10^{-5},
+$$
+against $10^{-6}$ under the independence assumption — an order of magnitude worse — and the floor
+at $n=\infty$ is $10^{-5}$. **A 1% correlation costs more than the second replica buys.** This is
+why availability work is dominated by *decorrelation* — staggered rollouts, separate control
+planes, different certificate expiries — rather than by adding replicas.
+</KeyIdea>
+
+<Warning title="Deployments are the largest common-mode term">
+A new binary rolled to every replica at once is a $\beta = 1$ event: it makes the replicas
+perfectly correlated for the duration. Staged rollout exists precisely to reduce $\beta$, and the
+theorem says that reducing $\beta$ is the only lever that moves the floor. The corollary for model
+serving is that shipping a new checkpoint to all replicas simultaneously discards the availability
+that replication was supposed to provide.
+</Warning>
+
+<NotSaid>
+Availability is not latency. A replica that is up but slow counts as available in every formula
+here, while failing the SLO in
+<TopicRef id="ai-systems/what-a-serving-system-must-do" />. Systems with generous timeouts convert
+latency failures into availability successes on the dashboard and into abandoned requests in
+reality. The honest measure is the fraction of requests served *within the objective*, which makes
+availability a special case of the latency SLO rather than a separate quantity.
+</NotSaid>

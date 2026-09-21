@@ -1,0 +1,205 @@
+---
+title: The Cost of Collective Communication
+summary: The alpha–beta model, and why a ring all-reduce moves a bounded amount of data per node no matter how many nodes there are.
+field: ai-systems
+level: 3
+order: 60
+prerequisites:
+  - ai-systems/scaling-limits
+  - llm-ops/inference-arithmetic
+tags: [all-reduce, ring algorithm, bandwidth, latency, collectives, alpha-beta model]
+estimated_time: 3h
+claims:
+  - id: alpha-beta
+    kind: definition
+    title: The alpha–beta cost model
+    summary: Transferring n bytes costs a fixed startup latency plus n divided by bandwidth.
+    proved: false
+    tags: [model]
+  - id: naive-allreduce
+    kind: proposition
+    title: Cost of a centralised all-reduce
+    summary: Gathering at one root and broadcasting back moves (p−1)N bytes across the root's link, so its time grows linearly in the node count.
+    proved: true
+    tags: [baseline]
+  - id: ring-allreduce
+    kind: theorem
+    title: Cost of the ring all-reduce
+    summary: Reduce-scatter followed by all-gather moves 2(p−1)N/p bytes per node, which is below 2N for every p, while incurring 2(p−1) latency terms.
+    proved: true
+    tags: [ring, bandwidth optimal]
+  - id: allreduce-lower-bound
+    kind: proposition
+    title: A bandwidth lower bound for all-reduce
+    summary: Every node must receive at least N(p−1)/p bytes of information, so no algorithm beats the ring's bandwidth term by more than a factor of two.
+    proved: true
+    tags: [lower bound, optimality]
+  - id: latency-vs-bandwidth-regime
+    kind: corollary
+    title: Which term dominates
+    summary: The ring is bandwidth-optimal for large messages and latency-suboptimal for small ones, with the crossover at a message size proportional to alpha times bandwidth.
+    proved: true
+    tags: [regimes, small messages]
+references:
+  - key: thakur-collectives
+    title: Optimization of Collective Communication Operations in MPICH
+    authors: R. Thakur, R. Rabenseifner, W. Gropp
+    year: 2005
+    kind: paper
+    url: https://doi.org/10.1177/1094342005051521
+    note: Source of the recursive-halving/doubling and ring cost analyses used here.
+  - key: patarasuk-ring
+    title: Bandwidth Optimal All-reduce Algorithms for Clusters of Workstations
+    authors: P. Patarasuk, X. Yuan
+    year: 2009
+    kind: paper
+    url: https://doi.org/10.1016/j.jpdc.2008.09.002
+    note: Establishes the bandwidth optimality of the ring algorithm.
+---
+
+<Intuition>
+When $p$ GPUs each hold their own copy of a gradient and every one of them needs the sum, the
+obvious plan is to send everything to one machine, add it up, and send the answer back. That
+machine's network link then carries $p-1$ copies of the gradient, and it is the bottleneck: double
+the cluster, double the time.
+
+The ring algorithm does something that looks like it should be impossible. Every node ends up with
+the full sum, and yet no node ever sends more than about two copies of the gradient — whether the
+cluster has 8 nodes or 8000. The trick is that nobody ever holds the whole intermediate result;
+each node is responsible for reducing one slice, and the slices travel in a circle.
+</Intuition>
+
+## The cost model
+
+<Definition id="alpha-beta" title="The alpha–beta cost model">
+Sending a message of $n$ bytes between two nodes takes
+$$
+T(n) \;=\; \alpha \;+\; \frac n B ,
+$$
+where $\alpha$ is the per-message startup latency (microseconds: software stack, wire propagation)
+and $B$ is the achievable bandwidth in bytes per second. Nodes are assumed able to send and receive
+simultaneously, and disjoint pairs communicate without interference.
+</Definition>
+
+<Assumptions>
+The model ignores topology, congestion and contention for shared switches. It is accurate for a
+dedicated fabric where the communication pattern respects the topology — which is precisely why
+collective implementations are written to match the wiring. It is a poor model for an oversubscribed
+datacentre network, where the effective $B$ depends on what everyone else is doing.
+</Assumptions>
+
+## The baseline
+
+<Claim kind="proposition" id="naive-allreduce" title="Cost of a centralised all-reduce">
+Let $p$ nodes each hold an $N$-byte vector, and let all $p$ end up holding the element-wise sum. If
+all nodes send to a designated root, which reduces and broadcasts the result back, the time is at
+least
+$$
+T_{\text{central}} \;=\; 2\,(p-1)\left(\alpha + \frac N B\right)
+$$
+when the root's link is serialised, growing linearly in $p$.
+</Claim>
+
+<Proof>
+The root must receive one $N$-byte vector from each of the other $p-1$ nodes, and its incoming link
+carries all of them, so the receive phase alone takes $(p-1)(\alpha + N/B)$. Symmetrically the
+broadcast sends $N$ bytes to each of $p-1$ nodes over the same link. Adding the two phases gives
+the display.
+</Proof>
+
+## The ring
+
+<Claim kind="theorem" id="ring-allreduce" title="Cost of the ring all-reduce">
+Arrange the $p$ nodes in a ring and split each node's $N$-byte vector into $p$ chunks of $N/p$
+bytes. Then all-reduce can be performed as a **reduce-scatter** followed by an **all-gather**, each
+taking $p-1$ steps in which every node sends one chunk to its successor. The total cost is
+$$
+T_{\text{ring}} \;=\; 2\,(p-1)\,\alpha \;+\; \frac{2(p-1)}{p}\cdot\frac N B .
+$$
+In particular the bandwidth term is **bounded by $2N/B$ for every $p$**, and increases to that
+limit rather than growing with $p$.
+</Claim>
+
+<Proof>
+Index nodes $0,\dots,p-1$ around the ring and chunks $0,\dots,p-1$.
+
+**Reduce-scatter.** In step $k = 0,\dots,p-2$, node $i$ sends chunk $(i-k) \bmod p$ of its current
+partial sum to node $i+1$, which adds the received chunk into its own copy of that chunk. After
+$p-1$ steps, node $i$ holds the *fully reduced* chunk $(i+1) \bmod p$: that chunk has visited every
+node exactly once around the ring, accumulating each node's contribution. Each of the $p-1$ steps
+moves $N/p$ bytes per node, so the phase costs $(p-1)(\alpha + N/(pB))$.
+
+**All-gather.** Now every node holds one distinct fully reduced chunk and needs the other $p-1$.
+Rotate again for $p-1$ steps, each node forwarding the chunk it most recently received. After
+$p-1$ steps every node holds every chunk. Same cost as the first phase.
+
+Summing the two phases gives $2(p-1)\alpha + 2(p-1)N/(pB)$. Finally
+$2(p-1)/p = 2 - 2/p < 2$ for all $p$, giving the stated bound.
+</Proof>
+
+<KeyIdea>
+The bandwidth term of a ring all-reduce is essentially **independent of the cluster size**: it is
+$2N/B$ at $p=8$ to within 12%, and at $p=512$ to within 0.4%. The price is the latency term, which
+grows as $2(p-1)\alpha$. So the ring is the right algorithm for large gradients and the wrong one
+for small, frequent messages — which is exactly the split observed in practice between data-parallel
+gradient synchronisation and tensor-parallel activation exchange.
+</KeyIdea>
+
+## Is the ring optimal?
+
+<Claim kind="proposition" id="allreduce-lower-bound" title="A bandwidth lower bound for all-reduce">
+In any all-reduce over $p$ nodes where the result depends non-trivially on every input, each node
+must receive at least $\frac{p-1}{p}N$ bytes. Hence no algorithm has a per-node bandwidth term
+below $\frac{p-1}{p}\cdot\frac{N}{B}$, and the ring's $\frac{2(p-1)}{p}\cdot\frac NB$ is within a
+factor of $2$ of optimal.
+</Claim>
+
+<Proof>
+Consider node $i$ and the $N/p$-byte portion of the output corresponding to any chunk. For the
+output to reflect the other $p-1$ nodes' values on that chunk, information about them must cross
+into node $i$. Summing over the $p-1$ chunks whose inputs node $i$ does not itself hold — more
+precisely, over the fraction $(p-1)/p$ of the total input volume that originates elsewhere and on
+which the output depends — node $i$ must receive at least $\frac{p-1}{p}N$ bytes, since an
+element-wise sum over distinct addends cannot be compressed below the information needed to
+determine it for arbitrary inputs.
+</Proof>
+
+<NotSaid>
+The factor of two is real and is not an artefact: the ring performs a reduce-scatter and an
+all-gather, and each separately meets the $\frac{p-1}{p}N$ bound. An all-reduce is genuinely two
+collectives' worth of traffic. Implementations that appear to beat this are either overlapping
+communication with computation — which hides the cost rather than removing it — or reducing $N$,
+by gradient compression or lower precision, which changes the problem.
+</NotSaid>
+
+## Choosing an algorithm by message size
+
+<Claim kind="corollary" id="latency-vs-bandwidth-regime" title="Which term dominates">
+Compare the ring, costing $2(p-1)\alpha + \frac{2(p-1)}{p}\frac NB$, with a
+recursive halving-and-doubling scheme costing $2\log_2 p\,\cdot\alpha + \frac{2(p-1)}{p}\frac NB$
+for power-of-two $p$. The two have the same bandwidth term, so the comparison is entirely in
+latency and the logarithmic scheme wins for every $p > 2$. Against a latency-optimal scheme,
+the ring is preferable only when
+$$
+\frac NB \;\gtrsim\; \frac{p\,\alpha}{1} ,
+$$
+that is, once the transfer time of the message exceeds roughly $p$ startup latencies.
+</Claim>
+
+<Proof>
+Both algorithms reduce-scatter then all-gather and therefore move the same
+$\frac{2(p-1)}{p}N$ bytes per node; the difference is the number of messages, $2(p-1)$ against
+$2\log_2 p$. Setting the ring's excess latency $2(p-1-\log_2 p)\alpha$ against nothing on the
+bandwidth side shows the ring is never latency-preferable; the displayed condition is when that
+excess is small relative to the common bandwidth term $\frac{2(p-1)}{p}\frac NB$, i.e. when
+$\alpha \lesssim \frac{N}{pB}$.
+</Proof>
+
+<Note title="What production libraries actually do">
+NCCL, MPI and their relatives select among ring, tree and halving/doubling implementations at
+runtime based on message size and detected topology, precisely because the crossover above is real.
+The practical consequence for a model-training engineer is that *fusing small gradient tensors into
+large buckets before all-reducing* moves the operation from the latency-bound regime into the
+bandwidth-bound one — which is why gradient bucketing exists and why its bucket size is a tuning
+parameter worth measuring.
+</Note>

@@ -1,0 +1,248 @@
+---
+title: Splitting a Model Across Devices
+summary: Data, tensor and pipeline parallelism compared by the one quantity that decides between them — bytes communicated per FLOP of useful work.
+field: ai-systems
+level: 3
+order: 70
+prerequisites:
+  - ai-systems/collective-communication
+  - finetuning/memory-arithmetic-of-training
+tags: [data parallel, tensor parallel, pipeline parallel, communication, bubble, sharding]
+estimated_time: 3h
+claims:
+  - id: dp-ratio
+    kind: proposition
+    title: Data-parallel communication does not depend on model size
+    summary: The ratio of gradient-synchronisation time to compute time is independent of the parameter count and falls inversely with tokens processed per device per step.
+    proved: true
+    tags: [data parallel, amortisation]
+  - id: tp-ratio
+    kind: proposition
+    title: Tensor-parallel communication does not depend on batch size
+    summary: The ratio of activation-exchange time to compute time is independent of layer count and sequence length, and falls inversely with model width.
+    proved: true
+    tags: [tensor parallel, width]
+  - id: pipeline-bubble
+    kind: proposition
+    title: The pipeline bubble fraction
+    summary: With p stages and m microbatches, the fraction of wall-clock time in which some stage is idle is (p−1)/(m+p−1).
+    proved: true
+    tags: [pipeline, bubble]
+  - id: strategy-selection
+    kind: corollary
+    title: Why the three are combined rather than chosen between
+    summary: Each strategy is amortised by a different quantity, so the cheapest configuration mixes them rather than maximising any one.
+    proved: true
+    tags: [composition, 3d parallelism]
+references:
+  - key: shoeybi-megatron
+    title: 'Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism'
+    authors: M. Shoeybi, M. Patwary, R. Puri, P. LeGresley, J. Casper, B. Catanzaro
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1909.08053
+    note: Source of the tensor-parallel decomposition whose communication is counted here.
+  - key: huang-gpipe
+    title: 'GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism'
+    authors: Y. Huang et al.
+    year: 2019
+    kind: paper
+    url: https://arxiv.org/abs/1811.06965
+    note: The microbatched pipeline schedule whose bubble fraction is derived here.
+  - key: narayanan-ptd
+    title: Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM
+    authors: D. Narayanan et al.
+    year: 2021
+    kind: paper
+    url: https://arxiv.org/abs/2104.04473
+    note: Combines the three strategies and reports the interaction effects discussed at the end.
+  - key: rajbhandari-zero
+    title: 'ZeRO: Memory Optimizations Toward Training Trillion Parameter Models'
+    authors: S. Rajbhandari, J. Rasley, O. Ruwase, Y. He
+    year: 2020
+    kind: paper
+    url: https://arxiv.org/abs/1910.02054
+    note: Shards optimiser state, gradients and parameters across data-parallel ranks.
+---
+
+<Intuition>
+There are only three things you can cut when a model will not fit on one device: the batch, the
+individual matrices, or the stack of layers. Cutting the batch means every device holds the whole
+model and they must agree on the gradient. Cutting the matrices means a single layer's arithmetic
+is spread across devices, so they must exchange activations inside every layer. Cutting the layer
+stack means each device owns a contiguous slice of depth, and activations flow between neighbours.
+
+Each cut produces a different communication pattern, and — this is the useful part — each is
+amortised by a *different* quantity. Data parallelism gets cheaper with more tokens per device.
+Tensor parallelism gets cheaper with a wider model. Pipeline parallelism gets cheaper with more
+microbatches. That is why large training runs use all three at once rather than picking a favourite.
+</Intuition>
+
+## Counting rules
+
+Throughout, let $N$ be the parameter count, $d$ the model width, $L$ the layer count, $F$ the
+achievable FLOP rate per device, $B$ the achievable interconnect bandwidth per device, and $b$ the
+bytes per element communicated. For a decoder-only transformer we use the standard counts
+established in <TopicRef id="llm-ops/inference-arithmetic" />:
+
+- parameters per layer $\approx 12d^2$ (attention $4d^2$, MLP $8d^2$), so $N \approx 12Ld^2$;
+- training cost $\approx 6N$ FLOPs per token (forward $2N$, backward $4N$).
+
+## Data parallelism
+
+Every device holds a full replica and processes a different slice of the batch. After the backward
+pass the gradients must be summed across replicas — one all-reduce of $N$ elements per step.
+
+<Claim kind="proposition" id="dp-ratio" title="Data-parallel communication does not depend on model size">
+Let each device process $T$ tokens per optimiser step. Using a ring all-reduce, whose per-device
+volume is at most $2Nb$ bytes,
+$$
+\frac{T_{\text{comm}}}{T_{\text{compute}}}
+\;=\; \frac{2Nb/B}{6NT/F}
+\;=\; \frac{b\,F}{3\,B\,T} .
+$$
+The parameter count cancels. The ratio depends only on the hardware ratio $F/B$, the gradient
+precision $b$, and the tokens per device per step.
+</Claim>
+
+<Assumptions>
+- The all-reduce is bandwidth-bound, so its latency term $2(p-1)\alpha$ is negligible. For a
+  multi-gigabyte gradient this holds; for small models it does not, and the latency term restores a
+  dependence on $p$.
+- Communication is not overlapped with computation. Overlapping changes the conclusion from "this
+  is the cost" to "this is the amount that must be hidden", which is the same number.
+</Assumptions>
+
+<Proof>
+Compute time per step is $6NT/F$ by the $6N$-FLOPs-per-token rule. Communication time is the
+all-reduce volume $\frac{2(p-1)}{p}Nb \le 2Nb$ divided by $B$, using the ring cost from
+<TopicRef id="ai-systems/collective-communication" />. Dividing,
+$$
+\frac{2Nb/B}{6NT/F} \;=\; \frac{2Nb}{B}\cdot\frac{F}{6NT} \;=\; \frac{bF}{3BT},
+$$
+and $N$ appears in both numerator and denominator.
+</Proof>
+
+<KeyIdea>
+Data parallelism is amortised by **tokens per device per step**. Doubling the per-device
+microbatch halves the relative cost of gradient synchronisation. This is why data-parallel training
+degrades at small per-device batch — and why gradient accumulation, which raises $T$ without
+raising memory for activations proportionally, is the standard fix.
+</KeyIdea>
+
+## Tensor parallelism
+
+Each weight matrix is sharded across $t$ devices, so a single layer's matmuls are computed jointly.
+The Megatron decomposition requires one all-reduce of the activation tensor after the attention
+block and one after the MLP block, in the forward pass, and the same in the backward pass.
+
+<Claim kind="proposition" id="tp-ratio" title="Tensor-parallel communication does not depend on batch size">
+With $T$ tokens in flight, a hidden size $d$, and $4$ all-reduces per layer per step (two forward,
+two backward) each of $Td$ elements,
+$$
+\frac{T_{\text{comm}}}{T_{\text{compute}}}
+\;=\; \frac{4L\cdot 2Tdb/B}{6\,(12Ld^2)\,T/F}
+\;=\; \frac{8LTdb/B}{72Ld^2T/F}
+\;=\; \frac{b\,F}{9\,d\,B} .
+$$
+Both $L$ and $T$ cancel. The ratio falls like $1/d$: wider models tolerate tensor parallelism
+better.
+</Claim>
+
+<Proof>
+Each all-reduce moves at most $2 \cdot Tdb$ bytes per device by the ring bound. With $4L$ of them
+per step the communication time is $8LTdb/B$. Compute time is $6NT/F$ with $N = 12Ld^2$, giving
+$72Ld^2T/F$. Dividing and cancelling $L$, $T$ and the factor $8/72 = 1/9$ yields the display.
+</Proof>
+
+<Warning title="Tensor parallelism is a within-node strategy">
+Because the ratio is $bF/(9dB)$ and $d$ is only a few thousand, the required bandwidth $B$ is
+enormous — this collective happens four times per layer per step rather than once per step. With
+$F/B$ of order a hundred (a GPU's FLOP rate against a PCIe link) the ratio exceeds one and
+communication dominates. Over NVLink, where $F/B$ is an order of magnitude smaller, it does not.
+This is the quantitative reason tensor-parallel groups are kept inside a node and data-parallel
+groups span nodes.
+</Warning>
+
+## Pipeline parallelism
+
+The layer stack is cut into $p$ contiguous stages, one per device. A batch is split into $m$
+microbatches which flow through the stages; only activations at stage boundaries are communicated,
+which is a small point-to-point transfer rather than a collective. The cost is not bandwidth but
+*idleness*: at the start, stages downstream have nothing to do, and at the end, upstream stages are
+finished.
+
+<Claim kind="proposition" id="pipeline-bubble" title="The pipeline bubble fraction">
+With $p$ stages, $m$ microbatches, and equal per-stage time $\tau$ per microbatch, the schedule
+completes in $(m+p-1)\tau$ against an ideal $m\tau$. The fraction of wall-clock time lost to idle
+stages is
+$$
+\text{bubble} \;=\; \frac{p-1}{m+p-1},
+$$
+and the overhead relative to the ideal is $(p-1)/m$.
+</Claim>
+
+<Proof>
+Stage $j$ (indexed from $0$) cannot begin microbatch $i$ until stage $j-1$ has finished it, so it
+starts at time $(i+j)\tau$. The last stage finishes the last microbatch at time
+$(m-1+p-1)\tau + \tau = (m+p-1)\tau$. The ideal — all $p$ stages busy throughout — would be
+$m\tau$. The lost fraction is
+$$
+\frac{(m+p-1)\tau - m\tau}{(m+p-1)\tau} \;=\; \frac{p-1}{m+p-1},
+$$
+and dividing the numerator by the ideal $m\tau$ instead gives $(p-1)/m$.
+</Proof>
+
+With $p = 4$ and $m = 8$ the bubble is $3/11 \approx 27\%$; raising $m$ to $32$ brings it to
+$3/35 \approx 8.6\%$.
+
+<KeyIdea>
+Pipeline parallelism is amortised by **microbatch count**. But $m$ cannot grow freely: every
+in-flight microbatch holds its activations for the backward pass, so memory grows with $m$. The
+bubble and the activation memory pull in opposite directions, and that trade is what interleaved
+and 1F1B schedules exist to improve.
+</KeyIdea>
+
+## Why all three
+
+<Claim kind="corollary" id="strategy-selection" title="Why the three are combined rather than chosen between">
+The three overheads are amortised by three different quantities:
+$$
+\text{data} \;\propto\; \frac{1}{T},
+\qquad
+\text{tensor} \;\propto\; \frac{1}{d},
+\qquad
+\text{pipeline} \;\propto\; \frac{p-1}{m} .
+$$
+Since $d$ is fixed by the model and $T$ and $m$ are bounded by memory, no single axis can be pushed
+to absorb an arbitrary device count; minimising total overhead subject to a fixed device budget
+$p_{\text{total}} = p_{\text{data}} \cdot p_{\text{tensor}} \cdot p_{\text{pipe}}$ therefore has an
+interior optimum in general.
+</Claim>
+
+<Proof>
+Each expression is the proposition above it. The budget constraint is multiplicative because the
+three decompositions are orthogonal — a device is identified by its coordinates in the
+(data, tensor, pipeline) grid. A pure strategy sets two of the three factors to $1$, forcing the
+third to absorb all of $p_{\text{total}}$; since tensor overhead is independent of $p_{\text{tensor}}$
+only until bandwidth saturates, and pipeline overhead grows like $p_{\text{pipe}}-1$, and data
+overhead is flat in $p_{\text{data}}$ only while the all-reduce stays bandwidth-bound, each pure
+strategy hits a wall that the mixed configuration avoids.
+</Proof>
+
+<Note title="What ZeRO changes">
+Sharding optimiser state, gradients and parameters across data-parallel ranks removes the memory
+redundancy of pure data parallelism without changing the arithmetic above: the gradient still has
+to be reduced and the parameters still have to be available where they are used. The communication
+volume rises from one all-reduce to a reduce-scatter plus an all-gather — the same
+$2\frac{p-1}{p}N$ total — with parameters gathered on demand adding a further all-gather per step
+in its most aggressive stage. The trade is memory for bandwidth, at a ratio the propositions above
+let you price.
+</Note>
+
+<NotSaid>
+This page counts bytes and FLOPs. It says nothing about *convergence*: a configuration that
+minimises time per step can still be worse per unit of progress, because the global batch size it
+implies may sit past the point where larger batches stop helping. Step time and steps-to-target are
+separate quantities, and a parallelism plan that optimises only the first is incomplete.
+</NotSaid>

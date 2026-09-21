@@ -26,6 +26,7 @@ export const FIELD_SLUGS = [
   'finetuning',
   'quantization',
   'llm-ops',
+  'ai-systems',
   'rag',
   'agents',
 ] as const;
@@ -196,6 +197,15 @@ export const FIELDS: Readonly<Record<FieldSlug, FieldMeta>> = {
     blurb:
       'Serving arithmetic: arithmetic intensity and the roofline, KV-cache growth, batching and queueing, and the acceptance algebra of speculative decoding.',
     requires: ['llm'],
+  },
+  'ai-systems': {
+    slug: 'ai-systems',
+    title: 'AI System Design',
+    short: 'AI Systems',
+    group: 'Systems',
+    blurb:
+      'The mathematics of putting a model into production: Little\u2019s law and the utilisation wall, tail latency under fan-out, parallelism and collective-communication cost models, caching, load balancing, availability and cost per token.',
+    requires: ['llm-ops', 'probability'],
   },
   rag: {
     slug: 'rag',

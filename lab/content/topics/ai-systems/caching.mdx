@@ -1,0 +1,248 @@
+---
+title: Caching — Hit Rates, Zipf and the Working Set
+summary: What a cache of a given size actually buys under realistic popularity skew, and why prefix caching is governed by a different quantity than object caching.
+field: ai-systems
+level: 2
+order: 90
+prerequisites:
+  - ai-systems/littles-law
+  - probability/expectation-and-conditioning
+tags: [caching, zipf, hit rate, LRU, working set, prefix cache]
+estimated_time: 1h
+claims:
+  - id: cache-latency-identity
+    kind: proposition
+    title: Effective latency under a cache
+    summary: Mean latency is the hit rate times the hit cost plus the miss rate times the miss cost, so the benefit is linear in the hit rate and bounded by the miss cost.
+    proved: true
+    tags: [latency]
+  - id: zipf-hit-rate
+    kind: proposition
+    title: Static optimal hit rate under a Zipf popularity law
+    summary: Caching the C most popular of N items under Zipf exponent a gives a hit rate equal to a ratio of generalised harmonic numbers.
+    proved: true
+    tags: [zipf, popularity]
+  - id: zipf-asymptotic
+    kind: corollary
+    title: The power-law form of the hit rate
+    summary: For exponent below one the hit rate grows like (C/N)^(1−a), so each order of magnitude of cache buys a fixed multiplicative gain.
+    proved: true
+    tags: [asymptotics]
+  - id: cache-amdahl
+    kind: corollary
+    title: A cache cannot beat its own miss path
+    summary: However large the cache, speedup is capped by the ratio of miss cost to hit cost, which is Amdahl's law with the miss rate as the serial fraction.
+    proved: true
+    tags: [amdahl, ceiling]
+  - id: zipf
+    kind: definition
+    title: Zipf popularity
+    summary: Rank-ordered request probabilities proportional to a negative power of the rank, normalised by a generalised harmonic number.
+    proved: false
+    tags: [zipf, popularity]
+  - id: che
+    kind: heuristic
+    title: Che's approximation for LRU
+    summary: Replacing each item's eviction time by one shared characteristic time gives a closed-form estimate of the LRU hit rate.
+    proved: false
+    tags: [lru, approximation]
+  - id: prefix-savings
+    kind: proposition
+    title: Prefill saved by a shared prefix
+    summary: A cached prompt prefix of k tokens saves 2Nk + 4Ldk^2 FLOPs, which is superlinear in the shared length.
+    proved: true
+    tags: [prefix cache, prefill]
+references:
+  - key: che-approximation
+    title: 'Hierarchical Web Caching Systems: Modeling, Design and Experimental Results'
+    authors: H. Che, Y. Tung, Z. Wang
+    year: 2002
+    kind: paper
+    url: https://doi.org/10.1109/JSAC.2002.801752
+    note: Source of the characteristic-time approximation for LRU quoted here as a heuristic.
+  - key: breslau-zipf
+    title: 'Web Caching and Zipf-like Distributions: Evidence and Implications'
+    authors: L. Breslau, P. Cao, L. Fan, G. Phillips, S. Shenker
+    year: 1999
+    kind: paper
+    url: https://doi.org/10.1109/INFCOM.1999.749260
+    note: The measurement study behind the Zipf modelling assumption and its consequences for hit rates.
+---
+
+<Intuition>
+Caching feels like it should have a threshold: store enough and everything hits. Under realistic
+popularity it does not. Request popularity is heavily skewed but has a long tail, and the
+consequence is that hit rate grows like a *power* of cache size — you buy a fixed multiplicative
+improvement per order of magnitude of memory, forever, without ever arriving.
+
+The second surprise is that a cache's value is capped by something it does not control. If a miss
+costs 100 ms and a hit costs 1 ms, then even a 99% hit rate leaves you at $0.99 \times 1 + 0.01
+\times 100 = 2$ ms — twice the hit cost. The miss path, not the cache, sets the floor.
+</Intuition>
+
+## What a hit rate is worth
+
+<Claim kind="proposition" id="cache-latency-identity" title="Effective latency under a cache">
+Let $h$ be the probability a request hits, $t_{\text{hit}}$ the cost of a hit, and
+$t_{\text{miss}}$ the cost of a miss (including the work to populate the cache). Then
+$$
+\E[T] \;=\; h\,t_{\text{hit}} + (1-h)\,t_{\text{miss}}
+\;=\; t_{\text{miss}} - h\,(t_{\text{miss}} - t_{\text{hit}}) .
+$$
+</Claim>
+
+<Proof>
+Condition on the hit event and apply the law of total expectation. The second form rearranges the
+first.
+</Proof>
+
+<Claim kind="corollary" id="cache-amdahl" title="A cache cannot beat its own miss path">
+The speedup relative to no cache is
+$$
+S(h) \;=\; \frac{t_{\text{miss}}}{\E[T]} \;=\; \frac{1}{(1-h) + h\,t_{\text{hit}}/t_{\text{miss}}}
+\;\xrightarrow[h \to 1]{}\; \frac{t_{\text{miss}}}{t_{\text{hit}}} ,
+$$
+and for $h$ below $1$ the miss term $(1-h)$ dominates as soon as
+$1-h \gtrsim t_{\text{hit}}/t_{\text{miss}}$.
+</Claim>
+
+<Proof>
+Divide $t_{\text{miss}}$ by the expression in the proposition. This is exactly Amdahl's law from
+<TopicRef id="ai-systems/scaling-limits" /> with serial fraction $s = t_{\text{hit}}/t_{\text{miss}}$
+in the limit, and with $(1-h)$ playing the role of the unparallelised remainder at finite $h$.
+</Proof>
+
+<KeyIdea>
+With $t_{\text{miss}}/t_{\text{hit}} = 100$, a hit rate of 90% gives speedup
+$1/(0.1 + 0.009) \approx 9.2$, and 99% gives $1/(0.01+0.009) \approx 53$. The last percent of hit
+rate is worth more than the first fifty. Cache work is therefore worth doing precisely when you are
+already close to the ceiling — the opposite of most optimisation.
+</KeyIdea>
+
+## Where hit rates come from
+
+<Definition id="zipf" title="Zipf popularity">
+Items ranked $1,\dots,N$ by popularity have request probabilities
+$$
+p_i \;=\; \frac{i^{-a}}{H_N(a)}, \qquad H_N(a) = \sum_{j=1}^N j^{-a},
+$$
+with $a > 0$ the skew exponent. $H_N(a)$ is the generalised harmonic number. Larger $a$ means more
+concentrated popularity.
+</Definition>
+
+<Claim kind="proposition" id="zipf-hit-rate" title="Static optimal hit rate under a Zipf popularity law">
+A cache of capacity $C$ holding the $C$ most popular items — the best any eviction policy can do
+against i.i.d. requests — achieves hit rate
+$$
+h(C) \;=\; \sum_{i=1}^{C} p_i \;=\; \frac{H_C(a)}{H_N(a)} .
+$$
+</Claim>
+
+<Proof>
+Requests are independent draws from $\{p_i\}$, so the hit probability is the total mass of the
+cached set. Among all sets of size $C$, the mass is maximised by taking the $C$ largest $p_i$,
+which are $i = 1,\dots,C$ since $p_i$ is decreasing in $i$.
+</Proof>
+
+<Claim kind="corollary" id="zipf-asymptotic" title="The power-law form of the hit rate">
+For $0 < a < 1$ and $1 \ll C \ll N$,
+$$
+h(C) \;\approx\; \left(\frac{C}{N}\right)^{1-a} ,
+$$
+for $a = 1$, $h(C) \approx \ln C / \ln N$, and for $a > 1$, $h(C) \to$ a constant close to $1$ even
+for $C \ll N$.
+</Claim>
+
+<Proof>
+For $a \ne 1$, comparing the sum with the integral $\int_1^M x^{-a}dx$ gives
+$H_M(a) = \frac{M^{1-a}-1}{1-a} + O(1)$. For $a<1$ the $M^{1-a}$ term dominates, so
+$H_C(a)/H_N(a) \to (C/N)^{1-a}$. For $a = 1$, $H_M(1) = \ln M + \gamma + o(1)$, giving the
+logarithmic ratio. For $a>1$, $H_N(a)$ converges to $\zeta(a)$ as $N \to \infty$ while $H_C(a)$ is
+already close to it for modest $C$, so the ratio approaches $1$.
+</Proof>
+
+Checking the approximation against exact sums with $N = 10^6$:
+
+| $a$ | $C$ | exact $h$ | approximation |
+|---|---|---|---|
+| 0.5 | $10^3$ | 0.031 | 0.032 |
+| 0.5 | $10^4$ | 0.099 | 0.100 |
+| 0.8 | $10^3$ | 0.207 | 0.251 |
+| 1.0 | $10^3$ | 0.520 | 0.500 |
+| 1.2 | $10^3$ | 0.822 | — |
+
+<Warning title="The approximation degrades as a approaches 1">
+At $a = 0.8$ the power law overstates the hit rate by about 20%, because the $O(1)$ terms dropped
+from $H_M(a)$ are not negligible when $1-a$ is small. Use the exact harmonic ratio when the answer
+matters; the power law is for reasoning about *how* the hit rate scales, not for sizing.
+</Warning>
+
+<KeyIdea>
+For $a < 1$ the hit rate is a power law in cache size, so there is **no knee**. Going from 1 GB to
+10 GB multiplies the hit rate by $10^{1-a}$ — at $a = 0.8$, a factor of $1.58$ — and going from 10
+GB to 100 GB does exactly the same again. Cache sizing is therefore an economic question with no
+natural stopping point, which is why it is usually settled by cost per byte rather than by finding
+a threshold.
+</KeyIdea>
+
+## LRU rather than an oracle
+
+Real caches do not know the popularity ranking. The standard analytic handle is Che's
+approximation.
+
+<Claim kind="heuristic" id="che" title="Che's approximation for LRU">
+Define the **characteristic time** $t_C$ as the unique solution of
+$$
+\sum_{i=1}^{N}\Bigl(1 - e^{-p_i \lambda t_C}\Bigr) \;=\; C ,
+$$
+where $\lambda$ is the total request rate. Then item $i$'s hit probability is approximately
+$1 - e^{-p_i \lambda t_C}$, and the overall LRU hit rate is
+$\sum_i p_i\bigl(1-e^{-p_i\lambda t_C}\bigr)$.
+</Claim>
+
+<Assumptions>
+The approximation replaces the per-item eviction time, which genuinely depends on the whole request
+sequence, by a single deterministic constant shared by all items. It is an approximation with no
+general error bound, reported to be accurate for large caches under independent-reference
+workloads, and it is offered here as a modelling tool rather than a theorem.
+</Assumptions>
+
+## Prefix caching is a different problem
+
+Caching an LLM's KV state for a shared prompt prefix does not fit the model above, and the reason
+is worth stating precisely: the unit of reuse is not an object but a *prefix*, and prefixes form a
+tree rather than a set.
+
+<Claim kind="proposition" id="prefix-savings" title="Prefill saved by a shared prefix">
+Let a request have prompt length $S$ of which the first $k$ tokens are already cached. Using the
+prefill cost $C_{\text{fwd}}(S) \approx 2NS + 4LdS^2$ from
+<TopicRef id="llm-ops/inference-arithmetic" />, the work saved is
+$$
+C_{\text{fwd}}(S) - \bigl[C_{\text{fwd}}(S) - C_{\text{fwd}}(k)\bigr]_{\text{recomputed}}
+\;=\; 2Nk + 4Ld\,k^2 ,
+$$
+so the saving is **superlinear** in the cached prefix length whenever the quadratic attention term
+is not negligible.
+</Claim>
+
+<Proof>
+With the first $k$ tokens' keys and values already materialised, only positions $k+1,\dots,S$ need
+their projections computed, costing $2N(S-k)$, and their attention against all preceding positions
+costs the difference of the quadratic terms. The tokens not recomputed carry exactly the cost
+$C_{\text{fwd}}(k) = 2Nk + 4Ldk^2$ that would otherwise have been paid.
+</Proof>
+
+<KeyIdea>
+Object caches save a fixed cost per hit; prefix caches save a cost that grows *faster than
+linearly* in how much of the prompt is shared. A system prompt shared across every request is
+therefore worth far more than its token count suggests, and the correct eviction policy weights
+entries by $2Nk + 4Ldk^2$ rather than by recency — a cost-aware policy, not an LRU one.
+</KeyIdea>
+
+<NotSaid>
+Nothing here models cache *coherence*. A read-only cache of immutable KV blocks has no invalidation
+problem; a cache of anything mutable does, and by the argument in
+<TopicRef id="ai-systems/scaling-limits" /> cross-replica invalidation introduces exactly the
+pairwise coherency term that produces a throughput maximum. Distributed caches with invalidation are
+in the retrograde regime, and their capacity curve should be measured rather than assumed monotone.
+</NotSaid>

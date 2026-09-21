@@ -1,0 +1,107 @@
+problem: sys-simulate-cache
+timeout_seconds: 90
+starter: |
+  import numpy as np
+
+  def zipf_probs(N, a):
+      """Zipf popularity over N items: p_i proportional to i**(-a) for ranks
+      i = 1..N, normalised to sum to 1. Return an array of length N."""
+      raise NotImplementedError
+
+  def static_hit_rate(N, a, C):
+      """Hit rate of a cache holding the C most popular of N Zipf-distributed
+      items — the best any policy can do against independent requests. This is
+      the ratio of two generalised harmonic numbers."""
+      raise NotImplementedError
+
+  def power_law_hit_rate(N, a, C):
+      """The asymptotic approximation (C/N)**(1-a), valid for a < 1 and
+      1 << C << N."""
+      raise NotImplementedError
+
+  def lru_hit_rate(requests, capacity):
+      """Fraction of `requests` that hit an LRU cache of the given capacity,
+      starting empty. `requests` is a sequence of item ids."""
+      raise NotImplementedError
+tests:
+  - name: zipf_probs is a normalised, decreasing law
+    code: |
+      import numpy as np
+      for N, a in ((10, 0.5), (1000, 1.0), (5000, 1.2)):
+          p = np.asarray(zipf_probs(N, a), dtype=float).ravel()
+          assert p.shape == (N,), f"expected {N} probabilities, got {p.shape}"
+          assert abs(float(p.sum()) - 1.0) < 1e-10, f"should sum to 1, got {p.sum()}"
+          assert np.all(np.diff(p) <= 1e-18), "popularity must be non-increasing in rank"
+          assert abs(p[0] / p[1] - 2 ** a) < 1e-9, f"p1/p2 should be 2^a = {2**a}"
+  - name: the static hit rate is the harmonic ratio
+    code: |
+      import numpy as np
+      for N, a in ((100000, 0.5), (100000, 0.8), (50000, 1.2)):
+          w = np.arange(1, N + 1, dtype=float) ** (-a)
+          tot = w.sum()
+          for C in (10, 1000, 20000):
+              want = float(w[:C].sum() / tot)
+              got = float(static_hit_rate(N, a, C))
+              assert abs(got - want) < 1e-9, f"N={N}, a={a}, C={C}: expected {want}, got {got}"
+  - name: caching everything hits everything
+    code: |
+      for N, a in ((1000, 0.7), (5000, 1.1)):
+          assert abs(float(static_hit_rate(N, a, N)) - 1.0) < 1e-12, "a full cache never misses"
+          assert abs(float(static_hit_rate(N, a, 0)) - 0.0) < 1e-12, "an empty cache never hits"
+  - name: skew decides how much a cache is worth
+    code: |
+      N, C = 100000, 1000
+      rates = [float(static_hit_rate(N, a, C)) for a in (0.3, 0.6, 0.9, 1.2)]
+      assert all(x < y for x, y in zip(rates, rates[1:])), f"more skew, more hits: {rates}"
+      assert rates[0] < 0.1, f"a nearly flat law makes a 1% cache almost useless, got {rates[0]}"
+      assert rates[-1] > 0.7, f"heavy skew makes a 1% cache excellent, got {rates[-1]}"
+  - name: the power-law form tracks the exact rate below a = 1
+    code: |
+      N = 1000000
+      for a in (0.3, 0.5):
+          for C in (1000, 10000):
+              approx = float(power_law_hit_rate(N, a, C))
+              want = (C / N) ** (1 - a)
+              assert abs(approx - want) < 1e-12, f"expected {want}, got {approx}"
+      # Each decade of cache buys the same multiplicative gain.
+      r1 = float(power_law_hit_rate(N, 0.5, 1000))
+      r2 = float(power_law_hit_rate(N, 0.5, 10000))
+      r3 = float(power_law_hit_rate(N, 0.5, 100000))
+      assert abs(r2 / r1 - r3 / r2) < 1e-9, "a power law has no knee"
+      assert abs(r2 / r1 - 10 ** 0.5) < 1e-9, f"the per-decade factor should be 10^(1-a)"
+  - name: LRU on hand-checked traces
+    code: |
+      # Cycling through three items with room for two evicts exactly the item
+      # about to be needed: every single request misses.
+      assert abs(float(lru_hit_rate([1, 2, 3, 1, 2, 3], 2)) - 0.0) < 1e-12
+      assert abs(float(lru_hit_rate([1, 2, 3, 1, 2, 3], 3)) - 0.5) < 1e-12
+      assert abs(float(lru_hit_rate([1, 1, 1], 1)) - 2.0 / 3.0) < 1e-12
+      assert abs(float(lru_hit_rate([1, 2, 1, 2], 2)) - 0.5) < 1e-12
+      assert abs(float(lru_hit_rate([5, 5, 5, 5], 1)) - 0.75) < 1e-12
+  - name: LRU is recency-ordered, not insertion-ordered
+    code: |
+      # With FIFO eviction this trace scores 1/5; with LRU it scores 2/5,
+      # because touching item 1 at step 3 protects it from the step-4 eviction.
+      trace = [1, 2, 1, 3, 1]
+      got = float(lru_hit_rate(trace, 2))
+      assert abs(got - 0.4) < 1e-12, f"expected 0.4 for LRU on {trace}, got {got}"
+  - name: a cache larger than the working set only pays compulsory misses
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      reqs = rng.integers(0, 50, 5000).tolist()
+      distinct = len(set(reqs))
+      got = float(lru_hit_rate(reqs, 200))
+      assert abs(got - (1 - distinct / len(reqs))) < 1e-12, \
+          "with room for everything, only first touches miss"
+  - name: LRU does not beat the static optimum by much
+    code: |
+      import numpy as np
+      N, a, C = 2000, 0.9, 200
+      p = np.asarray(zipf_probs(N, a), dtype=float).ravel()
+      rng = np.random.default_rng(3)
+      reqs = rng.choice(N, size=60000, p=p).tolist()
+      lru = float(lru_hit_rate(reqs, C))
+      best = float(static_hit_rate(N, a, C))
+      assert lru <= best + 0.02, f"LRU {lru} should not exceed the static optimum {best}"
+      assert lru > 0.5 * best, f"LRU {lru} should be in the same league as {best}"

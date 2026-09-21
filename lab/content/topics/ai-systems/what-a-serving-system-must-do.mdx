@@ -1,0 +1,241 @@
+---
+title: What a Serving System Must Guarantee
+summary: The vocabulary the rest of this field is written in — offered load, utilisation, throughput, concurrency and latency percentiles — defined precisely enough to compute with.
+field: ai-systems
+level: 1
+order: 10
+prerequisites:
+  - probability/expectation-and-conditioning
+  - llm-ops/inference-arithmetic
+tags: [latency, throughput, utilisation, percentiles, service level objective]
+estimated_time: 1h
+claims:
+  - id: stability-condition
+    kind: proposition
+    title: Stability requires utilisation below one
+    summary: A queue with arrival rate above service capacity has a backlog growing without bound, so throughput equals offered load only when utilisation is strictly below 1.
+    proved: true
+    tags: [stability, utilisation]
+  - id: mean-does-not-bound-tail
+    kind: proposition
+    title: The mean constrains the tail only by a factor of 1/(1-p)
+    summary: The p-quantile of a non-negative latency is at most its mean divided by 1-p, and that bound is attained, so a mean of 200 ms permits a p99 of 20 s and nothing sharper can be said.
+    proved: true
+    tags: [percentiles, tail, markov]
+  - id: percentile-not-additive
+    kind: proposition
+    title: Percentiles do not add
+    summary: The 99th percentile of a sum of independent stages is generally far below the sum of their 99th percentiles, and never above it by more than the stage count allows.
+    proved: true
+    tags: [percentiles, composition]
+  - id: serving-vocabulary
+    kind: definition
+    title: Offered load, throughput, concurrency, utilisation
+    summary: The six quantities every capacity argument is written in, and the distinction between throughput and capacity.
+    proved: false
+    tags: [vocabulary, definitions]
+  - id: slo
+    kind: definition
+    title: Service-level objective
+    summary: A metric, a quantile and a window — and the three consequences that follow from reading it literally.
+    proved: false
+    tags: [slo, percentiles]
+references:
+  - key: dean-tail-at-scale
+    title: The Tail at Scale
+    authors: J. Dean, L. A. Barroso
+    year: 2013
+    kind: paper
+    url: https://doi.org/10.1145/2408776.2408794
+    note: The paper that made tail latency a first-class concern in system design.
+  - key: little-proof
+    title: A Proof for the Queuing Formula L = λW
+    authors: J. D. C. Little
+    year: 1961
+    kind: paper
+    url: https://doi.org/10.1287/opre.9.3.383
+    note: Referenced here for the definitions of L, λ and W used throughout.
+---
+
+<Intuition>
+Almost every argument about a production model boils down to four numbers: how fast requests
+arrive, how long one takes to serve, how many are in flight at once, and how hard the machine is
+being pushed. Get those four straight and the rest of this field is arithmetic. Confuse any two of
+them — and "throughput" and "capacity" are confused constantly — and you will size a cluster wrong
+by a factor you cannot find afterwards.
+
+The other half of the vocabulary is about *which* latency you mean. A system whose average response
+is 200 ms can still fail most of its users, and the reason is not subtle: averages hide exactly the
+part of the distribution that people notice.
+</Intuition>
+
+## The four quantities
+
+<Definition id="serving-vocabulary" title="Offered load, throughput, concurrency, utilisation">
+For a system in steady state over a long interval:
+
+- **Offered load** $\lambda$ — the rate at which requests *arrive*, in requests per second. It is a
+  property of the world, not of your system.
+- **Service time** $S$ — the time one request occupies a server, excluding any time spent waiting.
+  It is a random variable; write $\E[S]$ for its mean.
+- **Throughput** $X$ — the rate at which requests *complete*.
+- **Concurrency** $L$ — the number of requests inside the system at a given instant, waiting or
+  being served.
+- **Latency** $W$ — the time from arrival to completion, including queueing: $W \ge S$ always.
+- **Capacity** $\mu$ — the maximum completion rate. With $c$ identical servers each able to
+  complete $1/\E[S]$ requests per second, $\mu = c/\E[S]$.
+- **Utilisation** $\rho = \lambda/\mu$ — the fraction of capacity the offered load asks for.
+</Definition>
+
+<Warning title="Throughput is not capacity">
+Throughput is what you *measure*; capacity is what you *have*. A system serving 400 requests per
+second might be at 40% utilisation or at 99%, and those two situations behave completely
+differently — one has headroom, the other is about to fall over. A throughput graph alone cannot
+tell you which you are in. This is why dashboards that show only requests per second are close to
+useless for capacity decisions.
+</Warning>
+
+## Stability
+
+<Claim kind="proposition" id="stability-condition" title="Stability requires utilisation below one">
+Let $A(t)$ be the number of arrivals and $D(t)$ the number of departures by time $t$, with
+$A(t)/t \to \lambda$ and departure capacity $D(t)/t \le \mu$. If $\lambda > \mu$ then the backlog
+$L(t) = A(t) - D(t)$ satisfies $L(t) \to \infty$. Consequently throughput $X = \lambda$ is
+achievable only when $\rho = \lambda/\mu \le 1$, and, as the next page shows, only $\rho < 1$ keeps
+latency finite.
+</Claim>
+
+<Assumptions>
+- Arrivals and departures are counted over a common interval and no requests are dropped or
+  abandoned. Dropping requests is precisely how a real system escapes this proposition — it
+  converts an unbounded queue into a visible error rate, which is the point of admission control.
+- Capacity $\mu$ is constant. Autoscaling makes $\mu$ a function of time and is treated separately.
+</Assumptions>
+
+<Proof>
+By definition $L(t) = A(t) - D(t) \ge A(t) - \mu t$. Divide by $t$:
+$$
+\frac{L(t)}{t} \ \ge\ \frac{A(t)}{t} - \mu \ \longrightarrow\ \lambda - \mu \ >\ 0 .
+$$
+So $L(t)/t$ is eventually bounded below by a positive constant $(\lambda-\mu)/2$, giving
+$L(t) \ge (\lambda-\mu)t/2 \to \infty$. Since $L$ counts requests present in the system and each
+present request has been waiting at least since its arrival, mean latency diverges as well.
+</Proof>
+
+<NotSaid>
+This says nothing about what happens at $\rho$ slightly *below* one. It is tempting to read
+"stable for $\rho < 1$" as "fine for $\rho < 1$", and that reading is wrong: the queue is finite at
+$\rho = 0.99$ but its mean length is around a hundred requests. Stability is a statement about
+$t \to \infty$, not about whether your latency target is met.
+</NotSaid>
+
+## Which latency you mean
+
+A latency distribution is summarised by its quantiles. Write $F$ for the CDF of $W$ and
+$$
+q_p \ =\ \inf\{t : F(t) \ge p\}
+$$
+for the $p$-quantile — "p99" is $q_{0.99}$, the value 99% of requests come in under.
+
+<Claim kind="proposition" id="mean-does-not-bound-tail" title="The mean constrains the tail only by a factor of 1/(1-p)">
+Let $W \ge 0$ have mean $m$. Then for every $p \in (0,1)$,
+$$
+q_p(W) \ \le\ \frac{m}{1-p} ,
+$$
+and the bound is attained: for every $\varepsilon > 0$ there is a distribution with mean $m$ whose
+$p$-quantile exceeds $m/(1-p) - \varepsilon$. In particular a mean of 200 ms permits a p99 of just
+under 20 s, and permits nothing worse.
+</Claim>
+
+<Proof>
+**Upper bound.** By Markov's inequality, $\Pr[W \ge t] \le m/t$ for every $t > 0$. Put
+$t_\delta = m/(1-p) + \delta$ with $\delta > 0$. Then $\Pr[W \ge t_\delta] \le m/t_\delta < 1-p$,
+so $F(t_\delta) = \Pr[W \le t_\delta] > p$ and therefore $q_p(W) \le t_\delta$. Letting
+$\delta \downarrow 0$ gives $q_p(W) \le m/(1-p)$.
+
+**Tightness.** Fix $\alpha \in (1-p,\,1)$ and let $W$ take the value $v = m/\alpha$ with
+probability $\alpha$ and $0$ otherwise. Its mean is $\alpha \cdot m/\alpha = m$. Since
+$\Pr[W < v] = 1-\alpha < p$, no point below $v$ has $F \ge p$, so $q_p(W) = v = m/\alpha$. As
+$\alpha \downarrow 1-p$ this increases to $m/(1-p)$.
+</Proof>
+
+<KeyIdea>
+A factor of $1/(1-p)$ is all the mean ever tells you. At $p = 0.99$ that factor is **100**. So
+"average latency 200 ms" is consistent with a p99 anywhere from 200 ms to 20 s, and the two
+situations are completely different products. This is the precise reason serving systems are
+specified by quantiles rather than means.
+</KeyIdea>
+
+## Composing stages
+
+Real requests pass through several stages in sequence: a load balancer, a tokeniser, a retrieval
+call, the model itself. It is tempting to budget a latency target by adding up per-stage p99s.
+
+<Claim kind="proposition" id="percentile-not-additive" title="Percentiles do not add">
+Let $W = W_1 + \cdots + W_k$ with the $W_i$ non-negative. Then
+$$
+q_p(W) \ \le\ \sum_{i=1}^k q_{p_i}(W_i) \qquad \text{whenever} \quad \sum_{i=1}^k (1-p_i) \le 1-p .
+$$
+Independence is not needed; the bound holds for arbitrarily dependent stages.
+</Claim>
+
+<Proof>
+If $W_i < q_{p_i}(W_i)$ for every $i$ then $W < \sum_i q_{p_i}(W_i)$. By a union bound,
+$$
+\Pr\Big[\exists i:\, W_i \ge q_{p_i}(W_i)\Big] \ \le\ \sum_{i=1}^k \Pr[W_i \ge q_{p_i}(W_i)]
+\ \le\ \sum_{i=1}^k (1-p_i) \ \le\ 1-p .
+$$
+Hence $\Pr[W < \sum_i q_{p_i}(W_i)] \ge p$, which is the definition of
+$q_p(W) \le \sum_i q_{p_i}(W_i)$.
+</Proof>
+
+<KeyIdea>
+To hit an end-to-end p99 across $k$ stages, the union bound says it is enough for each stage to hit
+its $\,1 - 0.01/k\,$ quantile. With $k = 4$ stages that is each stage's **p99.75**, not its p99.
+Budgeting with per-stage p99s is not conservative — it is optimistic, and the error grows with the
+number of stages.
+</KeyIdea>
+
+<Note title="Why the bound is loose">
+The union bound ignores the fact that stages are rarely slow simultaneously. When the $W_i$ are
+independent and light-tailed, the sum concentrates and $q_{0.99}(W)$ sits much closer to
+$\sum_i \E[W_i]$ than to $\sum_i q_{0.99}(W_i)$. The bound is the safe direction; the concentration
+is the typical direction. Which one governs depends on whether the stages share a failure cause —
+the same GPU, the same network, the same garbage collector — and shared causes are exactly what
+independence assumes away.
+</Note>
+
+## What an SLO actually asserts
+
+<Definition id="slo" title="Service-level objective">
+A **service-level objective** is a triple: a metric, a quantile, and a window. "p99 latency under
+500 ms over a rolling 28 days" asserts that, of the requests in any such window, at most 1% took
+longer than 500 ms.
+</Definition>
+
+Three consequences follow immediately from the definitions and are worth stating because they are
+routinely missed.
+
+1. **An SLO is a budget, not a bound.** 1% of a billion requests is ten million slow requests.
+   The SLO permits them.
+2. **The window matters as much as the quantile.** A 28-day p99 permits a single catastrophic hour,
+   because one hour is 0.15% of 28 days. A one-hour p99 does not.
+3. **Quantiles of quantiles are not quantiles.** Averaging per-minute p99s over a day does not give
+   the day's p99, and in general underestimates it, because the average of a set of quantiles is
+   not the quantile of the pooled distribution.
+
+<Warning title="You cannot average percentiles">
+If minute one has p99 = 100 ms and minute two has p99 = 300 ms, the two-minute p99 is not 200 ms.
+It is whatever value 1% of the *pooled* requests exceeded, which depends on the request counts and
+the full shapes of both minutes. Percentile metrics must be computed from merged histograms, not
+from per-window percentiles.
+</Warning>
+
+## Where this goes
+
+The next pages turn these definitions into predictions. <TopicRef id="ai-systems/littles-law" />
+pins down the relationship between concurrency, throughput and latency with no distributional
+assumptions at all. <TopicRef id="ai-systems/queueing-and-the-utilisation-wall" /> explains why
+latency explodes well before $\rho = 1$, and
+<TopicRef id="ai-systems/tail-latency-and-fan-out" /> explains why the explosion is felt first, and
+worst, by requests that touch many machines.

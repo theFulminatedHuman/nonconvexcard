@@ -1,0 +1,196 @@
+---
+title: Scaling Limits — Amdahl, Gustafson and the Coherency Penalty
+summary: 'Three models of what happens when you add machines: a hard ceiling, an escape from it, and the case where throughput actually falls.'
+field: ai-systems
+level: 2
+order: 50
+prerequisites:
+  - ai-systems/littles-law
+tags: [amdahl, gustafson, universal scalability law, speedup, contention, coherency]
+estimated_time: 1h
+claims:
+  - id: amdahl
+    kind: proposition
+    title: Amdahl's law
+    summary: If a fraction s of the work is inherently serial, speedup is capped at 1/s however many processors are added.
+    proved: true
+    tags: [speedup, ceiling]
+  - id: gustafson
+    kind: proposition
+    title: Gustafson's scaled speedup
+    summary: If the problem grows with the machine so that the serial part stays fixed in absolute time, speedup is linear in the processor count.
+    proved: true
+    tags: [weak scaling]
+  - id: usl-maximum
+    kind: proposition
+    title: The universal scalability law has an interior maximum
+    summary: With a coherency term, capacity peaks at p* = sqrt((1−α)/β) processors and decreases beyond it.
+    proved: true
+    tags: [contention, coherency, retrograde]
+references:
+  - key: amdahl-1967
+    title: Validity of the Single Processor Approach to Achieving Large Scale Computing Capabilities
+    authors: G. M. Amdahl
+    year: 1967
+    kind: paper
+    url: https://doi.org/10.1145/1465482.1465560
+    note: Two pages, and the source of the ceiling argument.
+  - key: gustafson-1988
+    title: Reevaluating Amdahl's Law
+    authors: J. L. Gustafson
+    year: 1988
+    kind: paper
+    url: https://doi.org/10.1145/42411.42415
+    note: Points out that the fixed-problem-size assumption is what produces the ceiling.
+  - key: gunther-gcap
+    title: 'Guerrilla Capacity Planning'
+    authors: N. J. Gunther
+    year: 2007
+    kind: book
+    note: Develops the universal scalability law and its two-parameter fit.
+---
+
+<Intuition>
+Adding machines to a system does one of three things. In the best case throughput rises in
+proportion. In the ordinary case it rises but flattens, because some part of the work cannot be
+split. In the bad case it rises, peaks, and then *falls* — more machines, less work done — because
+the machines spend their time telling each other what they did.
+
+All three are captured by adding one term at a time to the same expression, and knowing which term
+dominates tells you whether the fix is more hardware, a different decomposition, or less sharing.
+</Intuition>
+
+## The ceiling
+
+<Claim kind="proposition" id="amdahl" title="Amdahl's law">
+Let a fixed workload take unit time on one processor, of which a fraction $s \in [0,1]$ is serial
+and $1-s$ is perfectly parallelisable across $p$ processors. Then
+$$
+T(p) \;=\; s + \frac{1-s}{p},
+\qquad
+S(p) \;=\; \frac{T(1)}{T(p)} \;=\; \frac{1}{\,s + (1-s)/p\,}
+\;\xrightarrow[p\to\infty]{}\; \frac 1s .
+$$
+</Claim>
+
+<Proof>
+The serial portion takes time $s$ regardless of $p$; the parallel portion takes $(1-s)/p$. Their
+sum is $T(p)$, and $T(1) = s + (1-s) = 1$. As $p \to \infty$ the second term vanishes and
+$S(p) \uparrow 1/s$. Monotonicity is clear since $T$ is decreasing in $p$.
+</Proof>
+
+<KeyIdea>
+With 5% serial work the ceiling is $20\times$, and 64 processors already deliver $15.4\times$ —
+77% of everything more hardware will ever give. The practical reading is not "parallelism is
+futile" but **measure $s$ before buying**: the derivative $S'(p)$ falls off a cliff at
+$p \approx 1/s$, and spending past that point is close to pure waste.
+</KeyIdea>
+
+<Warning title="s is not the fraction of code that is serial">
+$s$ is the fraction of *time*, measured on one processor. Ten lines of lock-protected bookkeeping
+in a thousand-line kernel can easily be 30% of the runtime. In serving systems the usual hidden
+serial components are a shared tokeniser, a single scheduler thread, a metrics lock, and — most
+often — logging.
+</Warning>
+
+## The escape
+
+Amdahl assumes the *problem* is fixed. Often it is not: given more machines, people run bigger
+batches, longer contexts, more shards.
+
+<Claim kind="proposition" id="gustafson" title="Gustafson's scaled speedup">
+Suppose that on $p$ processors the work is sized so that the run takes unit wall-clock time, of
+which $\sigma$ is serial and $1-\sigma$ is parallel. The same work on one processor would take
+$\sigma + (1-\sigma)p$. Hence
+$$
+S_{\text{scaled}}(p) \;=\; \sigma + (1-\sigma)\,p ,
+$$
+which is linear in $p$ with no ceiling.
+</Claim>
+
+<Proof>
+By construction the parallel portion occupies $1-\sigma$ of the wall clock on $p$ processors, so it
+represents $(1-\sigma)p$ units of single-processor work; the serial portion represents $\sigma$
+either way. The ratio of single-processor time to parallel time is therefore
+$(\sigma + (1-\sigma)p)/1$.
+</Proof>
+
+<Note title="The two laws do not disagree">
+They answer different questions. Amdahl asks "how much faster does *this* job finish?" — strong
+scaling. Gustafson asks "how much more work can I do in the same time?" — weak scaling. Training a
+model is usually a weak-scaling problem: more GPUs means a larger global batch, not the same batch
+finishing sooner. Serving a single user's request is a strong-scaling problem, and Amdahl's ceiling
+is the one that binds.
+</Note>
+
+## The case where more machines are worse
+
+Both laws above are monotone in $p$. Real distributed systems often are not: throughput peaks and
+then declines. The universal scalability law adds a term for the cost of keeping $p$ participants
+consistent, which grows like the number of *pairs*.
+
+<Claim kind="proposition" id="usl-maximum" title="The universal scalability law has an interior maximum">
+Define relative capacity
+$$
+C(p) \;=\; \frac{p}{1 + \alpha\,(p-1) + \beta\,p\,(p-1)} ,
+$$
+with $\alpha \ge 0$ the **contention** coefficient (serialisation, as in Amdahl) and $\beta \ge 0$
+the **coherency** coefficient (pairwise consistency traffic). If $\beta > 0$ then $C$ is maximised
+at
+$$
+p^\star \;=\; \sqrt{\frac{1-\alpha}{\beta}} ,
+$$
+and $C(p) \to 0$ as $p \to \infty$.
+</Claim>
+
+<Assumptions>
+This is a two-parameter *model*, fitted to measurements, not a theorem about computation. Its
+justification is that $\alpha$ captures a queueing-like serial term and $\beta$ a term proportional
+to $\binom p2$ pairwise interactions; whether a given system obeys it is an empirical question. It
+is stated here because the qualitative prediction — an interior maximum — is real and is
+routinely observed.
+</Assumptions>
+
+<Proof>
+Write $C(p) = p/D(p)$ with $D(p) = 1 + \alpha(p-1) + \beta p(p-1)$. Then
+$$
+C'(p) \;=\; \frac{D(p) - p\,D'(p)}{D(p)^2},
+$$
+so stationary points satisfy $D(p) = p D'(p)$. Compute
+$D'(p) = \alpha + \beta(2p-1)$, hence
+$$
+1 + \alpha(p-1) + \beta p(p-1) \;=\; p\alpha + \beta p(2p-1) .
+$$
+Expanding both sides:
+$$
+1 + \alpha p - \alpha + \beta p^2 - \beta p \;=\; \alpha p + 2\beta p^2 - \beta p ,
+$$
+and cancelling $\alpha p$ and $-\beta p$ leaves $1 - \alpha + \beta p^2 = 2\beta p^2$, so
+$\beta p^2 = 1-\alpha$ and $p^\star = \sqrt{(1-\alpha)/\beta}$. Since $D$ grows quadratically while
+the numerator grows linearly, $C(p) \sim 1/(\beta p) \to 0$, confirming the stationary point is a
+maximum.
+</Proof>
+
+With $\alpha = 0.03$ and $\beta = 10^{-4}$ the formula gives $p^\star \approx 98$, and a direct
+search over integer $p$ agrees at $98$. Beyond that, adding machines reduces total throughput.
+
+<KeyIdea>
+The three regimes are distinguished by a single question: **what has to agree with what?**
+
+- Nothing shared, no serial section: linear scaling.
+- A serial section: Amdahl, flattening at $1/s$.
+- Every participant must see every other's updates: coherency, peaking at
+  $\sqrt{(1-\alpha)/\beta}$ and then falling.
+
+A distributed KV cache with cross-replica invalidation is in the third regime. Independent stateless
+replicas behind a load balancer are in the first. Which one you are in is an architectural choice,
+not a tuning parameter.
+</KeyIdea>
+
+<NotSaid>
+None of these models say anything about latency — they are all statements about throughput or
+completion time of a fixed job. A system can be scaling perfectly by $C(p)$ while its p99 degrades,
+because adding replicas increases fan-out, and
+<TopicRef id="ai-systems/tail-latency-and-fan-out" /> showed what fan-out does to a tail. Capacity
+and tail latency must be tracked separately; optimising one routinely damages the other.
+</NotSaid>

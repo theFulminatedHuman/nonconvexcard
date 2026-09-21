@@ -1,0 +1,206 @@
+---
+title: Tail Latency and Fan-Out Amplification
+summary: Why a request that touches a hundred machines is slow even when every machine is fast, and what hedging buys — derived from the distribution of a maximum.
+field: ai-systems
+level: 2
+order: 40
+prerequisites:
+  - ai-systems/what-a-serving-system-must-do
+  - probability/expectation-and-conditioning
+tags: [tail latency, fan-out, order statistics, hedging, straggler]
+estimated_time: 1h
+claims:
+  - id: fanout-max
+    kind: proposition
+    title: The distribution of the slowest of n calls
+    summary: With independent sub-requests the parent latency is the maximum, whose CDF is the per-call CDF raised to the n-th power.
+    proved: true
+    tags: [order statistics]
+  - id: fanout-quantile
+    kind: corollary
+    title: Fan-out shifts which quantile you must control
+    summary: To keep the parent's p-quantile at t, each of n independent children needs its p^(1/n) quantile at t, which for n = 100 and p = 0.99 is the child's p99.99.
+    proved: true
+    tags: [quantiles, budgeting]
+  - id: hedging-bound
+    kind: proposition
+    title: A hedged request truncates the tail at the hedge delay
+    summary: Issuing a duplicate after d seconds and taking the first reply bounds the tail by d plus an independent copy of the latency, so the tail beyond d decays like the square of the original.
+    proved: true
+    tags: [hedging, redundancy]
+  - id: hedging-cost
+    kind: proposition
+    title: The extra load a hedge creates
+    summary: Hedging at the p-quantile adds at most a 1−p fraction of extra requests, so hedging at p95 costs 5% more capacity.
+    proved: true
+    tags: [hedging, cost]
+references:
+  - key: dean-tail-at-scale
+    title: The Tail at Scale
+    authors: J. Dean, L. A. Barroso
+    year: 2013
+    kind: paper
+    url: https://doi.org/10.1145/2408776.2408794
+    note: Source of the hedged-request and tied-request techniques discussed here.
+  - key: vulimiri-low-latency
+    title: 'Low Latency via Redundancy'
+    authors: A. Vulimiri, P. B. Godfrey, R. Mittal, J. Sherry, S. Ratnasamy, S. Shenker
+    year: 2013
+    kind: paper
+    url: https://doi.org/10.1145/2535372.2535392
+    note: Analyses when duplicating a request reduces latency and when it backfires through added load.
+---
+
+<Intuition>
+Suppose your retrieval layer is fast: 99% of shard queries finish within 10 ms. Now a single user
+request queries 100 shards and cannot answer until the last one returns. What fraction of user
+requests finish within 10 ms?
+
+Not 99%. About 37%. The chance that *all hundred* shards come in under 10 ms is
+$0.99^{100} \approx 0.366$, so nearly two thirds of user requests are slower than the number on
+your shard dashboard. Nothing is broken. Every shard is meeting its stated target. The architecture
+itself converted a 1% event into a 63% event.
+</Intuition>
+
+## The maximum is the parent
+
+<Claim kind="proposition" id="fanout-max" title="The distribution of the slowest of n calls">
+Let a parent request issue $n$ sub-requests with latencies $X_1,\dots,X_n$, independent and
+identically distributed with CDF $F$, and let the parent complete when the last child does. Then
+the parent latency $M_n = \max_i X_i$ has
+$$
+\Pr[M_n \le t] \;=\; F(t)^n ,
+\qquad
+\Pr[M_n > t] \;=\; 1 - \bigl(1-\bar F(t)\bigr)^n \;\le\; n\,\bar F(t) ,
+$$
+where $\bar F = 1-F$ is the tail function.
+</Claim>
+
+<Proof>
+$M_n \le t$ holds exactly when every $X_i \le t$; by independence that probability is
+$\prod_i \Pr[X_i \le t] = F(t)^n$. The tail identity follows by complementation, and the
+inequality $1-(1-u)^n \le nu$ for $u \in [0,1]$ is Bernoulli's inequality (or a union bound over
+the $n$ events $\{X_i > t\}$).
+</Proof>
+
+<Claim kind="corollary" id="fanout-quantile" title="Fan-out shifts which quantile you must control">
+To achieve $\Pr[M_n \le t] \ge p$ it is necessary and sufficient that each child satisfies
+$F(t) \ge p^{1/n}$ — that is, $t$ must be the child's $p^{1/n}$ quantile. For $p = 0.99$:
+$$
+\begin{array}{r|cccc}
+n & 1 & 10 & 100 & 1000\\ \hline
+p^{1/n} & 0.99 & 0.99899 & 0.999899 & 0.9999899
+\end{array}
+$$
+So a hundred-way fan-out turns a p99 target on the parent into a **p99.99** target on each child.
+</Claim>
+
+<Proof>
+From the proposition, $\Pr[M_n \le t] = F(t)^n \ge p \iff F(t) \ge p^{1/n}$. The numerical row is
+$0.99^{1/n}$ evaluated at each $n$; note $p^{1/n} = \exp(\ln p / n) \approx 1 - (1-p)/n$ for large
+$n$, so the required child tail probability shrinks like $1/n$.
+</Proof>
+
+<KeyIdea>
+Fan-out does not make any individual service slower. It changes **which quantile of that service
+the user experiences**. A service optimised to a p99 target is, under 100-way fan-out, being
+consumed at its p99.99 — a part of the distribution nobody measured, nobody tuned, and which is
+usually dominated by effects invisible at p99: garbage collection, a cold cache, a retry, a kernel
+scheduling hiccup.
+</KeyIdea>
+
+<Warning title="The independence assumption is doing real work">
+$F(t)^n$ assumes the children fail to be fast independently. They frequently do not: they share a
+network fabric, a power domain, a noisy neighbour, or a release. Correlation *helps* here — if all
+shards are slow together, $\Pr[M_n > t]$ is closer to $\bar F(t)$ than to $n \bar F(t)$. So the
+independent calculation is the pessimistic one for the tail of a single request, while being
+optimistic about how many requests are affected at once. Both readings matter and they point in
+opposite directions.
+</Warning>
+
+## What hedging buys
+
+The standard countermeasure is to send a second copy of a sub-request if the first has not returned
+by some deadline $d$, and take whichever answers first.
+
+<Claim kind="proposition" id="hedging-bound" title="A hedged request truncates the tail at the hedge delay">
+Let $X$ be the latency of one attempt, with tail $\bar F$. Issue a second, independent attempt at
+time $d$ if the first is still outstanding, and let $Y$ be the time until the first response. Then
+for $t > d$,
+$$
+\Pr[Y > t] \;=\; \bar F(t)\cdot \bar F(t-d) ,
+$$
+and for $t \le d$, $\Pr[Y>t] = \bar F(t)$.
+</Claim>
+
+<Assumptions>
+- The two attempts are independent — different replica, different host, no shared bottleneck. A
+  hedge routed to the same overloaded machine buys nothing, which is the common failure mode.
+- Issuing the hedge does not slow the original. At low hedge rates this is nearly true; at high
+  rates it is false, and the cost proposition below is what bounds the damage.
+</Assumptions>
+
+<Proof>
+For $t \le d$ the hedge has not been issued, so $Y = X_1$ and the claim is immediate. For $t > d$,
+the event $\{Y > t\}$ requires the first attempt to still be outstanding at $t$, which has
+probability $\bar F(t)$, *and* the second attempt — which started at $d$ and has therefore been
+running for $t-d$ — to still be outstanding, which by independence has probability
+$\bar F(t-d)$. Multiplying gives the display.
+</Proof>
+
+Take $d$ to be the p95 of $X$. Then for $t$ beyond $d$ the tail is the product of two small
+numbers rather than one. If $\bar F$ decays exponentially with scale $\tau$, so
+$\bar F(t) = e^{-t/\tau}$, the hedged tail is $e^{-(2t-d)/\tau}$ — the decay rate has **doubled**.
+
+<Claim kind="proposition" id="hedging-cost" title="The extra load a hedge creates">
+If the hedge fires at delay $d = q_p(X)$, the expected number of attempts per logical request is
+$$
+\E[\#\text{attempts}] \;=\; 1 + \Pr[X > d] \;=\; 1 + (1-p) ,
+$$
+so hedging at the p95 costs at most 5% additional load, and at the p99 at most 1%.
+</Claim>
+
+<Proof>
+The second attempt is issued exactly on the event $\{X > d\}$, whose probability is
+$1 - F(d) = 1-p$ by definition of the quantile. Expectation of the count $1 + \one\{X>d\}$ is
+$1 + (1-p)$.
+</Proof>
+
+<KeyIdea>
+Hedging is unusually cheap because it is *conditional*: it only duplicates the requests that are
+already slow, and by construction those are rare. Five percent extra capacity to square the tail is
+one of the best trades available in a serving system — provided the hedge lands somewhere
+genuinely independent, and provided the system has the 5% to spare, which by the utilisation wall
+it will only have if it is not already near saturation.
+</KeyIdea>
+
+<Warning title="Hedging under overload is a positive feedback loop">
+The cost bound $1+(1-p)$ assumes $d$ is a *fixed* quantile of the healthy distribution. Under
+overload the whole distribution shifts right, so a fixed threshold $d$ starts firing on far more
+than $1-p$ of requests. That extra load pushes utilisation up, which by $1/(1-\rho)$ pushes latency
+up, which fires more hedges. Production hedging must therefore be rate-limited — typically to a few
+percent of traffic — so that the mechanism cannot amplify the overload it was meant to mask.
+</Warning>
+
+## Reading the numbers
+
+Two consequences are worth carrying around.
+
+1. **Measure the quantile your architecture actually consumes.** If a request fans out $n$ ways,
+   instrument the child at $1 - (1-p)/n$, not at $p$. For $n = 100$ and a p99 parent target that is
+   p99.99 — which needs on the order of $10^5$ samples to estimate at all, a measurement problem in
+   its own right.
+2. **Reducing fan-out is a latency optimisation.** Halving the number of shards a query touches
+   moves the consumed quantile from $p^{1/n}$ to $p^{2/n}$, which is a strictly easier target. This
+   is a real argument for larger shards, and it trades against the memory and pooling arguments
+   elsewhere in this field.
+
+<NotSaid>
+This page treats the children as independent draws from a fixed distribution. It does not model the
+case where the slow child is slow *because* of the parent's own load — a self-inflicted straggler.
+Nor does it cover the case where partial results are acceptable: if the parent can answer with 95
+of 100 shards, the relevant order statistic is $X_{(95)}$ rather than the maximum, and the
+fan-out penalty largely disappears. Designing for partial results is the strongest available
+defence against tail amplification, and it is an application-level decision rather than an
+infrastructure one.
+</NotSaid>

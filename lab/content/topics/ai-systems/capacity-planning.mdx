@@ -1,0 +1,198 @@
+---
+title: Sizing a Serving Cluster End to End
+summary: Putting Little's law, the KV-cache budget and the utilisation wall together into a single sizing formula, and reading off which constraint actually binds.
+field: ai-systems
+level: 2
+order: 80
+prerequisites:
+  - ai-systems/littles-law
+  - ai-systems/queueing-and-the-utilisation-wall
+  - llm-ops/kv-cache-and-batching
+tags: [capacity planning, sizing, kv cache, concurrency, headroom, replicas]
+estimated_time: 3h
+claims:
+  - id: concurrency-ceiling
+    kind: proposition
+    title: The memory ceiling on concurrency
+    summary: A replica's KV-cache budget divided by the per-sequence cache size is a hard cap on how many requests it can hold at once.
+    proved: true
+    tags: [memory, concurrency]
+  - id: replica-throughput
+    kind: proposition
+    title: Maximum throughput of one replica
+    summary: Combining the memory ceiling with Little's law bounds a replica's throughput by its concurrency cap divided by request latency.
+    proved: true
+    tags: [throughput, little's law]
+  - id: cluster-sizing
+    kind: theorem
+    title: The sizing formula
+    summary: The replica count needed is offered load times latency, divided by the product of the concurrency cap and the target utilisation.
+    proved: true
+    tags: [sizing, headroom]
+  - id: binding-constraint
+    kind: corollary
+    title: Which constraint binds
+    summary: Comparing the memory-limited and compute-limited concurrency caps says whether to buy memory, buy FLOPs, or shorten requests.
+    proved: true
+    tags: [bottleneck]
+references:
+  - key: pope-scaling-inference
+    title: Efficiently Scaling Transformer Inference
+    authors: R. Pope et al.
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2211.05102
+    note: Partitioning and batching analysis for transformer serving, consistent with the arithmetic used here.
+  - key: kwon-vllm
+    title: Efficient Memory Management for Large Language Model Serving with PagedAttention
+    authors: W. Kwon et al.
+    year: 2023
+    kind: paper
+    url: https://arxiv.org/abs/2309.06180
+    note: Shows how much of the nominal KV budget is lost to fragmentation, quantified here as the utilisation factor of the cache.
+---
+
+<Intuition>
+Everything up to here has been a separate constraint. A replica can only hold so many sequences
+because KV cache is memory. It can only emit so many tokens per second because weights have to be
+streamed. It cannot be run near 100% utilisation because latency explodes. And concurrency,
+throughput and latency are welded together by an identity.
+
+Sizing a cluster is the exercise of writing all four down at once and seeing which one is tight.
+Almost always exactly one is, and almost always it is not the one people are optimising.
+</Intuition>
+
+## The three constraints
+
+Fix a replica and a request profile. Write:
+
+- $M_{\text{kv}}$ — bytes of device memory left for KV cache after weights and workspace;
+- $m$ — KV bytes for one resident sequence at its expected length;
+- $\eta \in (0,1]$ — the fraction of the cache actually usable, after fragmentation;
+- $W$ — mean end-to-end request latency, the quantity the SLO constrains;
+- $\lambda$ — offered load in requests per second for the whole service;
+- $\rho^\star$ — the target utilisation, chosen from the utilisation wall.
+
+<Claim kind="proposition" id="concurrency-ceiling" title="The memory ceiling on concurrency">
+The number of requests a replica can hold concurrently is at most
+$$
+L_{\max} \;=\; \left\lfloor \frac{\eta\,M_{\text{kv}}}{m} \right\rfloor .
+$$
+</Claim>
+
+<Proof>
+Each resident sequence must have its keys and values materialised for every layer, occupying $m$
+bytes; residency is required for the whole time the request is in the system, since decoding step
+$t$ attends to all of positions $1..t-1$. Distinct sequences share nothing unless they share a
+prefix. Hence $L \cdot m \le \eta M_{\text{kv}}$.
+</Proof>
+
+<Claim kind="proposition" id="replica-throughput" title="Maximum throughput of one replica">
+$$
+X_{\text{replica}} \;\le\; \frac{L_{\max}}{W} .
+$$
+</Claim>
+
+<Proof>
+Little's law gives $L = X W$ for the replica as a sub-system
+(<TopicRef id="ai-systems/littles-law" />). Since $L \le L_{\max}$ at all times, the time-average
+satisfies $XW \le L_{\max}$.
+</Proof>
+
+<Claim kind="theorem" id="cluster-sizing" title="The sizing formula">
+To serve offered load $\lambda$ at mean latency $W$ while keeping each replica at utilisation
+$\rho^\star$, the number of replicas required is
+$$
+\boxed{\;R \;=\; \left\lceil \frac{\lambda\,W}{\rho^\star\,L_{\max}} \right\rceil
+\;=\; \left\lceil \frac{\lambda\,W\,m}{\rho^\star\,\eta\,M_{\text{kv}}} \right\rceil \;}
+$$
+</Claim>
+
+<Proof>
+Each replica is asked to serve $\lambda/R$ requests per second. Its utilisation is, by the
+utilisation law, $\rho = (\lambda/R)/X_{\max}$ where $X_{\max} = L_{\max}/W$ is its capacity from
+the previous proposition. Requiring $\rho \le \rho^\star$ gives
+$$
+\frac{\lambda W}{R\,L_{\max}} \;\le\; \rho^\star
+\quad\Longleftrightarrow\quad
+R \;\ge\; \frac{\lambda W}{\rho^\star L_{\max}} ,
+$$
+and $R$ is an integer. Substituting $L_{\max}$ from the memory ceiling gives the second form.
+</Proof>
+
+<KeyIdea>
+Every term in that formula is measurable, and each one is a lever:
+
+| Lever | Effect on $R$ | How |
+|---|---|---|
+| $m$ | linear | shorter contexts, grouped-query attention, KV quantisation |
+| $\eta$ | inverse | paged allocation instead of contiguous reservation |
+| $M_{\text{kv}}$ | inverse | smaller weights (quantisation), bigger device |
+| $W$ | linear | faster decode, less queueing |
+| $\rho^\star$ | inverse | accept a worse tail |
+
+Note that $\rho^\star$ and $W$ are not independent: raising $\rho^\star$ raises $W$ through the
+$1/(1-\rho)$ factor, so pushing utilisation up buys less than the formula suggests when read
+naively.
+</KeyIdea>
+
+## Working an example
+
+Take a replica with $M_{\text{kv}} = 40$ GB of spare memory, a request profile whose expected KV
+footprint is $m = 500$ MB, and paged allocation giving $\eta = 0.9$. Then
+$$
+L_{\max} \;=\; \left\lfloor \frac{0.9 \times 40\,\text{GB}}{0.5\,\text{GB}} \right\rfloor \;=\; 72 .
+$$
+With mean latency $W = 4$ s and target utilisation $\rho^\star = 0.7$, one replica sustains
+$0.7 \times 72/4 = 12.6$ requests per second. Serving $\lambda = 500$ requests per second needs
+$$
+R \;=\; \left\lceil \frac{500 \times 4}{0.7 \times 72} \right\rceil
+\;=\; \lceil 39.7 \rceil \;=\; 40 \ \text{replicas} .
+$$
+
+Now change one thing. Halving $m$ — by quantising the KV cache to 8 bits — doubles $L_{\max}$ to
+$144$ and halves $R$ to $20$. Halving $W$ does the same. Raising $\rho^\star$ from $0.7$ to $0.9$
+reduces $R$ to $31$ *if $W$ stayed fixed*, but $W$ does not stay fixed: by the utilisation wall the
+queueing component grows by a factor $(0.9/0.1)/(0.7/0.3) = 3.86$, and unless queueing was a small
+part of $W$ to begin with, the change is a net loss.
+
+<Warning title="Do not size from peak throughput benchmarks">
+A throughput benchmark reports $X$ at whatever latency the benchmark happened to produce, usually
+by saturating the replica — that is, at $\rho \approx 1$, where $W$ is at its worst. Substituting
+that $X$ into a sizing calculation silently assumes you will run in the same regime, which is
+exactly the regime the SLO forbids. Size from $L_{\max}$ and the *target* $W$, and treat the
+benchmark number as an upper bound you will never operate at.
+</Warning>
+
+## Which constraint binds
+
+<Claim kind="corollary" id="binding-constraint" title="Which constraint binds">
+There is a second ceiling on concurrency, from compute: the batch size at which decode stops being
+weight-bound. Call it $L_{\text{compute}}$. The replica's effective cap is
+$\min(L_{\max}, L_{\text{compute}})$, and:
+
+- if $L_{\max} < L_{\text{compute}}$ the replica is **memory-bound** — buy KV capacity, not FLOPs;
+- if $L_{\text{compute}} < L_{\max}$ it is **compute-bound** — a bigger cache buys nothing.
+</Claim>
+
+<Proof>
+Both are upper bounds on the sustainable concurrency, so their minimum is binding. The
+characterisation follows by asking which of the two the minimum is.
+</Proof>
+
+By the decode arithmetic in <TopicRef id="llm-ops/inference-arithmetic" />, arithmetic intensity in
+weight-limited decoding is $2B/b$ for batch $B$ and $b$ bytes per parameter, so
+$L_{\text{compute}}$ is roughly the batch at which $2B/b$ reaches the hardware's
+compute-to-bandwidth ratio. For a machine with ratio $\approx 300$ and $b = 2$, that is
+$B \approx 300$. A replica whose memory allows only $72$ concurrent sequences is therefore firmly
+memory-bound, and its idle arithmetic units are not a bug to be tuned away — they are the direct
+consequence of the KV budget.
+
+<NotSaid>
+This treats $m$ and $W$ as single numbers. Both are distributions, and by the
+Pollaczek–Khinchine formula their *variance* affects queueing independently of their means. A
+profile mixing 200-token and 20,000-token contexts has an $m$ whose mean badly misrepresents the
+memory behaviour, because a handful of long sequences can consume the budget that the mean says
+should hold dozens. Sizing on means and then operating on a mixed workload is a standard way to
+discover the tail the hard way.
+</NotSaid>

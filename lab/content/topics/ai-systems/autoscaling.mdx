@@ -1,0 +1,155 @@
+---
+title: Autoscaling — Delay, Overshoot and Standing Headroom
+summary: Why a scaling loop with a delay must keep spare capacity it never uses, and exactly how long a system stays behind after a load step.
+field: ai-systems
+level: 3
+order: 130
+prerequisites:
+  - ai-systems/queueing-and-the-utilisation-wall
+  - ai-systems/capacity-planning
+tags: [autoscaling, control, delay, overshoot, headroom, backlog]
+estimated_time: 1h
+claims:
+  - id: backlog-during-delay
+    kind: proposition
+    title: Backlog accumulated during the scaling delay
+    summary: A load step above capacity builds a backlog equal to the excess rate times the delay, whatever the controller does afterwards.
+    proved: true
+    tags: [backlog, delay]
+  - id: recovery-time
+    kind: theorem
+    title: Recovery time after a load step
+    summary: Time to clear the backlog is the delay multiplied by the ratio of total capacity added to the surplus over the new load.
+    proved: true
+    tags: [recovery, control]
+  - id: headroom-requirement
+    kind: corollary
+    title: Standing headroom needed to absorb a step
+    summary: To absorb a load step of factor g without any backlog, steady-state utilisation must not exceed 1/g.
+    proved: true
+    tags: [headroom, provisioning]
+  - id: scale-on-queue-not-utilisation
+    kind: heuristic
+    title: Scale on queueing delay rather than utilisation
+    summary: Utilisation is a bounded signal that saturates before the SLO breaks, while queue depth keeps growing, making it the better controller input.
+    proved: false
+    tags: [control signal]
+references:
+  - key: gandhi-autoscale
+    title: 'AutoScale: Dynamic, Robust Capacity Management for Multi-Tier Data Centers'
+    authors: A. Gandhi, M. Harchol-Balter, R. Raghunathan, M. A. Kozuch
+    year: 2012
+    kind: paper
+    url: https://doi.org/10.1145/2382553.2382556
+    note: Studies the setup-delay problem and argues for keeping idle capacity, consistent with the headroom corollary.
+---
+
+<Intuition>
+An autoscaler cannot react to a load spike until it has observed one, and cannot serve the spike
+until the new capacity is ready. Between those two moments the system is under-provisioned by
+construction, and the backlog it accrues is fixed by arithmetic, not by how clever the controller
+is. Everything a scaling policy can influence is what happens *after* that.
+
+The consequence is uncomfortable and unavoidable: a system that autoscales must still carry
+capacity it is not using, sized to cover the delay. Autoscaling reduces the *average* cost of that
+headroom; it does not remove the need for it.
+</Intuition>
+
+## What the delay costs
+
+<Claim kind="proposition" id="backlog-during-delay" title="Backlog accumulated during the scaling delay">
+Suppose the system has capacity $\mu$ and offered load steps from $\lambda_0 < \mu$ to
+$\lambda_1 > \mu$ at time $0$, and that new capacity becomes available only at time $d$. Then the
+backlog at time $d$ is
+$$
+Q(d) \;=\; (\lambda_1-\mu)\,d ,
+$$
+independent of the scaling policy.
+</Claim>
+
+<Proof>
+Over $[0,d]$ arrivals total $\lambda_1 d$ and departures at most $\mu d$, with equality while the
+server is saturated, which it is since $\lambda_1 > \mu$. The difference is the backlog. No action
+taken during $[0,d]$ changes $\mu$, by the definition of the delay.
+</Proof>
+
+## How long the system stays behind
+
+<Claim kind="theorem" id="recovery-time" title="Recovery time after a load step">
+With capacity raised to $\mu' > \lambda_1$ at time $d$, the backlog clears at
+$$
+T_{\text{recover}} \;=\; d \;+\; \frac{Q(d)}{\mu'-\lambda_1}
+\;=\; d\,\cdot\,\frac{\mu'-\mu}{\mu'-\lambda_1} .
+$$
+</Claim>
+
+<Proof>
+After $d$ the queue drains at net rate $\mu'-\lambda_1 > 0$, so clearing $Q(d) = (\lambda_1-\mu)d$
+takes $(\lambda_1-\mu)d/(\mu'-\lambda_1)$. Adding $d$ and putting over a common denominator,
+$$
+d\left(1 + \frac{\lambda_1-\mu}{\mu'-\lambda_1}\right)
+= d\,\frac{(\mu'-\lambda_1)+(\lambda_1-\mu)}{\mu'-\lambda_1}
+= d\,\frac{\mu'-\mu}{\mu'-\lambda_1}. \qquad\square
+$$
+</Proof>
+
+<KeyIdea>
+Read the formula as a warning about *timid* scaling. Scaling to $\mu'$ only just above
+$\lambda_1$ makes the denominator small and the recovery time blow up: provisioning 10% above the
+new load when the step was 50% gives
+$T_{\text{recover}} = d\,(1.5\cdot 1.1 - 1)/(1.65-1.5)$ — with $\mu=1$, $\lambda_1 = 1.5$,
+$\mu' = 1.65$ — which is $d \times 0.65/0.15 \approx 4.3\,d$. Overshooting to $\mu' = 3$ gives
+$d \times 2/1.5 \approx 1.3\,d$. **Deliberate overshoot is how a scaler recovers quickly**, and it
+is cheap because it is transient.
+</KeyIdea>
+
+## The headroom you must always carry
+
+<Claim kind="corollary" id="headroom-requirement" title="Standing headroom needed to absorb a step">
+To absorb an instantaneous load step by a factor $g > 1$ with no backlog at all, the pre-step
+utilisation must satisfy
+$$
+\rho_0 \;=\; \frac{\lambda_0}{\mu} \;\le\; \frac 1g .
+$$
+</Claim>
+
+<Proof>
+No backlog requires $\lambda_1 = g\lambda_0 \le \mu$, i.e. $\lambda_0/\mu \le 1/g$.
+</Proof>
+
+So absorbing a doubling requires running at 50%; absorbing a 4× spike requires 25%. Combined with
+the utilisation wall — which already forbids running near 1 — this is the quantitative case
+against "scale to zero and react", and it explains why serving fleets look over-provisioned when
+measured by average utilisation alone.
+
+<Claim kind="heuristic" id="scale-on-queue-not-utilisation" title="Scale on queueing delay rather than utilisation">
+Utilisation is bounded above by $1$ and saturates: at $\rho = 0.95$ and $\rho = 0.999$ it reads
+almost the same, while latency differs by a factor of $20$. Queue depth and queueing delay are
+unbounded and grow monotonically with excess load, so they distinguish the two. A controller that
+targets queueing delay therefore has a usable error signal in exactly the regime where a
+utilisation-based controller has none.
+</Claim>
+
+<Assumptions>
+This is an argument from the shape of the signals, not a theorem about a specific controller. Its
+force depends on the delay measurement being timely: a queueing-delay estimate averaged over a
+window longer than $d$ reintroduces the blindness it was meant to remove.
+</Assumptions>
+
+<Warning title="Delay plus feedback is how oscillation starts">
+A controller that reacts to a signal delayed by $d$ with a gain high enough to correct the whole
+observed error will overcorrect, because part of the error it is reacting to has already been
+addressed by actions still in flight. The standard symptoms — capacity sawtoothing, alternating
+over- and under-provisioning with period roughly $2d$ — are not tuning noise but the expected
+behaviour of a delayed feedback loop with too much gain. The defences are the usual ones: reduce
+the gain, add a cooldown longer than $d$, or make the controller predictive rather than reactive.
+</Warning>
+
+<NotSaid>
+This page models capacity as a number that changes at time $d$. For model serving it is not: a new
+replica must load tens of gigabytes of weights and warm its caches before it is useful, so there is
+a further interval during which the replica exists, consumes quota, and serves nothing — and if the
+load balancer routes to it on readiness rather than warmth, it will serve that traffic slowly.
+Weight-loading time is the dominant term in $d$ for LLM serving, which is why snapshotting and
+pre-warming pools matter more here than in a stateless web tier.
+</NotSaid>

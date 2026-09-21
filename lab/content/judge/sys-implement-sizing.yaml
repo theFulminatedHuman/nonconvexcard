@@ -1,0 +1,89 @@
+problem: sys-implement-sizing
+timeout_seconds: 30
+starter: |
+  import math
+
+  def concurrency_ceiling(kv_bytes, per_seq_bytes, efficiency=1.0):
+      """How many sequences a replica can hold at once.
+
+      `kv_bytes` is the memory left for KV cache, `per_seq_bytes` the footprint
+      of one resident sequence, and `efficiency` the fraction of the budget the
+      allocator can actually use. Return the integer ceiling on concurrency —
+      round down, since a partial sequence is no use.
+      """
+      raise NotImplementedError
+
+  def compute_ceiling(machine_intensity, bytes_per_param):
+      """The batch size at which weight-bound decoding stops being memory-bound.
+
+      Weight-limited decode at batch B has arithmetic intensity 2B/b with b
+      bytes per parameter. Return the B at which that reaches the machine's
+      compute-to-bandwidth ratio, as a float.
+      """
+      raise NotImplementedError
+
+  def replicas_needed(lam, W, rho_target, concurrency):
+      """Replicas required to serve lam requests/second at mean latency W while
+      holding each replica at utilisation rho_target. Round up."""
+      raise NotImplementedError
+
+  def binding_constraint(memory_ceiling, compute_ceiling_value):
+      """Return 'memory' when the memory ceiling is the smaller of the two,
+      'compute' when the compute ceiling is, and 'balanced' when they are equal.
+      """
+      raise NotImplementedError
+tests:
+  - name: the concurrency ceiling rounds down
+    code: |
+      assert concurrency_ceiling(42.32e9, 0.64e9) == 66, \
+          f"expected 66, got {concurrency_ceiling(42.32e9, 0.64e9)}"
+      assert concurrency_ceiling(46e9, 0.64e9, 0.92) == 66, \
+          f"expected 66 with efficiency 0.92, got {concurrency_ceiling(46e9, 0.64e9, 0.92)}"
+      assert concurrency_ceiling(10.0, 3.0) == 3, "10/3 should floor to 3"
+      assert concurrency_ceiling(9.0, 3.0) == 3, "an exact fit should not round down further"
+      assert concurrency_ceiling(2.0, 3.0) == 0, "a sequence that does not fit gives 0"
+  - name: efficiency scales the usable budget
+    code: |
+      full = concurrency_ceiling(100.0, 1.0, 1.0)
+      half = concurrency_ceiling(100.0, 1.0, 0.5)
+      assert full == 100 and half == 50, f"got {full}, {half}"
+  - name: the compute ceiling inverts the arithmetic intensity
+    code: |
+      # Intensity 2B/b = ratio, so B = ratio * b / 2.
+      assert abs(compute_ceiling(280, 2) - 280.0) < 1e-9, \
+          f"expected 280, got {compute_ceiling(280, 2)}"
+      assert abs(compute_ceiling(280, 1) - 140.0) < 1e-9, \
+          f"int8 weights halve the batch needed, got {compute_ceiling(280, 1)}"
+      assert abs(compute_ceiling(600, 2) - 600.0) < 1e-9
+  - name: the replica count rounds up
+    code: |
+      assert replicas_needed(900, 5.0, 0.65, 66) == 105, \
+          f"expected 105, got {replicas_needed(900, 5.0, 0.65, 66)}"
+      assert replicas_needed(900, 5.0, 0.65, 132) == 53, \
+          f"halving the KV footprint should halve the fleet, got {replicas_needed(900, 5.0, 0.65, 132)}"
+      assert replicas_needed(10, 1.0, 1.0, 10) == 1, "exactly one replica's worth"
+      assert replicas_needed(11, 1.0, 1.0, 10) == 2, "a fraction over must round up"
+  - name: the sizing formula responds correctly to each lever
+    code: |
+      base = replicas_needed(1000, 4.0, 0.7, 80)
+      assert replicas_needed(2000, 4.0, 0.7, 80) >= 2 * base - 1, "load is linear"
+      assert replicas_needed(1000, 8.0, 0.7, 80) >= 2 * base - 1, "latency is linear"
+      assert replicas_needed(1000, 4.0, 0.7, 160) <= base // 2 + 1, "concurrency is inverse"
+      assert replicas_needed(1000, 4.0, 0.35, 80) >= 2 * base - 1, "utilisation is inverse"
+  - name: the binding constraint is the smaller ceiling
+    code: |
+      assert binding_constraint(66, 280.0) == 'memory'
+      assert binding_constraint(400, 280.0) == 'compute'
+      assert binding_constraint(280, 280.0) == 'balanced'
+      assert binding_constraint(132, 280.0) == 'memory', \
+          "even after KV quantisation this replica is memory-bound"
+  - name: the worked example end to end
+    code: |
+      # 80 GB device, 28 GB weights, 6 GB workspace, 92% allocator efficiency,
+      # 640 MB per sequence, 900 rps, 5 s latency, 65% target utilisation.
+      kv = (80 - 28 - 6) * 1e9
+      L = concurrency_ceiling(kv, 0.64e9, 0.92)
+      assert L == 66, f"expected 66 concurrent sequences, got {L}"
+      R = replicas_needed(900, 5.0, 0.65, L)
+      assert R == 105, f"expected 105 replicas, got {R}"
+      assert binding_constraint(L, compute_ceiling(280, 2)) == 'memory'

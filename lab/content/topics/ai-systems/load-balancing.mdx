@@ -1,0 +1,184 @@
+---
+title: Load Balancing and the Power of Two Choices
+summary: Why sampling two servers and taking the shorter queue is exponentially better than sampling one, and why least-outstanding-requests beats round robin for variable work.
+field: ai-systems
+level: 2
+order: 100
+prerequisites:
+  - ai-systems/queueing-and-the-utilisation-wall
+  - high-dimensional-probability/concentration-inequalities
+tags: [load balancing, balls into bins, power of two choices, round robin, least loaded]
+estimated_time: 1h
+claims:
+  - id: random-max-load
+    kind: theorem
+    title: Maximum load under uniform random assignment
+    summary: Throwing n balls into n bins uniformly leaves a fullest bin with about log n / log log n balls with high probability.
+    proved: false
+    tags: [balls into bins]
+  - id: two-choices
+    kind: theorem
+    title: The power of two choices
+    summary: Sampling d bins and using the least loaded reduces the maximum load to log log n / log d plus a constant — an exponential improvement in d = 2 already.
+    proved: false
+    tags: [balls into bins, randomised]
+  - id: upper-bound-one-choice
+    kind: proposition
+    title: A log n / log log n upper bound for one choice
+    summary: A first-moment argument shows uniform assignment leaves no bin with materially more than log n / log log n balls.
+    proved: true
+    tags: [first moment, union bound]
+  - id: round-robin-vs-loaded
+    kind: proposition
+    title: Round robin ignores the information that matters
+    summary: Round robin equalises request counts, which equalises load only when service times are identical; least-outstanding-requests equalises occupancy, which by Little's law tracks load.
+    proved: true
+    tags: [scheduling, variance]
+references:
+  - key: azar-balanced
+    title: Balanced Allocations
+    authors: Y. Azar, A. Z. Broder, A. R. Karlin, E. Upfal
+    year: 1999
+    kind: paper
+    url: https://doi.org/10.1137/S0097539795288490
+    note: The theorem that two choices give log log n maximum load.
+  - key: mitzenmacher-thesis
+    title: The Power of Two Choices in Randomized Load Balancing
+    authors: M. Mitzenmacher
+    year: 1996
+    kind: paper
+    url: https://doi.org/10.1109/71.963420
+    note: Develops the fluid-limit analysis and the supermarket model for queues rather than static balls.
+---
+
+<Intuition>
+Send each request to a uniformly random server and the servers do *not* end up evenly loaded. With
+$n$ requests and $n$ servers, the busiest server gets about $\log n / \log\log n$ of them — for
+$n = 100{,}000$ that is roughly five, against an average of one. Randomness clumps.
+
+Now change one thing: sample *two* servers at random and send the request to whichever has fewer
+outstanding requests. The busiest server now gets about $\log\log n / \log 2$ — for the same
+$n = 100{,}000$, roughly three and a half. One extra probe converts a logarithm into a
+double logarithm. Almost nothing else in system design has that shape of return.
+</Intuition>
+
+## One choice
+
+<Claim kind="theorem" id="random-max-load" title="Maximum load under uniform random assignment">
+Throw $n$ balls independently and uniformly into $n$ bins. Then with probability tending to $1$,
+the maximum load is
+$$
+\bigl(1+o(1)\bigr)\,\frac{\ln n}{\ln \ln n} .
+$$
+</Claim>
+
+<Assumptions>
+The matching lower bound is a second-moment argument that we do not reproduce; it is the harder
+half and is given in the cited literature. The upper bound is proved below, which is the direction
+a system designer needs — it says the imbalance is no worse than this.
+</Assumptions>
+
+<Claim kind="proposition" id="upper-bound-one-choice" title="A log n / log log n upper bound for one choice">
+With $n$ balls in $n$ bins, for $k \ge 1$,
+$$
+\Pr[\text{some bin has} \ge k \text{ balls}] \;\le\; \frac{n}{k!} .
+$$
+Consequently, taking $k = \lceil e\ln n/\ln\ln n\rceil$ makes this $o(1)$, so the maximum load is
+$O(\ln n/\ln\ln n)$ with high probability.
+</Claim>
+
+<Proof>
+Fix a bin and a set of $k$ balls. The probability that all $k$ land in that bin is $n^{-k}$. Union
+bounding over the $\binom nk$ sets of balls and the $n$ bins,
+$$
+\Pr[\text{some bin has} \ge k] \;\le\; n\binom nk n^{-k} \;\le\; n\cdot\frac{n^k}{k!}\cdot n^{-k}
+\;=\; \frac{n}{k!},
+$$
+using $\binom nk \le n^k/k!$. To make $n/k! = o(1)$ we need $k! \gg n$, i.e.
+$\ln k! \gg \ln n$. By Stirling $\ln k! = k\ln k - k + O(\ln k)$, so it suffices that
+$k \ln k \ge (1+\eps)\ln n$; taking $k = e\ln n/\ln\ln n$ gives
+$k\ln k \approx e\ln n \cdot \frac{\ln\ln n - \ln\ln\ln n + 1}{\ln \ln n} \sim e \ln n > \ln n$,
+which is more than enough.
+</Proof>
+
+## Two choices
+
+<Claim kind="theorem" id="two-choices" title="The power of two choices">
+Throw $n$ balls into $n$ bins, each ball choosing $d \ge 2$ bins uniformly at random and going into
+the least loaded of them (ties broken arbitrarily). Then with probability tending to $1$ the
+maximum load is
+$$
+\frac{\ln\ln n}{\ln d} \;+\; \Theta(1) .
+$$
+</Claim>
+
+<Assumptions>
+Stated without proof; the argument is a layered-induction bound on the number of bins with load at
+least $k$, given in full in the cited paper. What matters here is the *shape*: $\ln\ln n$ rather
+than $\ln n/\ln\ln n$, and a further improvement only in the constant $1/\ln d$ as $d$ grows beyond
+two.
+</Assumptions>
+
+Simulating $n$ balls into $n$ bins, averaged over five runs:
+
+| $n$ | $d=1$ max load | $\ln n/\ln\ln n$ | $d=2$ max load | $\ln\ln n/\ln 2$ |
+|---|---|---|---|---|
+| $10^3$ | 5.8 | 3.57 | 3.0 | 2.79 |
+| $10^4$ | 6.6 | 4.15 | 3.0 | 3.20 |
+| $10^5$ | 7.8 | 4.71 | 3.2 | 3.53 |
+
+<KeyIdea>
+The gain from $d=1$ to $d=2$ is exponential; the gain from $d=2$ to $d=3$ is a factor
+$\ln 3/\ln 2 \approx 1.58$ in the leading term, and from $d=3$ onward it is diminishing. **Two
+probes is the whole trick.** This is why production balancers sample a small constant number of
+backends rather than maintaining a global ordering — the global information is worth almost
+nothing beyond what two random samples already provide, and it costs a coherency term of the kind
+<TopicRef id="ai-systems/scaling-limits" /> warns about.
+</KeyIdea>
+
+## What to measure when you probe
+
+<Claim kind="proposition" id="round-robin-vs-loaded" title="Round robin ignores the information that matters">
+Let servers be identical and let request $i$ have service time $S_i$. Round robin equalises the
+*count* of requests routed to each server. Least-outstanding-requests equalises the number
+currently in service. These coincide only if the $S_i$ are equal; in general, by Little's law
+applied per server, the occupancy of server $j$ satisfies
+$$
+L_j \;=\; X_j\,\E[W_j],
+$$
+so equalising $L_j$ equalises the product of throughput and latency — the actual load — whereas
+equalising the routed count equalises $X_j$ alone.
+</Claim>
+
+<Proof>
+Little's law applied to server $j$ as a sub-system gives $L_j = X_j \E[W_j]$ with no distributional
+assumptions (see <TopicRef id="ai-systems/littles-law" />). Round robin fixes the arrival counts,
+hence $X_j$, leaving $\E[W_j]$ free to vary with the service-time draws that happened to land
+there. Least-outstanding-requests fixes $L_j$ directly.
+</Proof>
+
+<KeyIdea>
+For LLM serving the service-time coefficient of variation is large — generations differ in length
+by orders of magnitude — so round robin and occupancy-based balancing are not close. By the
+Pollaczek–Khinchine formula in
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />, queueing delay scales with
+$1+c_s^2$; routing on counts lets that variance land unevenly, while routing on occupancy absorbs
+it.
+</KeyIdea>
+
+<Warning title="Stale load information is worse than none">
+Choosing the least loaded of $d$ servers using *cached* load values causes herding: every balancer
+sees the same stale minimum and sends everything there, creating the imbalance it was avoiding.
+The power-of-two result assumes the sampled loads are current at decision time. When they cannot
+be, randomisation is the defence — which is again an argument for sampling a couple of servers per
+request rather than consulting a shared ranking.
+</Warning>
+
+<NotSaid>
+The theorems here are about *static* balls into bins, where balls never leave. The queueing version
+— the supermarket model, where jobs arrive and depart — is analysed in the second reference and has
+the same qualitative conclusion, with the maximum queue length under $d = 2$ decaying doubly
+exponentially in the load rather than singly. The static statement is quoted because it is the one
+with a clean, checkable form; the dynamic statement is the one that actually applies to a serving
+system.
+</NotSaid>

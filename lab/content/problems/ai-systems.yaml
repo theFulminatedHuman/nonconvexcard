@@ -1,0 +1,966 @@
+defaults:
+  field: ai-systems
+problems:
+  - id: sys-fanout-budget
+    title: Budget a latency target across a fan-out
+    topic: ai-systems/tail-latency-and-fan-out
+    difficulty: beginner
+    type: numerical
+    estimated_time: 15m
+    tags: [fan-out, quantiles, budgeting]
+    statement: |
+      A request fans out to $n = 50$ independent shards and completes when the last one returns.
+      The product target is a p99 of 200 ms for the parent.
+
+      1. What per-shard quantile must sit at 200 ms?
+      2. If each shard's latency is exponential with mean 20 ms, what is the parent's p99?
+      3. Roughly how many samples are needed to estimate the shard quantile from part 1 with any
+         precision, and what does that imply about measuring it?
+    hints:
+      - The parent is the maximum of $n$ independent draws, so its CDF is $F(t)^n$.
+      - Estimating a $q$-quantile needs on the order of $1/(1-q)$ samples just to see one
+        exceedance.
+    solution: |
+      **1.** The parent satisfies $\Pr[M_n \le t] = F(t)^n$, so we need
+      $$
+      F(200\,\text{ms}) \ \ge\ 0.99^{1/50} \ =\ \exp\!\left(\frac{\ln 0.99}{50}\right)
+      \ =\ \exp(-2.0101\times10^{-4}) \ =\ 0.9997990 .
+      $$
+      So 200 ms must be the shard's **p99.98** — more precisely its $99.9799\%$ quantile. The
+      per-shard tail probability allowed is $2.01\times10^{-4}$, about $50\times$ smaller than the
+      $10^{-2}$ the parent is allowed.
+
+      **2.** For $X \sim \text{Exp}$ with mean $\mu = 20$ ms, $F(t) = 1-e^{-t/\mu}$. The parent's
+      p99 solves $F(t)^{50} = 0.99$, i.e. $1-e^{-t/20} = 0.9997990$, so
+      $$
+      e^{-t/20} = 2.0101\times10^{-4}
+      \quad\Longrightarrow\quad
+      t = -20\ln(2.0101\times10^{-4}) = 20 \times 8.512 = \mathbf{170\ \text{ms}} .
+      $$
+      For comparison a single shard's own p99 is $-20\ln(0.01) = 92$ ms. Fanning out to 50 shards
+      nearly doubles the p99 even though every shard is unchanged.
+
+      **3.** To estimate a quantile $q$ you need enough samples that exceedances occur: the expected
+      number of observations above the $q$-quantile in $N$ samples is $N(1-q)$. For
+      $1-q = 2\times10^{-4}$, getting even 100 exceedances — a bare minimum for a stable estimate —
+      needs $N = 100/2\times10^{-4} = 5\times10^{5}$ samples.
+
+      The implication is that **the quantile the architecture consumes cannot be measured from a
+      dashboard that aggregates per minute**. At 1000 requests per second a minute holds
+      $6\times10^4$ samples, an order of magnitude short. Either aggregate over much longer
+      windows, or — better — measure the parent latency directly rather than inferring it from
+      shard percentiles.
+
+  - id: sys-little-finite-horizon
+    title: Prove Little's law on a finite horizon
+    topic: ai-systems/littles-law
+    difficulty: intermediate
+    type: proof
+    estimated_time: 1h
+    tags: [little's law, sample path, area argument]
+    statement: |
+      Let items arrive at times $a_1 \le a_2 \le \cdots$ and depart at $d_i = a_i + W_i$, with
+      $N(t)$ the number present at time $t$.
+
+      1. Prove the exact sample-path identity
+         $$
+         \int_0^T N(t)\,dt \;=\; \sum_{i\ge1}\bigl|[a_i,d_i)\cap[0,T]\bigr|
+         $$
+         for every $T > 0$, with no probabilistic assumptions.
+      2. Deduce the two-sided bound
+         $\sum_{i: d_i \le T} W_i \le \int_0^T N \le \sum_{i: a_i \le T} W_i$.
+      3. Conclude $\overline L = \lambda\overline W$ under the hypothesis that $A(T)/T \to \lambda$
+         and $\frac1n\sum_{i\le n}W_i \to \overline W$, being explicit about where each hypothesis
+         is used.
+    hints:
+      - Write $N(t)$ as a sum of indicator functions and exchange sum with integral.
+      - For part 3, the lower bound needs the departure count $D(T)/T \to \lambda$; derive it from
+        $N(T) = A(T) - D(T)$ and finiteness of $\overline W$.
+    solution: |
+      **1.** By definition item $i$ is present at time $t$ exactly when $a_i \le t < d_i$, so
+      $$
+      N(t) \;=\; \sum_{i\ge1}\one\{a_i \le t < d_i\} .
+      $$
+      All terms are non-negative and measurable, so Tonelli's theorem permits exchanging the sum
+      and the integral:
+      $$
+      \int_0^T N(t)\,dt \;=\; \sum_{i\ge1}\int_0^T \one\{a_i \le t < d_i\}\,dt
+      \;=\; \sum_{i\ge1}\bigl|[a_i,d_i)\cap[0,T]\bigr| .
+      $$
+      This is exact for every $T$ and every sample path; no distributional assumption has been used.
+
+      **2.** Each term satisfies $0 \le |[a_i,d_i)\cap[0,T]| \le W_i$. If $d_i \le T$ the
+      intersection is the whole interval and the term equals $W_i$; if $a_i > T$ the term is $0$.
+      Therefore
+      $$
+      \sum_{i:\,d_i\le T} W_i \;\le\; \sum_{i\ge1}\bigl|[a_i,d_i)\cap[0,T]\bigr|
+      \;\le\; \sum_{i:\,a_i\le T} W_i ,
+      $$
+      since the middle sum includes every completed item at full weight and no item beyond $W_i$.
+
+      **3.** Divide through by $T$.
+
+      *Upper bound.* The items with $a_i \le T$ are exactly $i = 1,\dots,A(T)$, so
+      $$
+      \frac1T\int_0^T N \;\le\; \frac{A(T)}{T}\cdot\frac{1}{A(T)}\sum_{i=1}^{A(T)}W_i .
+      $$
+      The first factor tends to $\lambda$ by hypothesis. Since $\lambda > 0$ forces
+      $A(T)\to\infty$, the second factor is a subsequence of the Cesàro averages and tends to
+      $\overline W$. Hence $\limsup_T \frac1T\int_0^T N \le \lambda\overline W$.
+
+      *Lower bound.* The items with $d_i \le T$ number $D(T)$, so
+      $$
+      \frac1T\int_0^T N \;\ge\; \frac{D(T)}{T}\cdot\frac{1}{D(T)}\sum_{i=1}^{D(T)}W_i ,
+      $$
+      provided departures are indexed compatibly with arrivals, which holds after re-indexing since
+      the two sums differ by finitely many terms. It remains to show $D(T)/T \to \lambda$. We have
+      $N(T) = A(T)-D(T)$, and from the upper bound just proved $\frac1T\int_0^T N$ is bounded, so
+      $N(T)/T \to 0$ along a subsequence; in fact finiteness of $\overline W$ gives
+      $N(T)/T \to 0$, because an item present at $T$ arrived at some $a_i \le T$ and contributes at
+      least $T - a_i$ to $W_i$, and if $N(T) \ge \eps T$ infinitely often then the average $W$
+      would exceed any bound. Hence $D(T)/T = A(T)/T - N(T)/T \to \lambda$ and
+      $\liminf_T \frac1T\int_0^T N \ge \lambda\overline W$.
+
+      Combining, the limit exists and equals $\lambda\overline W$.
+
+      **Where the hypotheses were used.** The arrival-rate hypothesis appears in both bounds as
+      $A(T)/T\to\lambda$. The finite-mean-wait hypothesis is used twice: to identify the Cesàro
+      limit, and — crucially — to force $N(T)/T \to 0$, which is what makes the lower bound match.
+      Without it the system can accumulate items forever and the identity fails, which is exactly
+      the unstable case $\rho > 1$.
+
+  - id: sys-quantile-budget-tight
+    title: The per-stage quantile budget, and when it is tight
+    topic: ai-systems/what-a-serving-system-must-do
+    difficulty: intermediate
+    type: proof
+    estimated_time: 1h
+    tags: [quantiles, union bound, composition, tightness]
+    statement: |
+      Let $W = W_1+\cdots+W_k$ with each $W_i \ge 0$.
+
+      1. Prove that if $\sum_i(1-p_i) \le 1-p$ then $q_p(W) \le \sum_i q_{p_i}(W_i)$, without
+         assuming independence.
+      2. Exhibit a dependent example with $k=2$ for which the bound is attained with equality.
+      3. Show that for independent $W_i$ the bound is typically very loose, by computing both sides
+         for $k$ i.i.d. exponentials with mean $1$ at $p = 0.99$, $k = 4$.
+    hints:
+      - For part 1, bound the probability that some stage exceeds its own quantile.
+      - For part 2, make the stages exceed their quantiles on disjoint events.
+    solution: |
+      **1.** Put $t_i = q_{p_i}(W_i)$ and $t = \sum_i t_i$. If $W_i < t_i$ for every $i$ then
+      $W < t$. Hence
+      $$
+      \Pr[W \ge t] \;\le\; \Pr\!\left[\bigcup_i \{W_i \ge t_i\}\right]
+      \;\le\; \sum_i \Pr[W_i \ge t_i] \;\le\; \sum_i (1-p_i) \;\le\; 1-p ,
+      $$
+      the middle step being the union bound, which requires no independence. Therefore
+      $\Pr[W < t] \ge p$, so $F_W(t) \ge p$ and $q_p(W) \le t$ by definition of the quantile as
+      $\inf\{s : F_W(s)\ge p\}$.
+
+      **2.** Take $p = 0.98$, $p_1 = p_2 = 0.99$, so $\sum_i(1-p_i) = 0.02 = 1-p$. Let $U$ be
+      uniform on $[0,1]$ and set
+      $$
+      W_1 = \one\{U \le 0.01\},\qquad W_2 = \one\{0.01 < U \le 0.02\} .
+      $$
+      Each $W_i$ is $1$ with probability exactly $0.01$, so $q_{0.99}(W_i) = 0$ — the smallest $t$
+      with $\Pr[W_i \le t]\ge0.99$ is $t=0$, since $\Pr[W_i \le 0] = 0.99$. The bound therefore
+      reads $q_{0.98}(W) \le 0$. And indeed $W = W_1+W_2 = \one\{U \le 0.02\}$, which is $0$ with
+      probability exactly $0.98$, so $q_{0.98}(W) = 0$. Equality holds.
+
+      The mechanism is that the two stages are slow on **disjoint** events, so the union bound is
+      exact — the worst case the bound must protect against.
+
+      **3.** Let $W_i$ be i.i.d. $\text{Exp}(1)$, $k=4$.
+
+      *Right-hand side.* Allocate the budget evenly: $1-p_i = 0.01/4 = 0.0025$, so
+      $q_{0.9975}(W_i) = -\ln(0.0025) = 5.9915$ and the bound gives
+      $$
+      \sum_i q_{p_i}(W_i) = 4 \times 5.9915 = 23.97 .
+      $$
+
+      *Left-hand side.* $W = \sum_{i=1}^4 W_i \sim \text{Gamma}(4,1)$, whose survival function is
+      $\Pr[W>t] = e^{-t}\sum_{j=0}^{3} t^j/j!$. Solving $\Pr[W>t] = 0.01$ numerically gives
+      $t \approx 10.05$.
+
+      So the true p99 is about $10.05$ while the union bound certifies only $23.97$ — a factor of
+      $2.4$ of slack, and the slack grows with $k$. The reason is that four independent stages are
+      very unlikely to be slow together, whereas the bound is built to survive the case in part 2,
+      where they never are slow together.
+
+      **Reading.** The bound is the right thing to use when stages may share a failure cause, and
+      badly conservative when they are genuinely independent. Which regime you are in is an
+      empirical question about correlated failure, not a modelling choice.
+
+  - id: sys-mm1-derivation
+    title: Derive the M/M/1 queue from detailed balance
+    topic: ai-systems/queueing-and-the-utilisation-wall
+    difficulty: intermediate
+    type: proof
+    estimated_time: 1h
+    tags: [birth-death, detailed balance, geometric, utilisation]
+    statement: |
+      Consider an M/M/1 queue with arrival rate $\lambda$ and service rate $\mu$, $\rho=\lambda/\mu$.
+
+      1. Write the balance equations for the birth–death chain and solve for the stationary
+         distribution, stating where $\rho<1$ is needed.
+      2. Compute $\E[N]$ and deduce $\E[W]$ via Little's law.
+      3. Show that the stationary waiting time in system is exponential with rate $\mu-\lambda$,
+         and hence that its $p$-quantile is $\frac{-\ln(1-p)}{\mu-\lambda}$.
+      4. Evaluate the ratio p99/mean and comment on what it says about tail budgeting.
+    hints:
+      - Balance flow across the cut between states $\{0,\dots,n\}$ and $\{n+1,\dots\}$.
+      - For part 3, condition on the number found in system on arrival and use PASTA.
+    solution: |
+      **1.** The chain jumps $n \to n+1$ at rate $\lambda$ and, for $n\ge1$, $n\to n-1$ at rate
+      $\mu$. Cut balance between $\{0,\dots,n\}$ and its complement gives
+      $$
+      \pi_n\lambda \;=\; \pi_{n+1}\mu \qquad (n\ge0),
+      $$
+      so $\pi_{n+1} = \rho\,\pi_n$ and hence $\pi_n = \pi_0\rho^n$. Normalisation requires
+      $\sum_{n\ge0}\rho^n < \infty$, which holds iff $\rho<1$; then $\sum \rho^n = 1/(1-\rho)$ and
+      $\pi_0 = 1-\rho$, giving $\pi_n = (1-\rho)\rho^n$. For $\rho\ge1$ no stationary distribution
+      exists — the chain is null recurrent at $\rho=1$ and transient above.
+
+      **2.** $N$ is geometric on $\{0,1,2,\dots\}$:
+      $$
+      \E[N] \;=\; (1-\rho)\sum_{n\ge0}n\rho^n \;=\; (1-\rho)\frac{\rho}{(1-\rho)^2}
+      \;=\; \frac{\rho}{1-\rho} .
+      $$
+      Little's law gives $\E[W] = \E[N]/\lambda = \rho/(\lambda(1-\rho))$, and since
+      $\rho/\lambda = 1/\mu$,
+      $$
+      \E[W] \;=\; \frac{1}{\mu(1-\rho)} \;=\; \frac{1}{\mu-\lambda}.
+      $$
+
+      **3.** By PASTA an arriving customer finds $N$ distributed as $\pi$. Given it finds $n$ ahead,
+      its time in system is the sum of $n+1$ i.i.d. $\text{Exp}(\mu)$ service times (the residual of
+      the one in service is again $\text{Exp}(\mu)$ by memorylessness). So
+      $$
+      W \;\stackrel{d}{=}\; \sum_{j=1}^{N+1} S_j, \qquad S_j \sim \text{Exp}(\mu)\ \text{i.i.d.}
+      $$
+      Compute the Laplace transform. With $\E[e^{-sS}] = \mu/(\mu+s)$ and $N$ geometric,
+      $$
+      \E[e^{-sW}] = \sum_{n\ge0}(1-\rho)\rho^n\left(\frac{\mu}{\mu+s}\right)^{n+1}
+      = \frac{(1-\rho)\mu}{\mu+s}\sum_{n\ge0}\left(\frac{\rho\mu}{\mu+s}\right)^n
+      = \frac{(1-\rho)\mu}{\mu+s-\rho\mu} .
+      $$
+      Since $\rho\mu = \lambda$, this is $\frac{\mu-\lambda}{(\mu-\lambda)+s}$, the transform of
+      $\text{Exp}(\mu-\lambda)$. Hence $W\sim\text{Exp}(\mu-\lambda)$ and
+      $$
+      q_p(W) \;=\; \frac{-\ln(1-p)}{\mu-\lambda} .
+      $$
+
+      **4.** The mean is $1/(\mu-\lambda)$, so
+      $$
+      \frac{q_{0.99}}{\E[W]} \;=\; -\ln(0.01) \;=\; 4.605 .
+      $$
+      The ratio is a **constant**, independent of $\lambda$ and $\mu$. Two readings follow. First,
+      for this model the mean does determine the tail, so the general warning that it does not is
+      about model-free statements, not about M/M/1. Second, the constant $4.6$ is far below the
+      worst case $1/(1-p) = 100$ from the Markov bound — exponential tails are benign, and real
+      service-time distributions with heavier tails sit between the two.
+
+  - id: sys-pk-residual
+    title: Derive the Pollaczek–Khinchine formula via mean residual work
+    topic: ai-systems/queueing-and-the-utilisation-wall
+    difficulty: advanced
+    type: proof
+    estimated_time: 3h
+    tags: [M/G/1, residual life, inspection paradox, variance]
+    statement: |
+      For an M/G/1 queue with arrival rate $\lambda$ and service time $S$, $\rho = \lambda\E[S]<1$.
+
+      1. Show that the mean residual service time observed at a random instant, given the server is
+         busy, is $\E[S^2]/(2\E[S])$.
+      2. Using PASTA and Little's law, derive
+         $\E[W_q] = \lambda\E[S^2]/(2(1-\rho))$.
+      3. Rewrite in terms of the coefficient of variation $c_s$ and evaluate the ratio of M/D/1 to
+         M/M/1 mean wait at the same $\rho$.
+      4. Explain what goes wrong when $\E[S^2] = \infty$, and give a service-time distribution for
+         which this happens while $\E[S]$ is finite.
+    hints:
+      - For part 1, the length-biased density of the service interval containing a random instant
+        is $x f(x)/\E[S]$, and the residual is uniform within it.
+      - For part 2, decompose the unfinished work into queued jobs and the residual of the job in
+         service.
+    solution: |
+      **1.** A random instant falls inside a service interval with probability proportional to the
+      interval's length — the inspection paradox. So the interval containing it has the
+      length-biased density $\tilde f(x) = x f(x)/\E[S]$. Given the interval has length $x$, the
+      instant is uniform within it and the residual is uniform on $[0,x]$, with mean $x/2$.
+      Therefore
+      $$
+      \E[\text{residual}] \;=\; \int_0^\infty \frac x2\cdot\frac{x f(x)}{\E[S]}\,dx
+      \;=\; \frac{\E[S^2]}{2\E[S]} .
+      $$
+
+      **2.** Let $V$ be the unfinished work in the system at a stationary instant. Under
+      work-conserving FCFS, a tagged arrival waits exactly $V$, and by PASTA it sees the stationary
+      $V$, so $\E[W_q]=\E[V]$.
+
+      Decompose $V$. Jobs waiting in queue contribute their full service times; there are
+      $\E[N_q] = \lambda\E[W_q]$ of them on average by Little's law applied to the queue, each
+      contributing $\E[S]$ in expectation (their sizes are independent of the queue length under
+      these assumptions), giving $\lambda\E[W_q]\E[S] = \rho\E[W_q]$. The job in service contributes
+      its residual, which is non-zero only when the server is busy — probability $\rho$ — and has
+      conditional mean $\E[S^2]/(2\E[S])$ by part 1. Hence
+      $$
+      \E[W_q] \;=\; \rho\,\E[W_q] \;+\; \rho\,\frac{\E[S^2]}{2\E[S]} .
+      $$
+      Solving and using $\rho = \lambda\E[S]$:
+      $$
+      \E[W_q](1-\rho) = \lambda\E[S]\cdot\frac{\E[S^2]}{2\E[S]} = \frac{\lambda\E[S^2]}{2}
+      \quad\Longrightarrow\quad
+      \E[W_q] = \frac{\lambda\E[S^2]}{2(1-\rho)} .
+      $$
+
+      **3.** With $\E[S^2] = \E[S]^2(1+c_s^2)$ and $\lambda\E[S] = \rho$,
+      $$
+      \E[W_q] \;=\; \frac{\rho}{1-\rho}\cdot\frac{1+c_s^2}{2}\cdot\E[S] .
+      $$
+      For M/M/1, $c_s = 1$ and the variability factor is $1$. For M/D/1, $c_s = 0$ and it is
+      $\tfrac12$. So
+      $$
+      \frac{\E[W_q]^{M/D/1}}{\E[W_q]^{M/M/1}} \;=\; \frac12 ,
+      $$
+      at every utilisation. Determinism halves the queue.
+
+      **4.** If $\E[S^2]=\infty$ the formula gives $\E[W_q]=\infty$ for **every** $\rho>0$: the
+      queue is stable (it empties infinitely often, since $\rho<1$) but has infinite mean wait,
+      because occasional enormous services dominate the average.
+
+      An example is a Pareto service time with shape $\alpha \in (1,2]$: density
+      $f(x) = \alpha x_m^\alpha x^{-\alpha-1}$ for $x \ge x_m$. Then
+      $\E[S] = \alpha x_m/(\alpha-1) < \infty$ for $\alpha>1$, while
+      $\E[S^2] = \int \alpha x_m^\alpha x^{1-\alpha}dx$ diverges for $\alpha \le 2$. Taking
+      $\alpha = 1.5$ gives finite mean and infinite variance.
+
+      This is not a pathology invented for the exercise: request sizes and LLM output lengths are
+      routinely modelled by heavy-tailed distributions, and the practical consequence is that mean
+      wait is the wrong statistic to instrument — it may not exist, and the sample mean will drift
+      upward as you collect more data rather than converging.
+
+  - id: sys-common-mode-floor
+    title: The floor that correlated failure puts under redundancy
+    topic: ai-systems/availability-and-redundancy
+    difficulty: intermediate
+    type: proof
+    estimated_time: 30m
+    tags: [availability, correlation, beta factor, limits]
+    statement: |
+      Model failures with a common-cause fraction $\beta$: with probability $\beta$ an event takes
+      down all $n$ replicas together, otherwise they fail independently, each with unavailability
+      $U$.
+
+      1. Derive $U_n = (1-\beta)U^n + \beta U$ and show it is decreasing in $n$ with limit
+         $\beta U$.
+      2. With $U = 10^{-3}$, tabulate $U_n$ for $n = 1,2,3,\infty$ at $\beta = 0$ and
+         $\beta = 0.01$.
+      3. Find the smallest $n$ at which adding a further replica improves $U_n$ by less than 10%
+         relative, when $\beta = 0.01$ and $U = 10^{-3}$.
+      4. State what this implies about where availability effort should go.
+    solution: |
+      **1.** Condition on the failure mode. With probability $\beta$ the cause is common and the
+      system is down exactly when that cause fires, contributing $\beta U$. With probability
+      $1-\beta$ replicas fail independently and all $n$ must be down, contributing $(1-\beta)U^n$.
+      Hence $U_n = (1-\beta)U^n + \beta U$. Since $0<U<1$, $U^n$ is strictly decreasing in $n$ and
+      tends to $0$, so $U_n$ decreases to $\beta U$.
+
+      **2.** With $U = 10^{-3}$:
+
+      | $n$ | $\beta = 0$ | $\beta = 0.01$ |
+      |---|---|---|
+      | 1 | $1.0\times10^{-3}$ | $1.0\times10^{-3}$ |
+      | 2 | $1.0\times10^{-6}$ | $1.099\times10^{-5}$ |
+      | 3 | $1.0\times10^{-9}$ | $1.000099\times10^{-5}$ |
+      | $\infty$ | $0$ | $1.0\times10^{-5}$ |
+
+      At $\beta = 0.01$ the second replica improves things by a factor of 91; the third improves
+      them by a factor of $1.099$, and nothing beyond helps at all.
+
+      **3.** The relative improvement from $n$ to $n+1$ is
+      $$
+      1 - \frac{U_{n+1}}{U_n} = \frac{(1-\beta)(U^n - U^{n+1})}{(1-\beta)U^n + \beta U} .
+      $$
+      At $n=1$: numerator $0.99(10^{-3}-10^{-6}) = 9.890\times10^{-4}$, denominator
+      $U_1 = 10^{-3}$, ratio $0.989$ — a 98.9% improvement.
+      At $n=2$: numerator $0.99(10^{-6}-10^{-9}) = 9.890\times10^{-7}$, denominator
+      $U_2 = 1.099\times10^{-5}$, ratio $0.0900$ — a 9.0% improvement.
+
+      So $n = 2$ is the smallest count at which the *next* replica buys less than 10%. Beyond two
+      replicas, redundancy is essentially spent.
+
+      **4.** Since $U_n \downarrow \beta U$ and the approach is geometric in $n$ but the floor is
+      linear in $\beta$, the only lever that moves the achievable availability is $\beta$.
+      Halving $\beta$ halves the floor; adding a fourth replica does nothing measurable. Effort
+      therefore belongs in **decorrelation** — staged rollouts, independent control planes,
+      distinct dependency versions, separate certificate lifetimes — rather than in replica count.
+      The standard failure of this reasoning in practice is deploying a new binary to every replica
+      simultaneously, which is a $\beta = 1$ event for the duration of the rollout.
+
+  - id: sys-size-a-cluster
+    title: Size a serving cluster and find the binding constraint
+    topic: ai-systems/capacity-planning
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 1h
+    tags: [sizing, kv cache, utilisation, bottleneck]
+    statement: |
+      A replica has 80 GB of device memory. The model weights occupy 28 GB in bf16 and workspace
+      takes a further 6 GB. Paged allocation achieves $\eta = 0.92$ of the remainder. A typical
+      request holds $m = 640$ MB of KV cache and takes $W = 5$ s end to end. Offered load is
+      $\lambda = 900$ requests per second and the target utilisation is $\rho^\star = 0.65$.
+
+      1. Compute $L_{\max}$ and the replicas required.
+      2. The hardware has a compute-to-bandwidth ratio of 280 FLOP/byte and the weights are 2 bytes
+         per parameter. Estimate the batch at which decode stops being weight-bound, and say
+         whether this replica is memory-bound or compute-bound.
+      3. KV quantisation to int8 halves $m$. Recompute the replica count and say what changes about
+         the answer to part 2.
+      4. Instead of quantising, someone proposes raising $\rho^\star$ to 0.85. Using
+         $W = S/(1-\rho)$ with the same bare service time, say what actually happens.
+    hints:
+      - $L_{\max} = \lfloor \eta M_{\text{kv}}/m\rfloor$ and
+        $R = \lceil \lambda W/(\rho^\star L_{\max})\rceil$.
+      - Weight-limited decode has arithmetic intensity $2B/b$; set it equal to the machine ratio.
+    solution: |
+      **1.** Memory available for KV cache is $80 - 28 - 6 = 46$ GB, of which $\eta = 0.92$ is
+      usable: $42.32$ GB. With $m = 0.64$ GB,
+      $$
+      L_{\max} \;=\; \left\lfloor \frac{42.32}{0.64}\right\rfloor \;=\; \lfloor 66.1\rfloor \;=\; 66 .
+      $$
+      Then
+      $$
+      R \;=\; \left\lceil\frac{\lambda W}{\rho^\star L_{\max}}\right\rceil
+      \;=\; \left\lceil\frac{900\times5}{0.65\times66}\right\rceil
+      \;=\; \left\lceil\frac{4500}{42.9}\right\rceil
+      \;=\; \lceil 104.9\rceil \;=\; \mathbf{105\ \text{replicas}} .
+      $$
+
+      **2.** Weight-limited decode has arithmetic intensity $2B/b$ with $b = 2$ bytes per
+      parameter, so intensity $= B$. Setting this equal to the machine's 280 FLOP/byte gives
+      $B \approx 280$. The memory ceiling is $L_{\max} = 66 \ll 280$, so the replica is firmly
+      **memory-bound**: its arithmetic units are idle because there is nowhere to put more
+      sequences, not because the arithmetic is slow. Buying FLOPs would change nothing.
+
+      **3.** With $m = 0.32$ GB, $L_{\max} = \lfloor 42.32/0.32\rfloor = \lfloor 132.25\rfloor = 132$.
+      Then
+      $$
+      R \;=\; \left\lceil\frac{4500}{0.65\times132}\right\rceil
+      \;=\; \left\lceil\frac{4500}{85.8}\right\rceil \;=\; \lceil 52.4\rceil \;=\; \mathbf{53} .
+      $$
+      Halving the KV footprint halves the fleet. The replica is still memory-bound
+      ($132 < 280$) but much less so; a further halving to $m = 0.16$ GB would give
+      $L_{\max} = 264$, at which point the compute ceiling starts to bind and the third halving
+      would buy almost nothing.
+
+      **4.** Raising $\rho^\star$ does not leave $W$ alone. From $W = S/(1-\rho)$, the current
+      operating point $\rho = 0.65$, $W = 5$ s implies a bare service time
+      $S = W(1-\rho) = 5\times0.35 = 1.75$ s. At $\rho = 0.85$ the same $S$ gives
+      $$
+      W' \;=\; \frac{1.75}{0.15} \;=\; 11.67\ \text{s} .
+      $$
+      Substituting both changes,
+      $$
+      R' \;=\; \left\lceil\frac{900\times11.67}{0.85\times66}\right\rceil
+      \;=\; \left\lceil\frac{10503}{56.1}\right\rceil \;=\; \lceil187.2\rceil \;=\; 188 ,
+      $$
+      which is **worse than the 105 we started with**, on top of more than doubling latency. The
+      naive calculation that treats $W$ as fixed predicts $R = \lceil 4500/56.1\rceil = 81$ and is
+      simply wrong. Utilisation is not a free parameter: it is determined by the latency target
+      through the queueing relation, and "run the fleet hotter" is not an independent lever.
+
+  - id: sys-cost-of-latency
+    title: Price a latency target
+    topic: ai-systems/cost-per-token
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [cost, latency, utilisation, tradeoff]
+    statement: |
+      A replica costs \$2.80 per hour and can emit 4000 tokens per second at saturation. Its bare
+      mean service time is $S$.
+
+      1. Derive cost per million tokens as a function of the mean-latency target $W$, in units of
+         $S$.
+      2. Tabulate it for $W/S \in \{1.5, 2, 4, 10\}$.
+      3. A product team asks to move from $W = 4S$ to $W = 1.5S$. By what factor does unit cost
+         rise?
+      4. Batch and interactive traffic currently share one pool at $W = 2S$. Half the tokens are
+         batch and could tolerate $W = 10S$. What is the blended saving from splitting the pools?
+    solution: |
+      **1.** From the unit-cost proposition, cost per token is $c/(3600\,\rho X_{\max})$, and the
+      queueing relation $W = S/(1-\rho)$ gives $\rho = (W-S)/W$. Hence
+      $$
+      \text{cost per token} \;=\; \frac{c}{3600\,X_{\max}}\cdot\frac{W}{W-S} .
+      $$
+      With $c = 2.80$ and $X_{\max} = 4000$ tokens/s, the prefactor is
+      $$
+      \frac{2.80}{3600\times4000} \;=\; 1.944\times10^{-7}\ \text{\$ per token}
+      \;=\; \$0.1944 \ \text{per million tokens at } \rho = 1 .
+      $$
+      So cost per million tokens is $0.1944 \times W/(W-S)$.
+
+      **2.**
+
+      | $W/S$ | $\rho$ | $W/(W-S)$ | \$ per M tokens |
+      |---|---|---|---|
+      | 1.5 | 0.333 | 3.000 | 0.583 |
+      | 2 | 0.500 | 2.000 | 0.389 |
+      | 4 | 0.750 | 1.333 | 0.259 |
+      | 10 | 0.900 | 1.111 | 0.216 |
+
+      **3.** From $W = 4S$ to $W = 1.5S$ the factor is $3.000/1.333 = \mathbf{2.25\times}$. Cutting
+      the latency target by $2.7\times$ costs $2.25\times$ the money — and note the cost is
+      *convex* in the tightness, so the next increment is worse again: going to $W = 1.2S$ would
+      cost $6.0/1.333 = 4.5\times$ the $W=4S$ price.
+
+      **4.** Currently both halves run at $W = 2S$, costing $0.389$ per million on all tokens.
+      After splitting, interactive tokens stay at $0.389$ and batch tokens drop to $0.216$. The
+      blended cost is
+      $$
+      0.5\times0.389 + 0.5\times0.216 \;=\; 0.3025\ \text{per million},
+      $$
+      a saving of $1 - 0.3025/0.389 = \mathbf{22\%}$. The saving comes from nothing but allowing
+      the batch pool to run at 90% utilisation instead of 50% — no new hardware, no faster model.
+      This is the strongest argument for segregating traffic by latency class, and it also explains
+      why a single blended price per token misprices both halves.
+
+  - id: sys-usl-fit
+    title: Fit a scalability curve and find where it turns over
+    topic: ai-systems/scaling-limits
+    difficulty: advanced
+    type: numerical
+    estimated_time: 1h
+    tags: [universal scalability law, contention, coherency, capacity]
+    statement: |
+      A distributed index reports relative capacity $C(p)$ at $p$ shards:
+
+      | $p$ | 1 | 2 | 4 | 8 | 16 | 32 |
+      |---|---|---|---|---|---|---|
+      | $C$ | 1.00 | 1.96 | 3.72 | 6.63 | 10.08 | 11.39 |
+
+      1. Fit $C(p) = p/(1+\alpha(p-1)+\beta p(p-1))$ by least squares on $p/C(p) - 1$, which is
+         linear in the two parameters with no intercept.
+      2. Predict $p^\star$ and the capacity there.
+      3. The team plans to run 64 shards. What does the model predict, and what would you tell
+         them?
+    hints:
+      - $p/C(p) - 1 = \alpha(p-1) + \beta p(p-1)$ is linear in $(\alpha,\beta)$ with no intercept.
+      - $p^\star = \sqrt{(1-\alpha)/\beta}$.
+    solution: |
+      **1.** Form $y_p = p/C(p) - 1$ and regress on $x_1 = p-1$, $x_2 = p(p-1)$ through the origin:
+
+      | $p$ | $C$ | $y = p/C-1$ | $p-1$ | $p(p-1)$ |
+      |---|---|---|---|---|
+      | 1 | 1.00 | 0.0000 | 0 | 0 |
+      | 2 | 1.96 | 0.0204 | 1 | 2 |
+      | 4 | 3.72 | 0.0753 | 3 | 12 |
+      | 8 | 6.63 | 0.2066 | 7 | 56 |
+      | 16 | 10.08 | 0.5873 | 15 | 240 |
+      | 32 | 11.39 | 1.8095 | 31 | 992 |
+
+      Solving the $2\times2$ normal equations gives
+      $$
+      \alpha \;\approx\; 0.0199, \qquad \beta \;\approx\; 0.00120 ,
+      $$
+      which reproduces every entry of the table to the two decimal places given.
+
+      Note the data already announce the answer before any fitting: capacity gained from 8 to 16
+      shards is $3.45$, while from 16 to 32 it is only $1.31$. The curve is bending hard.
+
+      **2.**
+      $$
+      p^\star \;=\; \sqrt{\frac{1-\alpha}{\beta}} \;=\; \sqrt{\frac{0.980}{0.00120}}
+      \;=\; \sqrt{816.7} \;\approx\; 28.6 ,
+      $$
+      so the integer optimum is $p = 29$, where
+      $$
+      C(29) \;=\; \frac{29}{1+0.0199(28)+0.00120(29)(28)}
+      \;=\; \frac{29}{1+0.557+0.974} \;=\; \frac{29}{2.531} \;\approx\; 11.5 .
+      $$
+      The measured $C(32) = 11.39$ is already slightly *below* this: the fleet has passed its peak.
+
+      **3.** At $p = 64$,
+      $$
+      C(64) \;=\; \frac{64}{1+0.0199(63)+0.00120(64)(63)}
+      \;=\; \frac{64}{1+1.254+4.838} \;=\; \frac{64}{7.092} \;\approx\; 9.0 ,
+      $$
+      i.e. **less capacity than 16 shards deliver**, on four times the hardware — and less than the
+      32 shards they are already running.
+
+      What to tell them: doubling to 64 is predicted to lose about 21% of current throughput, and
+      the measurement at 32 already sits on the flat-to-declining part of the curve, so this is not
+      an extrapolation far beyond the data. The productive move is to attack $\beta$ rather than
+      $p$: a coherency coefficient of $1.2\times10^{-3}$ says pairwise consistency traffic is the
+      binding constraint. Since $p^\star$ scales as $\beta^{-1/2}$, halving the cross-shard
+      chatter moves the peak from 29 to about 40; nothing else moves it at all. If more capacity is
+      needed immediately, a second independent 29-shard cluster with requests partitioned between
+      them scales linearly, because two clusters that never talk have no coherency term.
+
+  - id: sys-canary-power
+    title: How long must the canary run?
+    topic: ai-systems/rollout-and-experimentation
+    difficulty: intermediate
+    type: numerical
+    estimated_time: 30m
+    tags: [canary, power, sample size, sequential testing]
+    statement: |
+      Total traffic is 2000 requests per second. A canary receives 5%. The metric of interest has
+      mean $m$ and coefficient of variation $1.5$.
+
+      1. How long must the canary run to detect a 2% relative regression with 80% power at the 5%
+         level?
+      2. How long to detect a 0.5% regression?
+      3. The team checks the dashboard every 10 minutes and ships when $p < 0.05$. Estimate their
+         actual false-positive rate over a 24-hour window, and say what to do instead.
+    solution: |
+      **1.** With $\sigma = 1.5m$ and $\Delta = 0.02m$,
+      $$
+      n \;=\; \frac{2\sigma^2(z_{0.975}+z_{0.8})^2}{\Delta^2}
+      \;=\; 15.70\times\frac{(1.5m)^2}{(0.02m)^2}
+      \;=\; 15.70\times 5625 \;=\; 88{,}313 \ \text{per arm}.
+      $$
+      The canary accumulates at $0.05\times2000 = 100$ per second, so
+      $$
+      T \;=\; \frac{88{,}313}{100} \;=\; 883\ \text{s} \;\approx\; \mathbf{15\ \text{minutes}} .
+      $$
+
+      **2.** $n$ scales as $\Delta^{-2}$, so shrinking the detectable effect by $4\times$ multiplies
+      the sample by $16$:
+      $$
+      n = 15.70\times\frac{2.25}{(0.005)^2} = 1{,}413{,}000,
+      \qquad T = 14{,}130\ \text{s} \approx \mathbf{3.9\ \text{hours}} .
+      $$
+
+      **3.** Checking every 10 minutes for 24 hours is $k = 144$ looks, each at nominal level
+      $0.05$. The looks are highly correlated — consecutive ones share almost all their data — so
+      the naive union bound $1-(1-0.05)^{144} \approx 1$ overstates it, but the true rate is still
+      far above $0.05$. For a Brownian-motion approximation to the test statistic, the probability
+      of ever crossing a fixed $\pm1.96$ boundary over a horizon covering this many independent
+      "effective looks" is on the order of $0.3$ to $0.5$.
+
+      So roughly **one healthy deployment in three would be flagged as a regression**, and
+      symmetrically a team that ships when the metric looks good will ship regressions at a
+      similarly inflated rate.
+
+      What to do instead, in increasing order of sophistication:
+
+      - **Fix the sample size in advance** from part 1 and look once. Simple, and the calculation
+        is already done.
+      - '**Group-sequential design**: choose the number of looks up front and spend the error budget across them with an alpha-spending function, so the boundaries are wider early.'
+      - '**Always-valid inference**: use a sequential test whose guarantee holds at every sample size, so continuous monitoring is legitimate by construction. This is the right answer when the team genuinely wants to watch continuously, which they usually do.'
+
+  - id: sys-simulate-mm1
+    title: Simulate M/M/1 and verify the utilisation wall
+    topic: ai-systems/queueing-and-the-utilisation-wall
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [simulation, queueing, little's law, utilisation]
+    statement: |
+      Implement the closed forms for M/M/1 and a discrete-event simulation of the same queue, then
+      check they agree.
+
+      1. `theoretical_mm1(lam, mu)` returning $\rho$, $\E[W]$, $\E[W_q]$ and $\E[N]$.
+      2. `simulate_mm1(lam, mu, n_requests, seed)` returning the same four quantities measured from
+         a first-come-first-served simulation.
+
+      Measure $\E[N]$ from the simulation independently — as the time-average occupancy — rather
+      than computing it as $\lambda\E[W]$. Little's law should then fall out of the measurements
+      as a check, instead of being assumed.
+    hints:
+      - 'The Lindley recursion is all you need: service starts at $\max(\text{arrival}, \text{previous departure})$.'
+      - The time-average occupancy over $[0,T]$ equals $\frac1T\sum_i(d_i-a_i)$ by the area
+        identity, with $T$ the last departure.
+    solution: |
+      **Closed forms.** $\rho = \lambda/\mu$, $\E[W] = 1/(\mu-\lambda)$, $\E[N] = \rho/(1-\rho)$
+      and $\E[W_q] = \E[W] - 1/\mu$.
+
+      **Simulation.** Generate inter-arrival times $\text{Exp}(\lambda)$ and service times
+      $\text{Exp}(\mu)$, accumulate arrivals, and run the Lindley recursion
+      $$
+      \text{start}_i = \max(a_i,\ \text{free}), \qquad \text{free} \leftarrow \text{start}_i + S_i .
+      $$
+      Then $d_i = \text{start}_i + S_i$, $W_i = d_i - a_i$, and the queueing time is
+      $\text{start}_i - a_i$.
+
+      For the occupancy, use the area identity proved in
+      <ProblemRef id="sys-little-finite-horizon" />: the integral of $N(t)$ over $[0,T]$ equals
+      $\sum_i (d_i - a_i)$ when every request has departed by $T$. Dividing by $T = d_{n}$ gives a
+      measurement of $\E[N]$ that never mentions $\lambda$ or $\E[W]$, so the agreement
+      $\E[N] \approx \lambda\E[W]$ is evidence rather than tautology.
+
+      **What the numbers show.** At $\rho = 0.5$ the mean wait is $2\E[S]$; at $\rho = 0.9$ it is
+      $10\E[S]$; at $\rho = 0.99$ it is $100\E[S]$. Convergence of the simulation is slow at high
+      $\rho$ — the relevant timescale is the busy-period length, which itself grows like
+      $1/(1-\rho)$ — which is why the tests allow a wider tolerance at $\rho = 0.8$ than at
+      $\rho = 0.5$. That slow convergence is not a defect of the simulation; it is the same
+      $1/(1-\rho)$ appearing as a statistical cost rather than a latency cost.
+
+  - id: sys-estimate-littles-law
+    title: Recover Little's law from an event log
+    topic: ai-systems/littles-law
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [little's law, event log, occupancy, measurement]
+    statement: |
+      Given arrival and departure timestamps for a set of requests, reconstruct the three
+      quantities in Little's law and verify the identity numerically.
+
+      1. `number_in_system(arrivals, departures, times)` — occupancy at each queried instant, with
+         an item present on $[a_i, d_i)$.
+      2. `time_average_number(arrivals, departures)` — the exact time-average occupancy over
+         $[0,T]$ with $T$ the last departure, computed from the area identity rather than by
+         sampling.
+      3. `littles_law_check(arrivals, departures)` — returning $L$, $\lambda$, $W$ and the residual
+         $L - \lambda W$.
+
+      The residual should be zero to machine precision, not merely small.
+    hints:
+      - Occupancy at $t$ is (number arrived by $t$) minus (number departed by $t$); both are
+        searchsorted lookups into sorted timestamp arrays.
+      - 'Be careful with the half-open convention: an item departing exactly at $t$ is not present at $t$.'
+    solution: |
+      **Occupancy.** Sort the arrival and departure times separately. Then
+      $$
+      N(t) \;=\; \#\{i : a_i \le t\} \;-\; \#\{i : d_i \le t\},
+      $$
+      both computed by binary search with `side='right'`, which implements the half-open
+      convention: an item departing exactly at $t$ has already left.
+
+      **Time average.** By the area identity,
+      $$
+      \int_0^T N(t)\,dt \;=\; \sum_i (d_i - a_i) \quad\text{when } T = \max_i d_i ,
+      $$
+      so $L = \frac1T\sum_i(d_i-a_i)$. This is exact — no grid, no discretisation error.
+
+      **The identity.** With $\lambda = n/T$ and $W = \frac1n\sum_i(d_i-a_i)$,
+      $$
+      \lambda W \;=\; \frac nT\cdot\frac1n\sum_i(d_i-a_i) \;=\; \frac1T\sum_i(d_i-a_i) \;=\; L .
+      $$
+      The residual is identically zero as an algebraic identity, which is why the test demands
+      machine precision rather than a tolerance. That is the real lesson: on a finite log with a
+      horizon ending at the last departure, Little's law is not an approximation or a
+      steady-state statement — it is arithmetic.
+
+      **Why the grid cross-check matters.** The test also integrates `number_in_system` on a fine
+      grid and compares. Without it, an implementation could return $\lambda W$ for $L$ and pass
+      the identity trivially. The grid computation touches a completely different code path, so
+      agreement between the two is evidence that the occupancy function is right.
+
+  - id: sys-simulate-fanout
+    title: Measure fan-out amplification and the value of hedging
+    topic: ai-systems/tail-latency-and-fan-out
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [fan-out, tail latency, hedging, order statistics, simulation]
+    statement: |
+      Quantify what fan-out does to a tail, and what a hedged request buys back.
+
+      1. `required_child_quantile(n, p)` and `parent_tail(n, child_tail)` — the closed forms.
+      2. `simulate_max_quantile(n, mean, p, trials, seed)` — the empirical $p$-quantile of the
+         maximum of $n$ exponential latencies.
+      3. `hedged_samples(mean, d, trials, seed)` — latencies when a duplicate attempt starts at
+         delay $d$ and the first response wins.
+      4. `hedge_extra_load(p)` — expected attempts per logical request when hedging at the
+         $p$-quantile.
+
+      Then confirm that the simulated hedged tail matches $\bar F(t)\bar F(t-d)$ for $t > d$.
+    hints:
+      - The parent is the maximum of $n$ i.i.d. draws, so $\Pr[M_n \le t] = F(t)^n$.
+      - For the hedge, draw both attempts up front; the observed latency is $X_1$ when
+        $X_1 \le d$ and $\min(X_1,\ d+X_2)$ otherwise.
+    solution: |
+      **Closed forms.** $\Pr[M_n \le t] = F(t)^n$ gives
+      $\text{required\_child\_quantile}(n,p) = p^{1/n}$ and
+      $\text{parent\_tail}(n,u) = 1-(1-u)^n$.
+
+      **Checking the simulation.** For $X\sim\text{Exp}(\mu)$ the parent's $p$-quantile is
+      available in closed form:
+      $$
+      (1-e^{-t/\mu})^n = p \;\Longrightarrow\; t = -\mu\ln\!\bigl(1-p^{1/n}\bigr),
+      $$
+      which is what the test compares against. At $\mu = 20$ ms, $p=0.99$: one call gives
+      $92$ ms, fifty calls give $170$ ms.
+
+      **The hedge.** With the second attempt starting at $d$ and independent of the first,
+      $$
+      \Pr[Y > t] = \begin{cases}
+        \bar F(t), & t \le d,\\
+        \bar F(t)\,\bar F(t-d), & t > d.
+      \end{cases}
+      $$
+      For exponentials this is $e^{-t/\mu}$ below $d$ and $e^{-(2t-d)/\mu}$ above it: the decay
+      rate doubles past the hedge point. Below $d$ nothing has changed at all, which the tests
+      check separately — a common implementation error is to take
+      $\min(X_1, X_2)$ unconditionally, which improves the *whole* distribution and would give an
+      answer that is better than reality and cheaper than reality.
+
+      **The cost.** The second attempt is issued exactly on $\{X > d\}$, so the expected attempt
+      count is $1 + \Pr[X>d] = 1 + (1-p)$. Hedging at the p95 costs 5%. That is the whole trade:
+      5% more load to roughly square the tail beyond $d$.
+
+  - id: sys-implement-two-choices
+    title: Balls into bins, with one choice and with two
+    topic: ai-systems/load-balancing
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [load balancing, balls into bins, randomised algorithms, simulation]
+    statement: |
+      Measure the gap between random assignment and the power of two choices.
+
+      1. `assign_balls(n, d, seed)` — throw $n$ balls into $n$ bins, each ball sampling $d$ bins
+         uniformly **with replacement** and landing in the least loaded of them. Return the load
+         array.
+      2. `max_load(n, d, seed)` and `mean_max_load(n, d, reps, seed)`.
+
+      Then compare $d = 1$ against $d = 2, 3, 4$ as $n$ grows from $500$ to $20{,}000$ and check
+      the two predicted shapes: $\log n/\log\log n$ against $\log\log n/\log d$.
+    hints:
+      - Keep the loads in an array and update it in place; each ball needs one `argmin` over the
+        $d$ sampled entries.
+      - Average over several seeds — the maximum load is an integer and individual runs are noisy.
+    solution: |
+      **Implementation.** Maintain `loads` of length $n$. For each ball draw `ch = rng.integers(0,
+      n, d)` and increment `loads[ch[argmin(loads[ch])]]`. The sequential dependence means this
+      cannot be vectorised across balls, which is why the problem sizes here are modest.
+
+      **What the measurements show.** Averaging over three seeds:
+
+      | $n$ | $d=1$ | $d=2$ | $d=3$ | $d=4$ |
+      |---|---|---|---|---|
+      | 500 | 5.00 | 3.33 | 2.33 | 2.00 |
+      | 2000 | 5.67 | 3.00 | 3.00 | 2.00 |
+      | 8000 | 6.67 | 3.00 | 3.00 | 2.33 |
+      | 20000 | 7.00 | 3.33 | 3.00 | 2.33 |
+
+      Two readings. First, $d=1$ climbs steadily — a factor of 40 in $n$ raises the maximum load
+      by 2 — consistent with $\log n/\log\log n$, which goes from $3.3$ to $4.7$ over this range.
+      Second, $d = 2$ is **flat**: $\log\log n/\log 2$ moves only from $2.6$ to $3.6$, and the
+      measurements sit right there.
+
+      The gap from $d=1$ to $d=2$ is about $3.7$ at $n = 20{,}000$; from $d=2$ to $d=3$ it is
+      about $0.3$. The exponential improvement is entirely in the second probe, exactly as the
+      theorem says, and this is why production balancers sample two backends rather than
+      maintaining a global load ordering.
+
+      **A trap worth noting.** Sampling $d = n$ bins with replacement does *not* let a ball see
+      every bin — coverage is only $1-(1-1/n)^n \approx 63\%$ — so the maximum load does not drop
+      to 1. Getting a perfectly level assignment needs sampling without replacement, or $d$ several
+      times $n$.
+
+  - id: sys-implement-sizing
+    title: Implement the cluster sizing formula
+    topic: ai-systems/capacity-planning
+    difficulty: beginner
+    type: coding
+    estimated_time: 30m
+    tags: [capacity planning, sizing, kv cache, bottleneck]
+    statement: |
+      Turn the sizing arithmetic into code that cannot be fudged.
+
+      1. `concurrency_ceiling(kv_bytes, per_seq_bytes, efficiency)` — how many sequences fit,
+         rounding down.
+      2. `compute_ceiling(machine_intensity, bytes_per_param)` — the batch at which weight-bound
+         decode reaches the machine's compute-to-bandwidth ratio.
+      3. `replicas_needed(lam, W, rho_target, concurrency)` — rounding up.
+      4. `binding_constraint(memory_ceiling, compute_ceiling_value)` — `'memory'`, `'compute'` or
+         `'balanced'`.
+
+      Then run the worked example: an 80 GB device with 28 GB of weights and 6 GB of workspace,
+      92% allocator efficiency, 640 MB per sequence, 900 requests per second, 5 s latency, 65%
+      target utilisation.
+    hints:
+      - Weight-limited decode at batch $B$ has arithmetic intensity $2B/b$.
+      - Rounding direction matters in both places and in opposite ways.
+    solution: |
+      **The formulas.**
+      $$
+      L_{\max} = \left\lfloor\frac{\eta M_{\text{kv}}}{m}\right\rfloor,
+      \qquad
+      B_{\text{compute}} = \frac{\text{ratio}\times b}{2},
+      \qquad
+      R = \left\lceil\frac{\lambda W}{\rho^\star L_{\max}}\right\rceil .
+      $$
+
+      **The worked example.** Spare memory is $80-28-6 = 46$ GB, of which $92\%$ is usable:
+      $42.32$ GB. With $m = 0.64$ GB,
+      $$
+      L_{\max} = \lfloor 66.125 \rfloor = 66,
+      \qquad
+      R = \left\lceil\frac{900\times5}{0.65\times66}\right\rceil = \lceil 104.9\rceil = 105 .
+      $$
+      The compute ceiling at ratio $280$ and $b = 2$ is $B = 280$, far above $66$, so the replica
+      is **memory-bound**.
+
+      **Why the rounding directions are opposite.** $L_{\max}$ rounds *down* because a partially
+      resident sequence is useless — it would be evicted mid-generation. $R$ rounds *up* because a
+      fractional replica cannot exist and rounding down would leave the fleet under target. A
+      single sign error here produces a fleet that is quietly 1–2% undersized, which shows up as
+      SLO violations under load and is invisible in testing.
+
+      **Floating point.** $42.32/0.64$ evaluates to $66.12499\ldots$ or $66.125$ depending on how
+      the inputs were formed, and an exact case like $9.0/3.0$ can land a hair below $3$. Both
+      `floor` and `ceil` need a small tolerance, which the tests probe directly with exact-fit
+      cases.
+
+  - id: sys-simulate-cache
+    title: Cache hit rates under Zipf popularity
+    topic: ai-systems/caching
+    difficulty: intermediate
+    type: coding
+    estimated_time: 1h
+    tags: [caching, zipf, LRU, hit rate, simulation]
+    statement: |
+      Work out what a cache of a given size is actually worth.
+
+      1. `zipf_probs(N, a)` — the normalised popularity law.
+      2. `static_hit_rate(N, a, C)` — the hit rate of an oracle cache holding the $C$ most popular
+         items, as a ratio of generalised harmonic numbers.
+      3. `power_law_hit_rate(N, a, C)` — the asymptotic $(C/N)^{1-a}$.
+      4. `lru_hit_rate(requests, capacity)` — simulated LRU on a request trace.
+
+      Then compare LRU against the static optimum on a Zipf trace, and check whether the power law
+      is a usable approximation.
+    hints:
+      - The static optimum caches ranks $1..C$, so its hit rate is
+        $\sum_{i\le C} i^{-a} / \sum_{i \le N} i^{-a}$.
+      - An `OrderedDict` gives LRU in a few lines via `move_to_end` and
+        `popitem(last=False)`.
+    solution: |
+      **Static optimum.** Requests are i.i.d. draws, so the hit probability is the mass of the
+      cached set, maximised by taking the $C$ most probable items. That gives
+      $H_C(a)/H_N(a)$ exactly.
+
+      **The asymptotic.** Comparing the sum with $\int_1^M x^{-a}dx$ gives
+      $H_M(a) \approx (M^{1-a}-1)/(1-a)$, so for $a<1$ and $1\ll C\ll N$ the ratio tends to
+      $(C/N)^{1-a}$. The key structural fact is that this has **no knee**: each decade of cache
+      multiplies the hit rate by $10^{1-a}$, forever. At $a = 0.5$ that is $3.16\times$ per decade.
+
+      **Quality of the approximation.** At $N=10^6$:
+
+      | $a$ | $C$ | exact | $(C/N)^{1-a}$ |
+      |---|---|---|---|
+      | 0.5 | $10^3$ | 0.0309 | 0.0316 |
+      | 0.5 | $10^4$ | 0.0993 | 0.1000 |
+      | 0.8 | $10^3$ | 0.2068 | 0.2512 |
+
+      Good to a few percent at $a = 0.5$, off by 20% at $a = 0.8$, because the $O(1)$ terms
+      dropped from $H_M(a)$ stop being negligible as $1-a$ shrinks. Use the exact harmonic ratio
+      for sizing and the power law for reasoning about scaling.
+
+      **LRU against the optimum.** On a Zipf($0.9$) trace over $2000$ items with a $200$-item
+      cache, LRU lands within a few percent of the static optimum and never materially above it —
+      it cannot beat an oracle against i.i.d. requests, but it comes close because recency is a
+      good proxy for popularity when popularity is skewed.
+
+      **The classic failure.** `lru_hit_rate([1,2,3,1,2,3], 2)` is exactly $0$: cycling through
+      three items with room for two evicts precisely the item about to be requested. This is not a
+      pathological input — it is what a scan over data slightly larger than the cache does to any
+      recency policy, and it is why real systems add scan resistance rather than trusting LRU
+      alone.

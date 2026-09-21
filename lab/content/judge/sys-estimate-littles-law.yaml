@@ -1,0 +1,102 @@
+problem: sys-estimate-littles-law
+timeout_seconds: 60
+starter: |
+  import numpy as np
+
+  def number_in_system(arrivals, departures, times):
+      """Occupancy at each instant in `times`.
+
+      `arrivals[i]` and `departures[i]` are the entry and exit times of item i,
+      with departures[i] >= arrivals[i]. Item i counts as present at time t when
+      arrivals[i] <= t < departures[i]. Return an integer array the same length
+      as `times`.
+      """
+      raise NotImplementedError
+
+  def time_average_number(arrivals, departures):
+      """The exact time-average occupancy over [0, T], T = max(departures).
+
+      Compute it from the area identity rather than by sampling: the integral of
+      the occupancy equals the total time items spent in the system.
+      """
+      raise NotImplementedError
+
+  def littles_law_check(arrivals, departures):
+      """Return a dict with 'L', 'lam', 'W' and 'residual'.
+
+      L is the time-average occupancy, lam the arrival rate over [0, T], W the
+      mean time in system, and residual = L - lam*W, which the law says is zero.
+      """
+      raise NotImplementedError
+tests:
+  - name: occupancy on a hand-checked example
+    code: |
+      import numpy as np
+      a = np.array([0.0, 1.0, 1.5])
+      d = np.array([2.0, 3.0, 2.5])
+      t = np.array([-0.5, 0.0, 0.5, 1.0, 1.7, 2.0, 2.4, 2.5, 2.9, 3.0, 3.5])
+      want = [0, 1, 1, 2, 3, 2, 2, 1, 1, 0, 0]
+      got = list(np.asarray(number_in_system(a, d, t)).ravel().astype(int))
+      assert got == want, f"expected {want}, got {got}"
+  - name: presence is half-open in time
+    code: |
+      import numpy as np
+      a = np.array([1.0]); d = np.array([2.0])
+      got = list(np.asarray(number_in_system(a, d, np.array([0.999, 1.0, 1.999, 2.0]))).ravel().astype(int))
+      assert got == [0, 1, 1, 0], f"an item is present on [arrival, departure), got {got}"
+  - name: the time average matches a fine-grid integral
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(0)
+      a = np.sort(rng.uniform(0, 50, 300))
+      d = a + rng.exponential(1.5, 300)
+      T = float(d.max())
+      grid = np.linspace(0, T, 400001)
+      n = np.asarray(number_in_system(a, d, grid), dtype=float).ravel()
+      # Riemann average over the grid, which converges to the time average.
+      approx = float(n.mean())
+      exact = float(time_average_number(a, d))
+      assert abs(approx - exact) < 0.01 * max(exact, 1e-9), f"grid {approx} vs exact {exact}"
+  - name: the area identity on a hand-checked example
+    code: |
+      import numpy as np
+      a = np.array([0.0, 1.0, 1.5])
+      d = np.array([2.0, 3.0, 2.5])
+      # Total time in system = 2 + 2 + 1 = 5, horizon T = 3, so L = 5/3.
+      got = float(time_average_number(a, d))
+      assert abs(got - 5.0 / 3.0) < 1e-9, f"expected 5/3, got {got}"
+  - name: Little's law holds exactly on the sample path
+    code: |
+      import numpy as np
+      rng = np.random.default_rng(1)
+      for n_items, scale in ((50, 0.5), (500, 2.0), (2000, 0.3)):
+          a = np.sort(rng.uniform(0, 100, n_items))
+          d = a + rng.exponential(scale, n_items)
+          r = littles_law_check(a, d)
+          assert abs(r['residual']) < 1e-8 * max(1.0, abs(r['L'])), \
+              f"L={r['L']}, lam*W={r['lam']*r['W']}, residual={r['residual']}"
+  - name: the three quantities are what they claim to be
+    code: |
+      import numpy as np
+      a = np.array([0.0, 1.0, 1.5])
+      d = np.array([2.0, 3.0, 2.5])
+      r = littles_law_check(a, d)
+      assert abs(r['lam'] - 3.0 / 3.0) < 1e-9, f"lam should be 3 items over horizon 3, got {r['lam']}"
+      assert abs(r['W'] - 5.0 / 3.0) < 1e-9, f"W should be mean(2,2,1) = 5/3, got {r['W']}"
+      assert abs(r['L'] - 5.0 / 3.0) < 1e-9, f"L should be 5/3, got {r['L']}"
+  - name: the law is not smuggled in
+    code: |
+      import numpy as np
+      # If L were computed as lam*W the residual would be zero by construction
+      # even for a log where the horizon is not max(departures). Here we feed a
+      # log whose occupancy integral and mean-wait product genuinely agree, then
+      # check L against an independent grid computation.
+      rng = np.random.default_rng(7)
+      a = np.sort(rng.uniform(0, 30, 400))
+      d = a + rng.exponential(1.0, 400)
+      T = float(d.max())
+      grid = np.linspace(0, T, 200001)
+      n = np.asarray(number_in_system(a, d, grid), dtype=float).ravel()
+      r = littles_law_check(a, d)
+      assert abs(float(n.mean()) - r['L']) < 0.02 * r['L'], \
+          f"L={r['L']} disagrees with the sampled occupancy {n.mean()}"

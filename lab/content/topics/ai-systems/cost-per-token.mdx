@@ -1,0 +1,166 @@
+---
+title: The Economics of Serving — Cost per Token
+summary: Deriving unit cost from hardware price, throughput and utilisation, and the exact price of a tighter latency target.
+field: ai-systems
+level: 2
+order: 140
+prerequisites:
+  - ai-systems/capacity-planning
+  - ai-systems/queueing-and-the-utilisation-wall
+tags: [cost, unit economics, utilisation, latency, pricing]
+estimated_time: 1h
+claims:
+  - id: unit-cost
+    kind: proposition
+    title: Cost per token
+    summary: Unit cost is the hourly price of a replica divided by the tokens it actually delivers, which is its capacity scaled by utilisation.
+    proved: true
+    tags: [cost model]
+  - id: cost-of-latency
+    kind: theorem
+    title: The cost of a latency target
+    summary: Under a single-server queueing model, cost per token is proportional to W/(W−S), so it diverges as the latency target approaches the bare service time.
+    proved: true
+    tags: [latency, tradeoff]
+  - id: batching-cost
+    kind: corollary
+    title: Why batching dominates the cost structure
+    summary: In the weight-bound decode regime, tokens per second scale with batch size, so unit cost falls roughly inversely with the batch a replica can hold.
+    proved: true
+    tags: [batching, memory]
+references:
+  - key: pope-scaling-inference
+    title: Efficiently Scaling Transformer Inference
+    authors: R. Pope et al.
+    year: 2022
+    kind: paper
+    url: https://arxiv.org/abs/2211.05102
+    note: Reports the throughput-latency Pareto frontier that the cost-of-latency theorem describes.
+---
+
+<Intuition>
+Hardware is billed by the hour whether it is working or not. So the cost of a token is the cost of
+the hour divided by the number of tokens that hour actually produced — and the second factor, not
+the first, is where the variance is. Two operators with identical GPUs at identical prices can
+differ by an order of magnitude in unit cost, entirely through utilisation and batch size.
+
+The uncomfortable part is that the biggest lever, utilisation, is capped by the latency promise.
+Cost and latency are not independent axes to be optimised separately; they are two readings of the
+same number, and the exchange rate between them is computable.
+</Intuition>
+
+## The unit cost
+
+<Claim kind="proposition" id="unit-cost" title="Cost per token">
+Let a replica cost $c$ per hour, have maximum sustainable output $X_{\max}$ tokens per second, and
+run at utilisation $\rho$. Then
+$$
+\text{cost per token} \;=\; \frac{c}{3600\;\rho\,X_{\max}} .
+$$
+</Claim>
+
+<Proof>
+In one hour the replica is billed $c$ and delivers $3600\,\rho X_{\max}$ tokens, since $\rho$ is by
+definition the fraction of capacity actually used. Dividing gives the display.
+</Proof>
+
+<KeyIdea>
+Three multiplicative factors, and only one of them is a procurement decision:
+
+$$
+\text{cost per token} \;=\; \underbrace{c}_{\text{what you pay}} \times
+\underbrace{\frac{1}{X_{\max}}}_{\text{how fast it can go}} \times
+\underbrace{\frac{1}{\rho}}_{\text{how much you use it}} \times \frac{1}{3600}
+$$
+
+A replica at 30% utilisation costs $3.3\times$ per token what the same replica costs at 100%.
+Negotiating 20% off the hourly rate is worth less than moving utilisation from 50% to 65%.
+</KeyIdea>
+
+## What a latency target costs
+
+Utilisation cannot be pushed freely, because latency rises with it. Making that explicit turns the
+cost model into a statement about the latency target itself.
+
+<Claim kind="theorem" id="cost-of-latency" title="The cost of a latency target">
+Model a replica as a single-server queue with mean service time $S$ and mean latency
+$W = S/(1-\rho)$. Then achieving a mean-latency target $W$ requires $\rho = 1 - S/W$, and
+$$
+\text{cost per token} \;=\; \frac{c}{3600\,X_{\max}}\cdot\frac{W}{W-S} .
+$$
+The factor $W/(W-S)$ is decreasing in $W$, equals $1$ in the limit of an unbounded latency budget,
+and diverges as $W \downarrow S$.
+</Claim>
+
+<Assumptions>
+$W = S/(1-\rho)$ is the M/M/1 relation from
+<TopicRef id="ai-systems/queueing-and-the-utilisation-wall" />. A different service distribution
+changes the constant through the variability factor $(1+c_s^2)/2$ but not the shape: every
+work-conserving queue has a $1/(1-\rho)$ term, so every such system has a cost that diverges as the
+latency target approaches the bare service time.
+</Assumptions>
+
+<Proof>
+Invert $W = S/(1-\rho)$ to get $1-\rho = S/W$, so $\rho = 1 - S/W = (W-S)/W$. Substituting into
+the unit-cost proposition, $1/\rho = W/(W-S)$.
+</Proof>
+
+Reading off the exchange rate, with $S$ as the unit:
+
+| latency target $W$ | $2S$ | $3S$ | $4S$ | $10S$ | $\infty$ |
+|---|---|---|---|---|---|
+| utilisation $\rho$ | 0.50 | 0.67 | 0.75 | 0.90 | 1 |
+| relative cost | 2.00 | 1.50 | 1.33 | 1.11 | 1 |
+
+<KeyIdea>
+Tightening the mean-latency target from $4S$ to $2S$ raises unit cost by
+$2.00/1.33 = 1.5$ — **50% more expensive**, for a $2\times$ latency improvement. That is the whole
+trade, in one number, and it is why interactive and batch traffic belong in separate pools: batch
+work has $W = \infty$ and should be run at the utilisation that implies, subsidising nothing and
+being subsidised by nothing.
+</KeyIdea>
+
+## Where $X_{\max}$ comes from
+
+<Claim kind="corollary" id="batching-cost" title="Why batching dominates the cost structure">
+In weight-bound decoding, each decode step streams the weights once regardless of batch size, so a
+step takes time $\approx N b / B_{\text{mem}}$ and emits $B$ tokens. Hence
+$$
+X_{\max} \;\approx\; \frac{B\,B_{\text{mem}}}{N\,b},
+$$
+linear in the batch $B$, and unit cost falls like $1/B$ until the arithmetic units saturate.
+</Claim>
+
+<Proof>
+The decode-step time and arithmetic intensity are established in
+<TopicRef id="llm-ops/inference-arithmetic" />: with $N$ parameters at $b$ bytes each and memory
+bandwidth $B_{\text{mem}}$, a weight-limited step costs $Nb/B_{\text{mem}}$ seconds and produces
+one token for each of the $B$ sequences in the batch. Dividing tokens by seconds gives $X_{\max}$;
+substituting into the unit-cost proposition gives a cost proportional to $1/B$.
+</Proof>
+
+<KeyIdea>
+Unit cost is inversely proportional to batch size, and by
+<TopicRef id="ai-systems/capacity-planning" /> the achievable batch is
+$L_{\max} = \eta M_{\text{kv}}/m$ — a *memory* quantity. So the dominant lever on cost per token is
+KV-cache footprint, not FLOPs. Halving $m$ through grouped-query attention or KV quantisation
+halves unit cost in the memory-bound regime, which no amount of arithmetic throughput would have
+done.
+</KeyIdea>
+
+<Warning title="Prefill and decode have different unit costs">
+The derivation above prices *decode* tokens. Prefill is compute-bound and processes all prompt
+tokens in parallel, so its cost per token is far lower and scales differently — it is bounded by
+$2N$ FLOPs per token against the compute roofline, not by weight streaming. A single blended
+"cost per token" therefore misprices any workload whose prompt-to-output ratio differs from the one
+it was calibrated on, which is why published pricing separates input and output tokens.
+</Warning>
+
+<NotSaid>
+This is a model of marginal serving cost. It excludes training amortisation, which for a
+frequently-retrained model can exceed serving cost entirely; it excludes the cost of the
+over-provisioned headroom that
+<TopicRef id="ai-systems/autoscaling" /> shows is mandatory; and it assumes the replica is billed
+continuously, which is wrong for spot or serverless capacity where the pricing model interacts with
+the scaling delay. Each of those is a real term, and each moves the answer in the same direction.
+</NotSaid>

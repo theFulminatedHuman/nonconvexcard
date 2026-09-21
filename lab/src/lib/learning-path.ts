@@ -129,6 +129,15 @@ const STAGES: StageSpec[] = [
     fields: ['quantization', 'llm-ops'],
   },
   {
+    id: 'ai-systems',
+    title: 'AI system design',
+    blurb:
+      'What it takes to put a model in front of real traffic: the queueing theory that decides how hard you can load a server, the arithmetic of tail latency under fan-out, the communication cost of every way of splitting a model across devices, and where the money goes.',
+    outcome:
+      'size a serving cluster from a latency target rather than by guessing, and say which of parallelism, caching or batching a given bottleneck actually calls for.',
+    fields: ['ai-systems'],
+  },
+  {
     id: 'agents',
     title: 'Agentic systems',
     blurb:
